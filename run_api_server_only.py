@@ -4,12 +4,7 @@ import signal
 import sys
 from pathlib import Path
 
-# Adjust HERMES_AGENT_PATH if your layout differs
-HERMES_AGENT_PATH = os.getenv(
-    "HERMES_AGENT_PATH",
-    str(Path(__file__).parent.parent / "hermes-agent"),
-)
-sys.path.insert(0, HERMES_AGENT_PATH)
+sys.path.insert(0, str(Path(__file__).parent.parent / "hermes-agent"))
 
 from gateway.config import PlatformConfig
 from gateway.platforms.api_server import APIServerAdapter

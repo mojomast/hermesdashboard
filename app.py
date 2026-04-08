@@ -17,20 +17,13 @@ from starlette.templating import Jinja2Templates
 from starlette.responses import JSONResponse, PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 
-# ---------------------------------------------------------------------------
-# Hermes agent path — adjust HERMES_AGENT_PATH if your layout differs
-# ---------------------------------------------------------------------------
-HERMES_AGENT_PATH = os.getenv(
-    "HERMES_AGENT_PATH",
-    str(Path(__file__).parent.parent / "hermes-agent"),
-)
-sys.path.insert(0, HERMES_AGENT_PATH)
+sys.path.insert(0, str(Path(__file__).parent.parent / "hermes-agent"))
 
 from hermes_constants import get_hermes_home
 from hermes_state import SessionDB
 from agent.session_summarizer import backfill_session_summaries, refresh_session_summary
 
-HERMES_API = os.getenv("HERMES_API", "http://127.0.0.1:8642")
+HERMES_API = "http://127.0.0.1:8642"
 HERMES_HOME = get_hermes_home()
 API_KEY = os.getenv(
     "API_SERVER_KEY", "hermes-dashboard-secret-9e4349ef052042545dd435d3330a2287"
@@ -330,6 +323,24 @@ async def chat_stream(request):
         state = ACTIVE_RUNS[run_id]
     else:
         messages = data.get("messages", [])
+        preview = []
+        for msg in messages[-6:]:
+            if not isinstance(msg, dict):
+                continue
+            role = str(msg.get("role", "?"))
+            content = str(msg.get("content", "") or "")
+            preview.append(
+                {
+                    "role": role,
+                    "content": content[:120],
+                    "len": len(content),
+                }
+            )
+        print(
+            f"[dashboard:/chat] messages={len(messages)} preview={preview}",
+            file=sys.stderr,
+            flush=True,
+        )
         _cleanup_active_runs()
         run_id = run_id or f"run_{uuid.uuid4().hex}"
         state = {
@@ -348,12 +359,13 @@ async def chat_stream(request):
     async def generate():
         sent = int(data.get("event_offset") or 0)
         if sent == 0:
+            initial_session_id = state.get("session_id")
             yield {
                 "data": json.dumps(
                     {
                         "type": "run_state",
                         "run_id": run_id,
-                        "session_id": state.get("session_id"),
+                        "session_id": initial_session_id,
                     }
                 )
             }
@@ -368,17 +380,6 @@ async def chat_stream(request):
                 if sent >= len(state["events"]):
                     yield {"data": "[DONE]"}
                 return
-            current_session_id = state.get("session_id")
-            if current_session_id:
-                yield {
-                    "data": json.dumps(
-                        {
-                            "type": "run_state",
-                            "run_id": run_id,
-                            "session_id": current_session_id,
-                        }
-                    )
-                }
             await asyncio.sleep(0.1)
 
     return EventSourceResponse(
@@ -522,9 +523,20 @@ async def get_models(request):
 async def get_personalities(request):
     config = get_config()
     built_in = [
-        "helpful", "concise", "technical", "creative", "teacher",
-        "kawaii", "catgirl", "pirate", "shakespeare", "surfer",
-        "noir", "uwu", "philosopher", "hype",
+        "helpful",
+        "concise",
+        "technical",
+        "creative",
+        "teacher",
+        "kawaii",
+        "catgirl",
+        "pirate",
+        "shakespeare",
+        "surfer",
+        "noir",
+        "uwu",
+        "philosopher",
+        "hype",
     ]
     custom = (
         list(config.get("personalities", {}).keys())
@@ -544,11 +556,13 @@ async def set_personality(request):
     body = await request.body()
     data = json.loads(body)
     personality = data.get("personality", "helpful")
+
     config = get_config()
     if "display" not in config:
         config["display"] = {}
     config["display"]["personality"] = personality
     save_config(config)
+
     return JSONResponse({"success": True, "personality": personality})
 
 
@@ -557,8 +571,12 @@ async def set_model(request):
     data = json.loads(body)
     model = data.get("model")
     provider = data.get("provider")
+
     if not model:
-        return JSONResponse({"success": False, "error": "Model required"}, status_code=400)
+        return JSONResponse(
+            {"success": False, "error": "Model required"}, status_code=400
+        )
+
     config = get_config()
     if "model" not in config:
         config["model"] = {}
@@ -566,6 +584,7 @@ async def set_model(request):
     if provider:
         config["model"]["provider"] = provider
     save_config(config)
+
     return JSONResponse({"success": True, "model": model, "provider": provider})
 
 
@@ -579,11 +598,13 @@ async def get_sessions(request):
     search = request.query_params.get("search", "")
     sort = request.query_params.get("sort", "date_desc")
     source = request.query_params.get("source", "")
+
     order = "ASC" if sort == "date_asc" else "DESC"
 
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
+
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
         )
@@ -593,17 +614,24 @@ async def get_sessions(request):
 
         conditions = []
         params = []
+
         if search:
-            conditions.append("s.id IN (SELECT session_id FROM messages WHERE content LIKE ?)")
+            conditions.append(
+                "s.id IN (SELECT session_id FROM messages WHERE content LIKE ?)"
+            )
             params.append(f"%{search}%")
+
         if source:
             conditions.append("s.source = ?")
             params.append(source)
 
         where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+        # Get total count
         count_sql = f"SELECT COUNT(DISTINCT s.id) FROM sessions s {where_clause}"
         total = conn.execute(count_sql, params).fetchone()[0]
 
+        # Get paginated results
         if search:
             query = f"""
                 SELECT DISTINCT s.id, s.title, s.started_at, s.ended_at, s.source,
@@ -629,6 +657,7 @@ async def get_sessions(request):
         cursor = conn.execute(query, params + [limit, offset])
         sessions = [dict(row) for row in cursor.fetchall()]
         conn.close()
+
         return JSONResponse({"sessions": sessions, "total": total})
     except Exception as e:
         return JSONResponse({"sessions": [], "total": 0, "error": str(e)})
@@ -653,17 +682,20 @@ async def get_session_sources(request):
 async def get_session(request):
     session_id = request.path_params["session_id"]
     db_path = HERMES_HOME / "state.db"
+
     if not db_path.exists():
         return JSONResponse({"error": "No sessions database"}, status_code=404)
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
+
     session_row = conn.execute(
         """
         SELECT id, title, summary, source, model, started_at, ended_at,
                parent_session_id, message_count, tool_call_count,
                input_tokens, output_tokens, estimated_cost_usd
-        FROM sessions WHERE id = ?
+        FROM sessions
+        WHERE id = ?
     """,
         (session_id,),
     ).fetchone()
@@ -674,10 +706,13 @@ async def get_session(request):
     cursor = conn.execute(
         """
         SELECT role, content, timestamp, tool_call_id, tool_calls, tool_name
-        FROM messages WHERE session_id = ? ORDER BY timestamp
+        FROM messages
+        WHERE session_id = ?
+        ORDER BY timestamp
     """,
         (session_id,),
     )
+
     messages = []
     for row in cursor.fetchall():
         item = dict(row)
@@ -689,6 +724,7 @@ async def get_session(request):
         messages.append(item)
     activity = _session_activity_payload(conn, session_id)
     conn.close()
+
     return JSONResponse({**dict(session_row), "messages": messages, **activity})
 
 
@@ -698,6 +734,7 @@ async def backfill_session_summaries_endpoint(request):
         data = json.loads(body) if body else {}
     except Exception:
         data = {}
+
     limit = max(1, min(int(data.get("limit", 50) or 50), 500))
     force = bool(data.get("force", False))
     db = SessionDB(HERMES_HOME / "state.db")
@@ -714,7 +751,10 @@ async def regenerate_session_summary_endpoint(request):
     try:
         summary = refresh_session_summary(db, session_id)
         if not summary:
-            return JSONResponse({"success": False, "error": "Failed to generate summary"}, status_code=500)
+            return JSONResponse(
+                {"success": False, "error": "Failed to generate summary"},
+                status_code=500,
+            )
         return JSONResponse({"success": True, "summary": summary})
     finally:
         db.close()
@@ -768,7 +808,12 @@ def _collect_paths_from_payload(payload) -> list[str]:
         for key, value in payload.items():
             if key in {"path", "file_path"} and isinstance(value, str):
                 paths.append(value)
-            elif key in {"paths", "files_created", "files_modified", "files"} and isinstance(value, list):
+            elif key in {
+                "paths",
+                "files_created",
+                "files_modified",
+                "files",
+            } and isinstance(value, list):
                 for item in value:
                     if isinstance(item, str):
                         paths.append(item)
@@ -783,6 +828,7 @@ def _collect_paths_from_payload(payload) -> list[str]:
 async def get_session_files(request):
     session_id = request.path_params["session_id"]
     db_path = HERMES_HOME / "state.db"
+
     if not db_path.exists():
         return JSONResponse({"files": []})
 
@@ -791,7 +837,9 @@ async def get_session_files(request):
     cursor = conn.execute(
         """
         SELECT role, content, timestamp, tool_call_id, tool_calls, tool_name
-        FROM messages WHERE session_id = ? ORDER BY timestamp
+        FROM messages
+        WHERE session_id = ?
+        ORDER BY timestamp
         """,
         (session_id,),
     )
@@ -824,8 +872,12 @@ async def get_session_files(request):
             continue
         args = call.get("arguments") or {}
         result = _safe_json_loads(row.get("content", "")) or {}
-        raw_paths = _collect_paths_from_payload(args) + _collect_paths_from_payload(result)
-        action = {"read_file": "read", "write_file": "wrote", "patch": "modified"}.get(tool_name, tool_name)
+        raw_paths = _collect_paths_from_payload(args) + _collect_paths_from_payload(
+            result
+        )
+        action = {"read_file": "read", "write_file": "wrote", "patch": "modified"}.get(
+            tool_name, tool_name
+        )
         for raw_path in raw_paths:
             allowed = _resolve_allowed_path(raw_path)
             key = str(allowed or raw_path)
@@ -838,8 +890,12 @@ async def get_session_files(request):
                 "previewable": bool(allowed and allowed.exists() and allowed.is_file()),
             }
 
-    files = sorted(entries.values(), key=lambda item: item.get("timestamp") or 0, reverse=True)
-    return JSONResponse({"files": files, "roots": [str(root) for root in _dashboard_allowed_roots()]})
+    files = sorted(
+        entries.values(), key=lambda item: item.get("timestamp") or 0, reverse=True
+    )
+    return JSONResponse(
+        {"files": files, "roots": [str(root) for root in _dashboard_allowed_roots()]}
+    )
 
 
 async def get_file_content(request):
@@ -852,7 +908,9 @@ async def get_file_content(request):
     try:
         content = resolved.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return JSONResponse({"error": "Binary file preview is not supported"}, status_code=415)
+        return JSONResponse(
+            {"error": "Binary file preview is not supported"}, status_code=415
+        )
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
     return JSONResponse({"path": str(resolved), "content": content})
@@ -861,42 +919,101 @@ async def get_file_content(request):
 async def delete_session(request):
     session_id = request.path_params["session_id"]
     db_path = HERMES_HOME / "state.db"
+
     if not db_path.exists():
         return JSONResponse({"error": "No sessions database"}, status_code=404)
+
     conn = sqlite3.connect(str(db_path))
     conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     conn.commit()
     conn.close()
+
     return JSONResponse({"success": True})
 
 
 async def get_memory(request):
     memory_path = HERMES_HOME / "memories" / "MEMORY.md"
     user_path = HERMES_HOME / "memories" / "USER.md"
+
     memory_content = ""
     user_content = ""
+
     if memory_path.exists():
         with open(memory_path) as f:
             memory_content = f.read()
+
     if user_path.exists():
         with open(user_path) as f:
             user_content = f.read()
+
     return JSONResponse({"memory": memory_content, "user_profile": user_content})
 
 
 async def update_memory(request):
     body = await request.body()
     data = json.loads(body)
+
     memory_dir = HERMES_HOME / "memories"
     memory_dir.mkdir(exist_ok=True)
+
     if "memory" in data:
         with open(memory_dir / "MEMORY.md", "w") as f:
             f.write(data["memory"])
+
     if "user_profile" in data:
         with open(memory_dir / "USER.md", "w") as f:
             f.write(data["user_profile"])
+
     return JSONResponse({"success": True})
+
+
+SKILL_DESCRIPTIONS = {
+    "apple": "Apple ecosystem integrations - Shortcuts, Music, Reminders, and device automation",
+    "autonomous-ai-agents": "Multi-agent orchestration patterns for autonomous task execution",
+    "creative": "Creative tools for image generation, art, and design workflows",
+    "data-science": "Data analysis, visualization, ML model training, and Jupyter workflows",
+    "devops": "Infrastructure automation, deployment pipelines, monitoring, and container management",
+    "diagramming": "Create diagrams, flowcharts, architecture visualizations, and technical drawings",
+    "dogfood": "Internal Hermes development and testing utilities",
+    "domain": "Domain management, DNS configuration, and SSL certificate handling",
+    "email": "Email composition, management, and automation workflows",
+    "feeds": "RSS/Atom feed monitoring, aggregation, and content parsing",
+    "gaming": "Game development, server management, and gaming platform integrations",
+    "gifs": "GIF creation, processing, and animation workflows",
+    "github": "GitHub workflow automation - repos, PRs, issues, code reviews, CI/CD pipelines",
+    "inference-sh": "Inference.sh model deployment and serverless AI inference",
+    "leisure": "Entertainment, games, trivia, and recreational activities",
+    "mcp": "Model Context Protocol server management and tool integrations",
+    "media": "Audio/video processing, transcoding, and media management",
+    "mlops": "ML operations - model versioning, experiment tracking, deployment pipelines",
+    "note-taking": "Note management, knowledge base integration, and organization tools",
+    "productivity": "Productivity enhancements - calendars, tasks, reminders, workflows",
+    "red-teaming": "Security testing, penetration testing, and vulnerability assessment",
+    "research": "Academic research, paper analysis, citation management, and literature review",
+    "smart-home": "Home automation - lights, climate, security, and IoT device control",
+    "social-media": "Social platform integrations - posting, scheduling, analytics",
+    "software-development": "Software engineering tools - debugging, testing, documentation",
+    "web-automation": "Browser automation, web scraping, and form handling",
+    "web-browsing": "Web navigation, content extraction, and online research",
+}
+
+
+def parse_description_md(filepath):
+    """Parse DESCRIPTION.md with YAML frontmatter."""
+    try:
+        with open(filepath) as f:
+            content = f.read()
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                import yaml
+
+                meta = yaml.safe_load(parts[1])
+                return meta.get("description", "")
+    except:
+        pass
+    return ""
 
 
 SKILL_DESCRIPTIONS = {
@@ -935,10 +1052,12 @@ SKILL_DESCRIPTIONS = {
 async def get_skills(request):
     skills_dir = HERMES_HOME / "skills"
     skills = []
+
     if skills_dir.exists():
         for item in skills_dir.iterdir():
             if item.is_dir() and not item.name.startswith("."):
                 skill_info = {"id": item.name, "path": str(item)}
+
                 skill_md = item / "SKILL.md"
                 if skill_md.exists():
                     with open(skill_md) as f:
@@ -947,22 +1066,34 @@ async def get_skills(request):
                             if line.startswith("name:"):
                                 skill_info["name"] = line.split(":", 1)[1].strip()
                             elif line.startswith("description:"):
-                                skill_info["description"] = line.split(":", 1)[1].strip()
+                                skill_info["description"] = line.split(":", 1)[
+                                    1
+                                ].strip()
+
                 desc_md = item / "DESCRIPTION.md"
                 if desc_md.exists() and "description" not in skill_info:
                     with open(desc_md) as f:
                         content = f.read()
                         for line in content.split("\n"):
                             if line.startswith("description:"):
-                                skill_info["description"] = line.split(":", 1)[1].strip()
+                                skill_info["description"] = line.split(":", 1)[
+                                    1
+                                ].strip()
                                 break
+
                 if "name" not in skill_info:
-                    skill_info["name"] = item.name.replace("-", " ").replace("_", " ").title()
+                    skill_info["name"] = (
+                        item.name.replace("-", " ").replace("_", " ").title()
+                    )
+
                 if "description" not in skill_info:
                     skill_info["description"] = SKILL_DESCRIPTIONS.get(item.name, "")
+
                 skills.append(skill_info)
+
     config = get_config()
     disabled = set(config.get("skills", {}).get("disabled", []))
+
     return JSONResponse({"skills": skills, "disabled": list(disabled)})
 
 
@@ -971,37 +1102,48 @@ async def toggle_skill(request):
     data = json.loads(body)
     skill_id = data.get("skill_id")
     enabled = data.get("enabled", True)
+
     config = get_config()
     if "skills" not in config:
         config["skills"] = {}
     if "disabled" not in config["skills"]:
         config["skills"]["disabled"] = []
+
     disabled = set(config["skills"]["disabled"])
+
     if enabled:
         disabled.discard(skill_id)
     else:
         disabled.add(skill_id)
+
     config["skills"]["disabled"] = list(disabled)
     save_config(config)
+
     return JSONResponse({"success": True, "enabled": enabled})
 
 
 async def get_skill_content(request):
     skill_id = request.path_params["skill_id"]
     skills_dir = HERMES_HOME / "skills" / skill_id
+
     if not skills_dir.exists():
         return JSONResponse({"error": "Skill not found"}, status_code=404)
+
     content = ""
+    # Try SKILL.md first, then DESCRIPTION.md
     for filename in ["SKILL.md", "DESCRIPTION.md"]:
         filepath = skills_dir / filename
         if filepath.exists():
             with open(filepath) as f:
                 content = f.read()
             break
+
+    # Also list files in the skill directory
     files = []
     for item in skills_dir.iterdir():
         if item.is_file():
             files.append(item.name)
+
     return JSONResponse({"id": skill_id, "content": content, "files": files})
 
 
@@ -1017,19 +1159,71 @@ async def get_cron_jobs(request):
 
 
 KNOWN_SECRETS = {
-    "OPENROUTER_API_KEY": {"name": "OpenRouter", "category": "provider", "url": "https://openrouter.ai/keys"},
-    "ZAI_API_KEY": {"name": "Z.AI / GLM", "category": "provider", "url": "https://z.ai"},
-    "ANTHROPIC_API_KEY": {"name": "Anthropic", "category": "provider", "url": "https://console.anthropic.com/settings/keys"},
-    "OPENAI_API_KEY": {"name": "OpenAI", "category": "provider", "url": "https://platform.openai.com/api-keys"},
-    "KIMI_API_KEY": {"name": "Kimi / Moonshot", "category": "provider", "url": "https://platform.moonshot.cn/console/api-keys"},
-    "MINIMAX_API_KEY": {"name": "MiniMax", "category": "provider", "url": "https://www.minimaxi.com/user-center/basic-information/interface-key"},
-    "MINIMAX_GROUP_ID": {"name": "MiniMax Group ID", "category": "provider", "url": "https://www.minimaxi.com/user-center/basic-information/interface-key"},
-    "FIRECRAWL_API_KEY": {"name": "Firecrawl", "category": "tool", "url": "https://www.firecrawl.dev/app/api-keys"},
-    "TAVILY_API_KEY": {"name": "Tavily Search", "category": "tool", "url": "https://app.tavily.com/home"},
-    "BROWSERBASE_API_KEY": {"name": "Browserbase", "category": "tool", "url": "https://www.browserbase.com/settings"},
-    "FAL_API_KEY": {"name": "FAL (Image Gen)", "category": "tool", "url": "https://fal.ai/dashboard/keys"},
-    "ELEVENLABS_API_KEY": {"name": "ElevenLabs (TTS)", "category": "tool", "url": "https://elevenlabs.io/app/settings/api-keys"},
-    "GITHUB_TOKEN": {"name": "GitHub", "category": "integration", "url": "https://github.com/settings/tokens"},
+    "OPENROUTER_API_KEY": {
+        "name": "OpenRouter",
+        "category": "provider",
+        "url": "https://openrouter.ai/keys",
+    },
+    "ZAI_API_KEY": {
+        "name": "Z.AI / GLM",
+        "category": "provider",
+        "url": "https://z.ai",
+    },
+    "ANTHROPIC_API_KEY": {
+        "name": "Anthropic",
+        "category": "provider",
+        "url": "https://console.anthropic.com/settings/keys",
+    },
+    "OPENAI_API_KEY": {
+        "name": "OpenAI",
+        "category": "provider",
+        "url": "https://platform.openai.com/api-keys",
+    },
+    "KIMI_API_KEY": {
+        "name": "Kimi / Moonshot",
+        "category": "provider",
+        "url": "https://platform.moonshot.cn/console/api-keys",
+    },
+    "MINIMAX_API_KEY": {
+        "name": "MiniMax",
+        "category": "provider",
+        "url": "https://www.minimaxi.com/user-center/basic-information/interface-key",
+    },
+    "MINIMAX_GROUP_ID": {
+        "name": "MiniMax Group ID",
+        "category": "provider",
+        "url": "https://www.minimaxi.com/user-center/basic-information/interface-key",
+    },
+    "FIRECRAWL_API_KEY": {
+        "name": "Firecrawl",
+        "category": "tool",
+        "url": "https://www.firecrawl.dev/app/api-keys",
+    },
+    "TAVILY_API_KEY": {
+        "name": "Tavily Search",
+        "category": "tool",
+        "url": "https://app.tavily.com/home",
+    },
+    "BROWSERBASE_API_KEY": {
+        "name": "Browserbase",
+        "category": "tool",
+        "url": "https://www.browserbase.com/settings",
+    },
+    "FAL_API_KEY": {
+        "name": "FAL (Image Gen)",
+        "category": "tool",
+        "url": "https://fal.ai/dashboard/keys",
+    },
+    "ELEVENLABS_API_KEY": {
+        "name": "ElevenLabs (TTS)",
+        "category": "tool",
+        "url": "https://elevenlabs.io/app/settings/api-keys",
+    },
+    "GITHUB_TOKEN": {
+        "name": "GitHub",
+        "category": "integration",
+        "url": "https://github.com/settings/tokens",
+    },
     "API_SERVER_KEY": {"name": "Dashboard API Key", "category": "system", "url": None},
 }
 
@@ -1043,26 +1237,35 @@ def mask_secret(value: str) -> str:
 async def get_secrets(request):
     env = get_env()
     secrets = []
+
     for key, info in KNOWN_SECRETS.items():
         value = env.get(key, "")
-        secrets.append({
-            "key": key,
-            "name": info["name"],
-            "category": info["category"],
-            "url": info["url"],
-            "configured": bool(value),
-            "masked_value": mask_secret(value),
-        })
-    for key, value in env.items():
-        if key not in KNOWN_SECRETS and ("API_KEY" in key or "TOKEN" in key or "SECRET" in key):
-            secrets.append({
+        secrets.append(
+            {
                 "key": key,
-                "name": key.replace("_", " ").title(),
-                "category": "other",
-                "url": None,
+                "name": info["name"],
+                "category": info["category"],
+                "url": info["url"],
                 "configured": bool(value),
                 "masked_value": mask_secret(value),
-            })
+            }
+        )
+
+    for key, value in env.items():
+        if key not in KNOWN_SECRETS and (
+            "API_KEY" in key or "TOKEN" in key or "SECRET" in key
+        ):
+            secrets.append(
+                {
+                    "key": key,
+                    "name": key.replace("_", " ").title(),
+                    "category": "other",
+                    "url": None,
+                    "configured": bool(value),
+                    "masked_value": mask_secret(value),
+                }
+            )
+
     return JSONResponse({"secrets": secrets})
 
 
@@ -1071,41 +1274,87 @@ async def set_secret(request):
     data = json.loads(body)
     key = data.get("key")
     value = data.get("value")
+
     if not key:
-        return JSONResponse({"success": False, "error": "Key required"}, status_code=400)
+        return JSONResponse(
+            {"success": False, "error": "Key required"}, status_code=400
+        )
+
     env = get_env()
     env[key] = value
     save_env(env)
-    return JSONResponse({"success": True, "key": key, "masked_value": mask_secret(value)})
+
+    return JSONResponse(
+        {"success": True, "key": key, "masked_value": mask_secret(value)}
+    )
 
 
 async def delete_secret(request):
     key = request.path_params["key"]
+
     env = get_env()
     if key in env:
         del env[key]
         save_env(env)
         return JSONResponse({"success": True})
+
     return JSONResponse({"success": False, "error": "Key not found"}, status_code=404)
 
 
+# ---------------------------------------------------------------------------
+# Graph API
+# ---------------------------------------------------------------------------
+
+
 def _infer_file_category(path_str: str) -> str:
+    """Infer a broad category from a file extension."""
     ext = Path(path_str).suffix.lower()
     cat_map = {
-        ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "typescript",
-        ".jsx": "javascript", ".json": "config", ".yaml": "config", ".yml": "config",
-        ".toml": "config", ".md": "docs", ".txt": "docs", ".rst": "docs",
-        ".sh": "shell", ".bash": "shell", ".zsh": "shell", ".html": "web",
-        ".css": "web", ".scss": "web", ".sql": "data", ".csv": "data", ".xml": "data",
-        ".go": "go", ".rs": "rust", ".java": "java", ".c": "c", ".cpp": "c", ".h": "c",
-        ".rb": "ruby", ".php": "php", ".swift": "swift", ".kt": "kotlin",
-        ".r": "r", ".jl": "julia", ".png": "image", ".jpg": "image",
-        ".jpeg": "image", ".gif": "image", ".svg": "image", ".ico": "image",
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".jsx": "javascript",
+        ".json": "config",
+        ".yaml": "config",
+        ".yml": "config",
+        ".toml": "config",
+        ".md": "docs",
+        ".txt": "docs",
+        ".rst": "docs",
+        ".sh": "shell",
+        ".bash": "shell",
+        ".zsh": "shell",
+        ".html": "web",
+        ".css": "web",
+        ".scss": "web",
+        ".sql": "data",
+        ".csv": "data",
+        ".xml": "data",
+        ".go": "go",
+        ".rs": "rust",
+        ".java": "java",
+        ".c": "c",
+        ".cpp": "c",
+        ".h": "c",
+        ".rb": "ruby",
+        ".php": "php",
+        ".swift": "swift",
+        ".kt": "kotlin",
+        ".r": "r",
+        ".jl": "julia",
+        ".png": "image",
+        ".jpg": "image",
+        ".jpeg": "image",
+        ".gif": "image",
+        ".svg": "image",
+        ".ico": "image",
     }
     return cat_map.get(ext, "other")
 
 
 def _parse_skill_frontmatter(content: str) -> dict:
+    """Extract YAML frontmatter from a SKILL.md file."""
     if not content.startswith("---"):
         return {}
     end = content.find("---", 3)
@@ -1118,7 +1367,20 @@ def _parse_skill_frontmatter(content: str) -> dict:
 
 
 async def get_graph_data(request):
+    """
+    Return nodes and edges for a relationship graph visualization.
+
+    Node types: session, file, tool, model, skill
+    Edge types: accessed, used_tool, used_model, delegated, relates_to
+
+    Query params:
+      depth=full|shallow  (default: full)
+        shallow = sessions + models only
+        full    = all node types including files, tools, skills
+    """
     depth = request.query_params.get("depth", "full")
+
+    # Time-scoping: hours=0.5 (30m), 1, 3, 6, 12, 24, 168 (7d), 720 (30d), 0|all (no filter)
     hours_str = request.query_params.get("hours", "24")
     if hours_str == "all" or hours_str == "0":
         since_ts = None
@@ -1139,68 +1401,132 @@ async def get_graph_data(request):
 
     db_path = HERMES_HOME / "state.db"
     if not db_path.exists():
-        return JSONResponse({"nodes": nodes, "edges": edges, "node_count": 0, "edge_count": 0})
+        return JSONResponse(
+            {
+                "nodes": nodes,
+                "edges": edges,
+                "node_count": 0,
+                "edge_count": 0,
+            }
+        )
 
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
-        cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
+
+        # Check sessions table exists
+        cur = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
+        )
         if not cur.fetchone():
             conn.close()
-            return JSONResponse({"nodes": nodes, "edges": edges, "node_count": 0, "edge_count": 0})
+            return JSONResponse(
+                {
+                    "nodes": nodes,
+                    "edges": edges,
+                    "node_count": 0,
+                    "edge_count": 0,
+                }
+            )
 
+        # --- 1. Session nodes + model nodes + delegation edges ---
         if since_ts is not None:
             sessions = conn.execute(
-                """SELECT id, title, source, model, parent_session_id, summary, started_at, ended_at,
-                          message_count, tool_call_count, input_tokens, output_tokens, estimated_cost_usd
-                   FROM sessions WHERE started_at >= ? ORDER BY started_at DESC""",
+                """SELECT id, title, source, model, parent_session_id,
+                          summary, started_at, ended_at, message_count, tool_call_count,
+                          input_tokens, output_tokens, estimated_cost_usd
+                   FROM sessions WHERE started_at >= ?
+                   ORDER BY started_at DESC""",
                 (since_ts,),
             ).fetchall()
         else:
             sessions = conn.execute(
-                """SELECT id, title, source, model, parent_session_id, summary, started_at, ended_at,
-                          message_count, tool_call_count, input_tokens, output_tokens, estimated_cost_usd
+                """SELECT id, title, source, model, parent_session_id,
+                          summary, started_at, ended_at, message_count, tool_call_count,
+                          input_tokens, output_tokens, estimated_cost_usd
                    FROM sessions ORDER BY started_at DESC"""
             ).fetchall()
 
         model_counts: dict[str, int] = {}
+
         for s in sessions:
             sid = f"session:{s['id']}"
-            _add_node(sid, s["title"] or s["id"][:8], "session",
-                session_id=s["id"], source=s["source"], model=s["model"],
-                summary=s["summary"], started_at=s["started_at"], ended_at=s["ended_at"],
-                message_count=s["message_count"], tool_call_count=s["tool_call_count"],
-                input_tokens=s["input_tokens"], output_tokens=s["output_tokens"],
-                estimated_cost_usd=s["estimated_cost_usd"])
+            _add_node(
+                sid,
+                s["title"] or s["id"][:8],
+                "session",
+                session_id=s["id"],
+                source=s["source"],
+                model=s["model"],
+                summary=s["summary"],
+                started_at=s["started_at"],
+                ended_at=s["ended_at"],
+                message_count=s["message_count"],
+                tool_call_count=s["tool_call_count"],
+                input_tokens=s["input_tokens"],
+                output_tokens=s["output_tokens"],
+                estimated_cost_usd=s["estimated_cost_usd"],
+            )
+
+            # Model edge
             if s["model"]:
-                model_counts[s["model"]] = model_counts.get(s["model"], 0) + 1
-                edges.append({"source": sid, "target": f"model:{s['model']}", "type": "used_model"})
+                model_name = s["model"]
+                model_counts[model_name] = model_counts.get(model_name, 0) + 1
+                edges.append(
+                    {
+                        "source": sid,
+                        "target": f"model:{model_name}",
+                        "type": "used_model",
+                    }
+                )
+
+            # Delegation edge
             if s["parent_session_id"]:
-                edges.append({"source": f"session:{s['parent_session_id']}", "target": sid, "type": "delegated"})
+                parent_sid = f"session:{s['parent_session_id']}"
+                edges.append(
+                    {
+                        "source": parent_sid,
+                        "target": sid,
+                        "type": "delegated",
+                    }
+                )
 
+        # Add model nodes
         for model_name, count in model_counts.items():
-            _add_node(f"model:{model_name}", model_name, "model", name=model_name, session_count=count)
+            _add_node(
+                f"model:{model_name}",
+                model_name,
+                "model",
+                name=model_name,
+                session_count=count,
+            )
 
+        # --- 2. Tool + file nodes (full depth only) ---
         if depth == "full":
             tool_counts: dict[str, int] = {}
+
             if since_ts is not None:
                 msgs = conn.execute(
-                    """SELECT session_id, tool_calls FROM messages
+                    """SELECT session_id, tool_calls
+                       FROM messages
                        WHERE tool_calls IS NOT NULL AND tool_calls != ''
                          AND session_id IN (SELECT id FROM sessions WHERE started_at >= ?)""",
                     (since_ts,),
                 ).fetchall()
             else:
                 msgs = conn.execute(
-                    "SELECT session_id, tool_calls FROM messages WHERE tool_calls IS NOT NULL AND tool_calls != ''"
+                    """SELECT session_id, tool_calls
+                       FROM messages
+                       WHERE tool_calls IS NOT NULL AND tool_calls != ''"""
                 ).fetchall()
 
             for msg in msgs:
-                session_id_val = msg["session_id"]
-                sid = f"session:{session_id_val}"
+                session_id = msg["session_id"]
+                sid = f"session:{session_id}"
                 tc_data = _safe_json_loads(msg["tool_calls"])
                 if not isinstance(tc_data, list):
                     continue
+
                 for tc in tc_data:
                     if not isinstance(tc, dict):
                         continue
@@ -1208,26 +1534,61 @@ async def get_graph_data(request):
                     tool_name = func.get("name", "")
                     if not tool_name:
                         continue
+
+                    # Tool node
                     tool_id = f"tool:{tool_name}"
                     tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
-                    edges.append({"source": sid, "target": tool_id, "type": "used_tool"})
-                    args_data = _safe_json_loads(func.get("arguments", ""))
-                    if args_data:
-                        for fp in _collect_paths_from_payload(args_data):
-                            file_id = f"file:{fp}"
-                            _add_node(file_id, Path(fp).name, "file",
-                                path=fp, basename=Path(fp).name, category=_infer_file_category(fp))
-                            edges.append({"source": sid, "target": file_id, "type": "accessed"})
 
+                    # Session → tool edge
+                    edges.append(
+                        {
+                            "source": sid,
+                            "target": tool_id,
+                            "type": "used_tool",
+                        }
+                    )
+
+                    # Extract file paths from tool arguments
+                    args_str = func.get("arguments", "")
+                    args_data = _safe_json_loads(args_str)
+                    if args_data:
+                        file_paths = _collect_paths_from_payload(args_data)
+                        for fp in file_paths:
+                            file_id = f"file:{fp}"
+                            _add_node(
+                                file_id,
+                                Path(fp).name,
+                                "file",
+                                path=fp,
+                                basename=Path(fp).name,
+                                category=_infer_file_category(fp),
+                            )
+                            edges.append(
+                                {
+                                    "source": sid,
+                                    "target": file_id,
+                                    "type": "accessed",
+                                }
+                            )
+
+            # Add tool nodes (after counting)
             for tool_name, count in tool_counts.items():
-                _add_node(f"tool:{tool_name}", tool_name, "tool", name=tool_name, usage_count=count)
+                _add_node(
+                    f"tool:{tool_name}",
+                    tool_name,
+                    "tool",
+                    name=tool_name,
+                    usage_count=count,
+                )
 
         conn.close()
 
+        # --- 3. Skill nodes + relates_to edges (full depth only) ---
         if depth == "full":
             skills_dir = HERMES_HOME / "skills"
             config = get_config()
             disabled_skills = set(config.get("skills", {}).get("disabled", []))
+
             if skills_dir.exists():
                 for category_dir in sorted(skills_dir.iterdir()):
                     if not category_dir.is_dir() or category_dir.name.startswith("."):
@@ -1235,6 +1596,7 @@ async def get_graph_data(request):
                     for skill_dir in sorted(category_dir.iterdir()):
                         if not skill_dir.is_dir() or skill_dir.name.startswith("."):
                             continue
+
                         skill_id_str = skill_dir.name
                         skill_md = skill_dir / "SKILL.md"
                         fm = {}
@@ -1243,20 +1605,57 @@ async def get_graph_data(request):
                                 fm = _parse_skill_frontmatter(skill_md.read_text())
                             except Exception:
                                 pass
-                        _add_node(f"skill:{skill_id_str}", fm.get("name", skill_id_str), "skill",
-                            name=fm.get("name", skill_id_str), description=fm.get("description", ""),
-                            category=category_dir.name, enabled=skill_id_str not in disabled_skills)
-                        related = fm.get("metadata", {}).get("hermes", {}).get("related_skills", [])
+
+                        _add_node(
+                            f"skill:{skill_id_str}",
+                            fm.get("name", skill_id_str),
+                            "skill",
+                            name=fm.get("name", skill_id_str),
+                            description=fm.get("description", ""),
+                            category=category_dir.name,
+                            enabled=skill_id_str not in disabled_skills,
+                        )
+
+                        # Related-skill edges
+                        related = (
+                            fm.get("metadata", {})
+                            .get("hermes", {})
+                            .get("related_skills", [])
+                        )
                         if isinstance(related, list):
                             for rel in related:
                                 if isinstance(rel, str) and rel:
-                                    edges.append({"source": f"skill:{skill_id_str}", "target": f"skill:{rel}", "type": "relates_to"})
+                                    edges.append(
+                                        {
+                                            "source": f"skill:{skill_id_str}",
+                                            "target": f"skill:{rel}",
+                                            "type": "relates_to",
+                                        }
+                                    )
 
     except Exception as e:
-        return JSONResponse({"nodes": [], "edges": [], "node_count": 0, "edge_count": 0, "error": str(e)}, status_code=500)
+        return JSONResponse(
+            {
+                "nodes": [],
+                "edges": [],
+                "node_count": 0,
+                "edge_count": 0,
+                "error": str(e),
+            },
+            status_code=500,
+        )
 
+    # Filter out edges referencing non-existent nodes
     edges = [e for e in edges if e["source"] in node_ids and e["target"] in node_ids]
-    return JSONResponse({"nodes": nodes, "edges": edges, "node_count": len(nodes), "edge_count": len(edges)})
+
+    return JSONResponse(
+        {
+            "nodes": nodes,
+            "edges": edges,
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+        }
+    )
 
 
 routes = [
@@ -1272,8 +1671,16 @@ routes = [
     Route("/api/model", set_model, methods=["POST"]),
     Route("/api/sessions", get_sessions),
     Route("/api/sessions/sources", get_session_sources),
-    Route("/api/sessions/backfill-summaries", backfill_session_summaries_endpoint, methods=["POST"]),
-    Route("/api/sessions/{session_id}/summary", regenerate_session_summary_endpoint, methods=["POST"]),
+    Route(
+        "/api/sessions/backfill-summaries",
+        backfill_session_summaries_endpoint,
+        methods=["POST"],
+    ),
+    Route(
+        "/api/sessions/{session_id}/summary",
+        regenerate_session_summary_endpoint,
+        methods=["POST"],
+    ),
     Route("/api/sessions/{session_id}", get_session),
     Route("/api/sessions/{session_id}/files", get_session_files),
     Route("/api/sessions/{session_id}", delete_session, methods=["DELETE"]),
@@ -1294,4 +1701,5 @@ app = Starlette(routes=routes)
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=DASHBOARD_PORT)
