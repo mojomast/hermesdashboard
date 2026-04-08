@@ -23,7 +23,7 @@ from hermes_constants import get_hermes_home
 from hermes_state import SessionDB
 from agent.session_summarizer import backfill_session_summaries, refresh_session_summary
 
-HERMES_API = "http://127.0.0.1:8642"
+HERMES_API = os.getenv("HERMES_API", "http://127.0.0.1:8642")
 HERMES_HOME = get_hermes_home()
 API_KEY = os.getenv(
     "API_SERVER_KEY", "hermes-dashboard-secret-9e4349ef052042545dd435d3330a2287"

@@ -45,6 +45,29 @@ Optional extras:
 - Linux user-level `systemd` units
 - Docker wrapper files for the dashboard web app
 
+## Linux Auto-Start
+
+On Linux systems with `systemctl` available, the installer asks:
+
+`Auto-start the Hermes dashboard and API when you log in on this machine?`
+
+If you choose yes, it will:
+
+- create `~/.config/systemd/user/hermes-dashboard-api.service`
+- create `~/.config/systemd/user/hermes-dashboard-web.service`
+- run `systemctl --user daemon-reload`
+- attempt `systemctl --user enable --now hermes-dashboard-api.service hermes-dashboard-web.service`
+
+This is user-session startup, which means it normally starts after reboot once the user logs in.
+
+Advanced option:
+
+```sh
+sudo loginctl enable-linger "$USER"
+```
+
+That can help keep user services available even before a fresh interactive login.
+
 ## Manual Install
 
 1. Clone the repo.

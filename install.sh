@@ -79,10 +79,14 @@ require_file() {
 }
 
 OS_NAME=$(uname -s 2>/dev/null || printf "unknown")
+HAS_SYSTEMCTL="n"
 case "$OS_NAME" in
   Linux|Darwin) ;;
   *) warn "This installer is primarily tested on Linux and macOS. Current OS: $OS_NAME" ;;
 esac
+if [ "$OS_NAME" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+  HAS_SYSTEMCTL="y"
+fi
 
 printf "\n%sHermes Dashboard installer%s\n" "$COLOR_BOLD" "$COLOR_RESET"
 printf "This will configure the standalone dashboard against an existing Hermes install.\n\n"
@@ -152,7 +156,7 @@ EOF
 
 chmod +x "$REPO_DIR/run-dashboard.sh" "$REPO_DIR/run-api-server.sh"
 
-CREATE_LAUNCHERS=$(prompt_yes_no "Create background launcher scripts in this repo" "y")
+CREATE_LAUNCHERS=$(prompt_yes_no "Create simple background launcher scripts in this repo" "y")
 if [ "$CREATE_LAUNCHERS" = "y" ]; then
   cat > "$REPO_DIR/start-background.sh" <<'EOF'
 #!/bin/sh
@@ -170,9 +174,11 @@ EOF
   chmod +x "$REPO_DIR/start-background.sh"
 fi
 
-if [ "$OS_NAME" = "Linux" ]; then
-  CREATE_SYSTEMD=$(prompt_yes_no "Generate user-level systemd units" "n")
-  if [ "$CREATE_SYSTEMD" = "y" ]; then
+if [ "$HAS_SYSTEMCTL" = "y" ]; then
+  info "Linux auto-start is available through systemd user services."
+  info "If enabled, Hermes will start automatically after reboot once you log in."
+  ENABLE_AUTOSTART=$(prompt_yes_no "Auto-start the Hermes dashboard and API when you log in on this machine" "n")
+  if [ "$ENABLE_AUTOSTART" = "y" ]; then
     SYSTEMD_DIR="$HOME/.config/systemd/user"
     mkdir -p "$SYSTEMD_DIR"
     cat > "$SYSTEMD_DIR/hermes-dashboard-api.service" <<EOF
@@ -208,8 +214,17 @@ Restart=on-failure
 WantedBy=default.target
 EOF
     success "Generated systemd user units in $SYSTEMD_DIR"
-    warn "Enable them with: systemctl --user daemon-reload && systemctl --user enable --now hermes-dashboard-api.service hermes-dashboard-web.service"
+    if systemctl --user daemon-reload && systemctl --user enable --now hermes-dashboard-api.service hermes-dashboard-web.service; then
+      success "Enabled and started hermes-dashboard-api.service and hermes-dashboard-web.service"
+      warn "Optional: run 'sudo loginctl enable-linger $USER' if you want user services available before login after reboot."
+    else
+      warn "Could not enable/start the systemd user services automatically."
+      warn "Run this manually: systemctl --user daemon-reload && systemctl --user enable --now hermes-dashboard-api.service hermes-dashboard-web.service"
+    fi
   fi
+elif [ "$OS_NAME" != "Linux" ]; then
+  warn "Automatic startup via this installer is currently only set up for Linux systemd user services."
+  warn "On this OS, use ./run-api-server.sh and ./run-dashboard.sh or hook them into your own login/startup tool."
 fi
 
 CREATE_DOCKER=$(prompt_yes_no "Generate Docker wrapper files for the dashboard web app" "n")

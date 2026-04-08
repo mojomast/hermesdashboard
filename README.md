@@ -35,6 +35,20 @@ Then open:
 http://127.0.0.1:8081
 ```
 
+## Auto-Start
+
+On Linux, the installer can ask whether you want Hermes Dashboard and the Hermes API-only server to start automatically when you log in.
+
+If you say yes, it will:
+
+- generate user-level `systemd` services
+- try to enable and start them automatically
+
+On non-Linux systems, the installer currently falls back to manual startup and tells the user to use:
+
+- `./run-api-server.sh`
+- `./run-dashboard.sh`
+
 ## What You Get
 
 - streaming Hermes chat UI

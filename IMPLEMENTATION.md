@@ -53,6 +53,7 @@ The installer should stay:
 - interactive, with sensible defaults
 - path-driven instead of forcing one repo layout
 - explicit about the fact that Docker support is only for the dashboard web wrapper, not the Hermes runtime itself
+- goal-oriented in prompts, e.g. `Auto-start on login?` instead of asking users whether they want raw `systemd` unit generation
 
 ## Required Runtime Surface
 
@@ -64,3 +65,13 @@ The standalone dashboard expects these pieces from Hermes:
 - `agent.session_summarizer`
 
 If the upstream Hermes runtime changes those import paths, update this repo’s `app.py`, `run_api_server_only.py`, and installer defaults together.
+
+## Auto-Start UX
+
+Preferred installer behavior:
+
+- ask the user whether they want the dashboard and API to auto-start on login
+- on Linux with `systemctl`, generate user services and attempt to enable/start them immediately
+- on non-Linux systems, explain that manual startup is currently the supported path from this installer
+
+This keeps the prompt user-centered and avoids requiring familiarity with `systemd` to complete setup.
