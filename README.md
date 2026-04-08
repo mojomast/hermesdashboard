@@ -54,9 +54,41 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - streaming Hermes chat UI
 - sessions browser and session detail viewer
 - memory, skills, secrets, and config panels
+- expanded config editor with sectioned settings and advanced JSON editors
 - graph visualization for sessions, files, tools, models, and skills
 - delegated task streaming inside expanded `delegate_task` blocks
 - session summaries in sessions, graph, and session detail
+
+## Expanded Config Surface
+
+The Config tab is backed by `GET /api/settings` and is no longer limited to a few basic controls.
+
+Current sections:
+
+- `Model & Routing`
+- `Agent & Personality`
+- `Memory & Session`
+- `Tools & Skills`
+- `Browser / Web / Voice`
+- `Display & UX`
+- `Advanced Admin`
+
+Highlights:
+
+- normalized effective config plus raw config are returned together for safer rendering
+- complex nested groups use JSON editors instead of lossy field-by-field forms
+- custom personalities are stored at `agent.personalities`
+- `platform_toolsets` preserves custom non-configurable entries such as MCP server names
+
+## Secrets Tab
+
+The Secrets tab is metadata-driven from Hermes env metadata instead of a short hardcoded dashboard-only list.
+
+That means the standalone dashboard can show:
+
+- richer provider and tool coverage
+- descriptions and category labels for known secrets
+- detected unknown API keys, tokens, secrets, and `_URL` values as advanced entries
 
 ## Important
 

@@ -19,9 +19,23 @@ from sse_starlette.sse import EventSourceResponse
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "hermes-agent"))
 
-from hermes_constants import get_hermes_home
+from hermes_constants import display_hermes_home, get_hermes_home
 from hermes_state import SessionDB
 from agent.session_summarizer import backfill_session_summaries, refresh_session_summary
+from hermes_cli.config import (
+    DEFAULT_CONFIG,
+    OPTIONAL_ENV_VARS,
+    load_config as load_hermes_config,
+    load_env as load_hermes_env,
+    save_config as save_hermes_config,
+    save_env_value,
+)
+from hermes_cli.skin_engine import list_skins
+from hermes_cli.tools_config import (
+    CONFIGURABLE_TOOLSETS,
+    PLATFORMS,
+    _get_platform_tools,
+)
 
 HERMES_API = os.getenv("HERMES_API", "http://127.0.0.1:8642")
 HERMES_HOME = get_hermes_home()
@@ -37,6 +51,78 @@ templates = Jinja2Templates(
 
 ACTIVE_RUN_TTL_SECONDS = 1800
 ACTIVE_RUNS: dict[str, dict] = {}
+
+BUILT_IN_PERSONALITIES = [
+    "helpful",
+    "concise",
+    "technical",
+    "creative",
+    "teacher",
+    "kawaii",
+    "catgirl",
+    "pirate",
+    "shakespeare",
+    "surfer",
+    "noir",
+    "uwu",
+    "philosopher",
+    "hype",
+]
+
+EXTRA_SECRET_METADATA = {
+    "OPENAI_API_KEY": {
+        "description": "OpenAI API key for custom endpoints and OpenAI-backed tools",
+        "prompt": "OpenAI API key",
+        "url": "https://platform.openai.com/api-keys",
+        "password": True,
+        "category": "provider",
+    },
+    "OPENAI_BASE_URL": {
+        "description": "OpenAI-compatible base URL override",
+        "prompt": "OpenAI base URL",
+        "url": None,
+        "password": False,
+        "category": "provider",
+    },
+    "ANTHROPIC_API_KEY": {
+        "description": "Anthropic Console API key",
+        "prompt": "Anthropic API key",
+        "url": "https://console.anthropic.com/settings/keys",
+        "password": True,
+        "category": "provider",
+    },
+    "ANTHROPIC_TOKEN": {
+        "description": "Legacy Anthropic auth token",
+        "prompt": "Anthropic token",
+        "url": None,
+        "password": True,
+        "category": "provider",
+    },
+    "NOUS_API_KEY": {
+        "description": "Nous Portal API key",
+        "prompt": "Nous API key",
+        "url": "https://portal.nousresearch.com/",
+        "password": True,
+        "category": "provider",
+    },
+    "GROQ_API_KEY": {
+        "description": "Groq Whisper STT API key",
+        "prompt": "Groq API key",
+        "url": "https://console.groq.com/keys",
+        "password": True,
+        "category": "tool",
+    },
+}
+
+WEB_BACKENDS = ["firecrawl", "exa", "parallel", "tavily"]
+TTS_PROVIDERS = ["edge", "elevenlabs", "openai", "neutts"]
+STT_PROVIDERS = ["local", "groq", "openai"]
+BUSY_INPUT_MODES = ["interrupt", "queue"]
+TOOL_PROGRESS_MODES = ["off", "new", "all", "verbose"]
+BACKGROUND_NOTIFICATION_MODES = ["off", "result", "error", "all"]
+RESUME_DISPLAY_MODES = ["full", "minimal"]
+APPROVAL_MODES = ["manual", "smart", "off"]
+REASONING_EFFORTS = ["", "none", "minimal", "low", "medium", "high", "xhigh"]
 
 
 def _cleanup_active_runs() -> None:
@@ -270,7 +356,7 @@ def _session_activity_payload(conn: sqlite3.Connection, session_id: str) -> dict
     }
 
 
-def get_config():
+def get_raw_config():
     config_path = HERMES_HOME / "config.yaml"
     if config_path.exists():
         with open(config_path) as f:
@@ -278,23 +364,16 @@ def get_config():
     return {}
 
 
+def get_config():
+    return load_hermes_config()
+
+
 def save_config(config):
-    config_path = HERMES_HOME / "config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False)
+    save_hermes_config(config)
 
 
 def get_env():
-    env_path = HERMES_HOME / ".env"
-    env = {}
-    if env_path.exists():
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, _, value = line.partition("=")
-                    env[key] = value
-    return env
+    return load_hermes_env()
 
 
 def save_env(env):
@@ -302,6 +381,213 @@ def save_env(env):
     with open(env_path, "w") as f:
         for key, value in env.items():
             f.write(f"{key}={value}\n")
+
+
+def _mask_secret(value: str) -> str:
+    if not value or len(value) < 8:
+        return "****" if value else ""
+    return value[:4] + "****" + value[-4:]
+
+
+def _normalize_model_config(config: dict) -> dict:
+    model = config.get("model")
+    if isinstance(model, str):
+        return {"default": model}
+    if isinstance(model, dict):
+        return model
+    return {}
+
+
+def _known_secret_catalog() -> dict[str, dict]:
+    catalog = {**OPTIONAL_ENV_VARS, **EXTRA_SECRET_METADATA}
+    catalog.setdefault(
+        "API_SERVER_KEY",
+        {
+            "description": "Bearer token for API server authentication",
+            "prompt": "API server auth key",
+            "url": None,
+            "password": True,
+            "category": "messaging",
+            "advanced": True,
+        },
+    )
+    return catalog
+
+
+def _friendly_secret_name(key: str, meta: dict) -> str:
+    prompt = str(meta.get("prompt") or "").strip()
+    if prompt:
+        for suffix in (" API key", " API Key", " token", " Token"):
+            if prompt.endswith(suffix):
+                return prompt[: -len(suffix)]
+        return prompt
+    return key.replace("_", " ").title()
+
+
+def _build_secrets_payload(env: dict) -> list[dict]:
+    catalog = _known_secret_catalog()
+    secrets = []
+    seen: set[str] = set()
+    for key, meta in sorted(catalog.items()):
+        value = env.get(key, "")
+        secrets.append(
+            {
+                "key": key,
+                "name": _friendly_secret_name(key, meta),
+                "description": meta.get("description", ""),
+                "category": meta.get("category", "other"),
+                "url": meta.get("url"),
+                "configured": bool(value),
+                "masked_value": _mask_secret(value),
+                "advanced": bool(meta.get("advanced", False)),
+                "password": bool(meta.get("password", True)),
+            }
+        )
+        seen.add(key)
+
+    for key, value in sorted(env.items()):
+        if key in seen:
+            continue
+        if (
+            "API_KEY" in key
+            or "TOKEN" in key
+            or "SECRET" in key
+            or key.endswith("_URL")
+        ):
+            secrets.append(
+                {
+                    "key": key,
+                    "name": key.replace("_", " ").title(),
+                    "description": "",
+                    "category": "other",
+                    "url": None,
+                    "configured": bool(value),
+                    "masked_value": _mask_secret(value),
+                    "advanced": True,
+                    "password": not key.endswith("_URL"),
+                }
+            )
+
+    return secrets
+
+
+def _count_changed_values(current, default) -> int:
+    if isinstance(default, dict):
+        if not isinstance(current, dict):
+            return 1
+        changed = 0
+        for key, value in default.items():
+            if str(key).startswith("_"):
+                continue
+            if key in current:
+                changed += _count_changed_values(current[key], value)
+        for key in current:
+            if key not in default and not str(key).startswith("_"):
+                changed += 1
+        return changed
+    return 0 if current == default else 1
+
+
+def _platform_toolset_extras(raw_config: dict) -> dict[str, list[str]]:
+    configurable = {key for key, _, _ in CONFIGURABLE_TOOLSETS}
+    default_toolsets = {info["default_toolset"] for info in PLATFORMS.values()}
+    platform_toolsets = raw_config.get("platform_toolsets", {}) or {}
+    extras: dict[str, list[str]] = {}
+    for platform, entries in platform_toolsets.items():
+        if not isinstance(entries, list):
+            continue
+        extras[platform] = sorted(
+            entry
+            for entry in entries
+            if entry not in configurable and entry not in default_toolsets
+        )
+    return extras
+
+
+def _resolved_platform_toolsets(config: dict) -> dict[str, list[str]]:
+    configurable = {key for key, _, _ in CONFIGURABLE_TOOLSETS}
+    resolved: dict[str, list[str]] = {}
+    for platform in PLATFORMS:
+        enabled = _get_platform_tools(config, platform)
+        resolved[platform] = sorted(ts for ts in enabled if ts in configurable)
+    return resolved
+
+
+def _settings_payload() -> dict:
+    effective = get_config()
+    raw = get_raw_config()
+    env = get_env()
+    model = _normalize_model_config(effective)
+    secrets = _build_secrets_payload(env)
+    by_category: dict[str, dict] = {}
+    for secret in secrets:
+        category = secret["category"]
+        bucket = by_category.setdefault(category, {"total": 0, "configured": 0})
+        bucket["total"] += 1
+        if secret["configured"]:
+            bucket["configured"] += 1
+
+    custom_personalities = (
+        effective.get("agent", {}).get("personalities")
+        or raw.get("agent", {}).get("personalities")
+        or raw.get("personalities")
+        or {}
+    )
+
+    return {
+        "overview": {
+            "profile_home": display_hermes_home(),
+            "config_version": effective.get(
+                "_config_version", DEFAULT_CONFIG.get("_config_version", 0)
+            ),
+            "changed_count": _count_changed_values(raw, DEFAULT_CONFIG),
+            "missing_secrets_count": sum(
+                1 for secret in secrets if not secret["configured"]
+            ),
+            "configured_secrets_count": sum(
+                1 for secret in secrets if secret["configured"]
+            ),
+            "secrets_by_category": by_category,
+        },
+        "config": effective,
+        "raw_config": raw,
+        "model": {
+            "default": model.get("default", ""),
+            "provider": model.get("provider", "auto"),
+            "base_url": model.get("base_url", ""),
+        },
+        "personality": {
+            "current": effective.get("display", {}).get("personality", "helpful"),
+            "built_in": BUILT_IN_PERSONALITIES,
+            "custom": sorted(custom_personalities.keys()),
+            "custom_definitions": custom_personalities,
+        },
+        "skins": list_skins(),
+        "toolsets": [
+            {"key": key, "label": label, "description": description}
+            for key, label, description in CONFIGURABLE_TOOLSETS
+        ],
+        "platforms": [
+            {
+                "key": key,
+                "label": value["label"],
+                "default_toolset": value["default_toolset"],
+            }
+            for key, value in PLATFORMS.items()
+        ],
+        "resolved_platform_toolsets": _resolved_platform_toolsets(effective),
+        "platform_toolset_extras": _platform_toolset_extras(raw),
+        "web_backends": WEB_BACKENDS,
+        "tts_providers": TTS_PROVIDERS,
+        "stt_providers": STT_PROVIDERS,
+        "busy_input_modes": BUSY_INPUT_MODES,
+        "tool_progress_modes": TOOL_PROGRESS_MODES,
+        "background_notification_modes": BACKGROUND_NOTIFICATION_MODES,
+        "resume_display_modes": RESUME_DISPLAY_MODES,
+        "approval_modes": APPROVAL_MODES,
+        "reasoning_efforts": REASONING_EFFORTS,
+        "secrets": secrets,
+    }
 
 
 async def homepage(request):
@@ -400,7 +686,7 @@ async def health(request):
 async def get_status(request):
     config = get_config()
     env = get_env()
-    model = config.get("model", {})
+    model = _normalize_model_config(config)
     display = config.get("display", {})
 
     return JSONResponse(
@@ -413,29 +699,46 @@ async def get_status(request):
             "api_keys": {
                 "openrouter": "OPENROUTER_API_KEY" in env
                 or bool(env.get("OPENROUTER_API_KEY")),
-                "zai": "ZAI_API_KEY" in env or bool(env.get("ZAI_API_KEY")),
+                "zai": bool(
+                    env.get("GLM_API_KEY")
+                    or env.get("ZAI_API_KEY")
+                    or env.get("Z_AI_API_KEY")
+                ),
                 "anthropic": "ANTHROPIC_API_KEY" in env
                 or bool(env.get("ANTHROPIC_API_KEY")),
+                "openai": bool(env.get("OPENAI_API_KEY")),
+                "groq": bool(env.get("GROQ_API_KEY")),
+                "kimi": bool(env.get("KIMI_API_KEY")),
+                "minimax": bool(
+                    env.get("MINIMAX_API_KEY") or env.get("MINIMAX_CN_API_KEY")
+                ),
+                "browserbase": bool(env.get("BROWSERBASE_API_KEY")),
+                "firecrawl": bool(env.get("FIRECRAWL_API_KEY")),
+                "api_server": bool(env.get("API_SERVER_KEY")),
             },
         }
     )
 
 
 async def get_config_endpoint(request):
-    return JSONResponse(get_config())
+    return JSONResponse(get_raw_config())
+
+
+async def get_settings(request):
+    return JSONResponse(_settings_payload())
 
 
 async def update_config(request):
     body = await request.body()
     updates = json.loads(body)
-    config = get_config()
+    config = get_raw_config()
 
     for key, value in updates.items():
         if "." in key:
             parts = key.split(".")
             current = config
             for part in parts[:-1]:
-                if part not in current:
+                if part not in current or not isinstance(current.get(part), dict):
                     current[part] = {}
                 current = current[part]
             current[parts[-1]] = value
@@ -449,13 +752,14 @@ async def update_config(request):
 async def get_models(request):
     env = get_env()
     config = get_config()
+    model_config = _normalize_model_config(config)
 
     zai_api_key = (
         env.get("GLM_API_KEY") or env.get("ZAI_API_KEY") or env.get("Z_AI_API_KEY")
     )
     zai_base_url = (
         env.get("GLM_BASE_URL")
-        or config.get("model", {}).get("base_url")
+        or model_config.get("base_url")
         or "https://api.z.ai/api/paas/v4"
     )
 
@@ -522,30 +826,14 @@ async def get_models(request):
 
 async def get_personalities(request):
     config = get_config()
-    built_in = [
-        "helpful",
-        "concise",
-        "technical",
-        "creative",
-        "teacher",
-        "kawaii",
-        "catgirl",
-        "pirate",
-        "shakespeare",
-        "surfer",
-        "noir",
-        "uwu",
-        "philosopher",
-        "hype",
-    ]
     custom = (
-        list(config.get("personalities", {}).keys())
-        if config.get("personalities")
+        list((config.get("agent", {}).get("personalities") or {}).keys())
+        if config.get("agent", {}).get("personalities")
         else []
     )
     return JSONResponse(
         {
-            "built_in": built_in,
+            "built_in": BUILT_IN_PERSONALITIES,
             "custom": custom,
             "current": config.get("display", {}).get("personality", "helpful"),
         }
@@ -577,9 +865,11 @@ async def set_model(request):
             {"success": False, "error": "Model required"}, status_code=400
         )
 
-    config = get_config()
+    config = get_raw_config()
     if "model" not in config:
         config["model"] = {}
+    elif isinstance(config["model"], str):
+        config["model"] = {"default": config["model"]}
     config["model"]["default"] = model
     if provider:
         config["model"]["provider"] = provider
@@ -1158,115 +1448,8 @@ async def get_cron_jobs(request):
             return JSONResponse({"jobs": [], "error": str(e)})
 
 
-KNOWN_SECRETS = {
-    "OPENROUTER_API_KEY": {
-        "name": "OpenRouter",
-        "category": "provider",
-        "url": "https://openrouter.ai/keys",
-    },
-    "ZAI_API_KEY": {
-        "name": "Z.AI / GLM",
-        "category": "provider",
-        "url": "https://z.ai",
-    },
-    "ANTHROPIC_API_KEY": {
-        "name": "Anthropic",
-        "category": "provider",
-        "url": "https://console.anthropic.com/settings/keys",
-    },
-    "OPENAI_API_KEY": {
-        "name": "OpenAI",
-        "category": "provider",
-        "url": "https://platform.openai.com/api-keys",
-    },
-    "KIMI_API_KEY": {
-        "name": "Kimi / Moonshot",
-        "category": "provider",
-        "url": "https://platform.moonshot.cn/console/api-keys",
-    },
-    "MINIMAX_API_KEY": {
-        "name": "MiniMax",
-        "category": "provider",
-        "url": "https://www.minimaxi.com/user-center/basic-information/interface-key",
-    },
-    "MINIMAX_GROUP_ID": {
-        "name": "MiniMax Group ID",
-        "category": "provider",
-        "url": "https://www.minimaxi.com/user-center/basic-information/interface-key",
-    },
-    "FIRECRAWL_API_KEY": {
-        "name": "Firecrawl",
-        "category": "tool",
-        "url": "https://www.firecrawl.dev/app/api-keys",
-    },
-    "TAVILY_API_KEY": {
-        "name": "Tavily Search",
-        "category": "tool",
-        "url": "https://app.tavily.com/home",
-    },
-    "BROWSERBASE_API_KEY": {
-        "name": "Browserbase",
-        "category": "tool",
-        "url": "https://www.browserbase.com/settings",
-    },
-    "FAL_API_KEY": {
-        "name": "FAL (Image Gen)",
-        "category": "tool",
-        "url": "https://fal.ai/dashboard/keys",
-    },
-    "ELEVENLABS_API_KEY": {
-        "name": "ElevenLabs (TTS)",
-        "category": "tool",
-        "url": "https://elevenlabs.io/app/settings/api-keys",
-    },
-    "GITHUB_TOKEN": {
-        "name": "GitHub",
-        "category": "integration",
-        "url": "https://github.com/settings/tokens",
-    },
-    "API_SERVER_KEY": {"name": "Dashboard API Key", "category": "system", "url": None},
-}
-
-
-def mask_secret(value: str) -> str:
-    if not value or len(value) < 8:
-        return "****" if value else ""
-    return value[:4] + "****" + value[-4:]
-
-
 async def get_secrets(request):
-    env = get_env()
-    secrets = []
-
-    for key, info in KNOWN_SECRETS.items():
-        value = env.get(key, "")
-        secrets.append(
-            {
-                "key": key,
-                "name": info["name"],
-                "category": info["category"],
-                "url": info["url"],
-                "configured": bool(value),
-                "masked_value": mask_secret(value),
-            }
-        )
-
-    for key, value in env.items():
-        if key not in KNOWN_SECRETS and (
-            "API_KEY" in key or "TOKEN" in key or "SECRET" in key
-        ):
-            secrets.append(
-                {
-                    "key": key,
-                    "name": key.replace("_", " ").title(),
-                    "category": "other",
-                    "url": None,
-                    "configured": bool(value),
-                    "masked_value": mask_secret(value),
-                }
-            )
-
-    return JSONResponse({"secrets": secrets})
+    return JSONResponse({"secrets": _build_secrets_payload(get_env())})
 
 
 async def set_secret(request):
@@ -1280,12 +1463,10 @@ async def set_secret(request):
             {"success": False, "error": "Key required"}, status_code=400
         )
 
-    env = get_env()
-    env[key] = value
-    save_env(env)
+    save_env_value(key, value)
 
     return JSONResponse(
-        {"success": True, "key": key, "masked_value": mask_secret(value)}
+        {"success": True, "key": key, "masked_value": _mask_secret(value)}
     )
 
 
@@ -1664,6 +1845,7 @@ routes = [
     Route("/health", health),
     Route("/api/status", get_status),
     Route("/api/config", get_config_endpoint),
+    Route("/api/settings", get_settings),
     Route("/api/config", update_config, methods=["POST"]),
     Route("/api/models", get_models),
     Route("/api/personalities", get_personalities),

@@ -63,8 +63,31 @@ The standalone dashboard expects these pieces from Hermes:
 - `hermes_constants`
 - `hermes_state`
 - `agent.session_summarizer`
+- `hermes_cli.config`
+- `hermes_cli.skin_engine`
+- `hermes_cli.tools_config`
 
 If the upstream Hermes runtime changes those import paths, update this repo’s `app.py`, `run_api_server_only.py`, and installer defaults together.
+
+## Config API Surface
+
+The standalone package now depends on the richer dashboard config surface from `app.py`:
+
+- `GET /api/config` returns raw persisted YAML
+- `GET /api/settings` returns the dashboard-oriented settings payload used by the Config tab
+- `POST /api/config` accepts dotted-path updates back into raw config
+
+`GET /api/settings` includes:
+
+- overview stats
+- normalized model metadata
+- built-in and custom personalities
+- skin metadata
+- configurable toolsets and platform metadata
+- platform toolset extras that must be preserved on save
+- metadata-driven secret coverage
+
+The frontend assumes the Config tab is rendered dynamically after `loadSettings()`. Static references to config DOM nodes before that render are unsafe.
 
 ## Auto-Start UX
 

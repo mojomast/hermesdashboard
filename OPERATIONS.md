@@ -24,6 +24,7 @@ systemctl --user enable --now hermes-dashboard-api.service hermes-dashboard-web.
 ```sh
 curl -s http://127.0.0.1:8081/
 curl -s http://127.0.0.1:8081/api/status
+curl -s http://127.0.0.1:8081/api/settings
 curl -s http://127.0.0.1:8081/api/models
 curl -s http://127.0.0.1:8081/api/graph?depth=full&hours=24
 curl -s http://127.0.0.1:8642/health
@@ -42,11 +43,18 @@ ss -ltnp | grep 8642
 
 - hard refresh the browser
 - restart the `8081` dashboard process
+- verify `GET /api/settings` returns JSON from the current code
 
 ### Chat says Hermes is unavailable
 
 - verify `8642` is listening
 - verify `API_SERVER_KEY` matches what the dashboard process is using
+
+### Config tab does not load or save
+
+- verify `GET /api/settings` succeeds
+- verify the Hermes install used by this standalone repo includes `hermes_cli.config`, `hermes_cli.skin_engine`, and `hermes_cli.tools_config`
+- if the Config tab still reflects old markup, restart `8081` and hard refresh
 
 ### Delegated task stream does not update live
 

@@ -1015,6 +1015,239 @@
             overflow-y: auto;
             padding: 1rem 0;
         }
+
+        .config-panel-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow-y: auto;
+            padding: 0.25rem 0 1rem;
+        }
+
+        .config-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .overview-stat {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 0.9rem 1rem;
+        }
+
+        .overview-stat .label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.35rem;
+        }
+
+        .overview-stat .value {
+            font-size: 1rem;
+            color: var(--text);
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .config-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.1rem;
+            margin-bottom: 1rem;
+        }
+
+        .config-section-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .config-section-header h3 {
+            color: var(--primary);
+            margin-bottom: 0.25rem;
+            font-size: 1rem;
+        }
+
+        .config-section-header p {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            max-width: 780px;
+            line-height: 1.45;
+        }
+
+        .config-fields {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.85rem 1rem;
+        }
+
+        .config-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .config-field.full {
+            grid-column: 1 / -1;
+        }
+
+        .config-field label {
+            font-size: 0.82rem;
+            color: var(--text-dim);
+        }
+
+        .config-help {
+            font-size: 0.76rem;
+            color: var(--text-dim);
+            line-height: 1.45;
+        }
+
+        .config-help code {
+            background: rgba(255,255,255,0.06);
+            padding: 0.1rem 0.3rem;
+            border-radius: 4px;
+        }
+
+        .config-section textarea,
+        .config-section select,
+        .config-section input[type="text"],
+        .config-section input[type="number"] {
+            width: 100%;
+            padding: 0.65rem 0.8rem;
+            background: var(--input-bg);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.9rem;
+        }
+
+        .config-section textarea {
+            min-height: 110px;
+            resize: vertical;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            line-height: 1.45;
+        }
+
+        .config-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-top: 0.6rem;
+        }
+
+        .config-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            font-size: 0.74rem;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-dim);
+            background: rgba(255,255,255,0.03);
+        }
+
+        .config-tag.ok {
+            color: var(--success);
+            border-color: rgba(74, 222, 128, 0.3);
+            background: rgba(74, 222, 128, 0.08);
+        }
+
+        .config-tag.warn {
+            color: var(--warning);
+            border-color: rgba(251, 191, 36, 0.3);
+            background: rgba(251, 191, 36, 0.08);
+        }
+
+        .checkbox-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.6rem;
+        }
+
+        .check-item {
+            display: flex;
+            gap: 0.65rem;
+            align-items: flex-start;
+            padding: 0.7rem 0.8rem;
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.02);
+        }
+
+        .check-item input[type="checkbox"] {
+            margin-top: 0.2rem;
+            accent-color: var(--primary);
+        }
+
+        .check-item strong {
+            display: block;
+            font-size: 0.88rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .check-item small {
+            display: block;
+            color: var(--text-dim);
+            font-size: 0.76rem;
+            line-height: 1.4;
+        }
+
+        .section-actions {
+            display: flex;
+            gap: 0.6rem;
+            justify-content: flex-end;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .advanced-editor {
+            margin-top: 0.9rem;
+            border-top: 1px solid var(--border-subtle);
+            padding-top: 0.9rem;
+        }
+
+        .advanced-editor summary {
+            cursor: pointer;
+            color: var(--text-dim);
+            font-size: 0.84rem;
+        }
+
+        .advanced-editor-body {
+            margin-top: 0.8rem;
+            display: grid;
+            gap: 0.8rem;
+        }
+
+        .subsection-title {
+            font-size: 0.85rem;
+            color: var(--primary);
+            margin: 0.1rem 0 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .readonly-block {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 0.85rem 0.9rem;
+        }
+
+        .secret-item .secret-description {
+            font-size: 0.76rem;
+            color: var(--text-dim);
+            margin-top: 0.35rem;
+            line-height: 1.4;
+        }
         
         .card {
             background: var(--bg-card);
@@ -2380,55 +2613,9 @@
         
         <!-- Config Panel -->
         <div class="panel" id="config-panel">
-            <div class="config-grid">
-                <div class="card">
-                    <h3>Model Selection</h3>
-                    <div class="form-group">
-                        <label>Provider</label>
-                        <select id="provider-select">
-                            <option value="zai">Z.AI / GLM</option>
-                            <option value="openrouter">OpenRouter</option>
-                            <option value="anthropic">Anthropic</option>
-                            <option value="nous">Nous Portal</option>
-                            <option value="kimi-coding">Kimi</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Model</label>
-                        <select id="model-select"></select>
-                    </div>
-                    <button class="btn primary" onclick="saveModel()">Apply Model</button>
-                </div>
-                
-                <div class="card">
-                    <h3>Personality</h3>
-                    <div class="form-group">
-                        <label>Select Personality</label>
-                        <select id="personality-select"></select>
-                    </div>
-                    <button class="btn primary" onclick="savePersonality()">Apply Personality</button>
-                </div>
-                
-                <div class="card">
-                    <h3>Agent Settings</h3>
-                    <div class="form-group">
-                        <label>Max Turns</label>
-                        <input type="number" id="max-turns" value="60" min="1" max="200">
-                    </div>
-                    <div class="form-group">
-                        <label>Memory</label>
-                        <select id="memory-enabled">
-                            <option value="true">Enabled</option>
-                            <option value="false">Disabled</option>
-                        </select>
-                    </div>
-                    <button class="btn primary" onclick="saveAgentSettings()">Save Settings</button>
-                </div>
-                
-                <div class="card">
-                    <h3>API Keys Status</h3>
-                    <div id="api-keys-status"></div>
-                </div>
+            <div class="config-panel-layout">
+                <div class="config-overview" id="config-overview"></div>
+                <div id="config-sections"></div>
             </div>
         </div>
         
@@ -2792,6 +2979,7 @@
         let conversation = [];
         let models = {};
         let currentConfig = {};
+        let settingsData = null;
         let debugVisible = true;
         let currentSessionFiles = [];
         let activeRun = null;
@@ -3915,7 +4103,7 @@
                 tabLoaded[panel] = true;
                 log('inf', 'Lazy-loading panel: ' + panel);
                 switch(panel) {
-                    case 'config': loadPersonalities(); break;
+                    case 'config': loadSettings(); break;
                     case 'secrets': loadSecrets(); break;
                     case 'sessions': loadSessions(); loadSessionSources(); break;
                     case 'memory': loadMemory(); break;
@@ -4001,6 +4189,263 @@
             return data;
         }
 
+        function configByPath(obj, path, fallback = undefined) {
+            let current = obj;
+            for (const part of path.split('.')) {
+                if (current == null || typeof current !== 'object' || !(part in current)) return fallback;
+                current = current[part];
+            }
+            return current;
+        }
+
+        function parseJsonField(id, fallback) {
+            const value = document.getElementById(id)?.value?.trim();
+            if (!value) return fallback;
+            try {
+                return JSON.parse(value);
+            } catch (error) {
+                throw new Error(`${id} contains invalid JSON: ${error.message}`);
+            }
+        }
+
+        function getElementValue(id, fallback = '') {
+            const element = document.getElementById(id);
+            return element ? element.value : fallback;
+        }
+
+        function getBooleanSelectValue(id, fallback = false) {
+            const value = getElementValue(id, String(fallback));
+            return value === 'true';
+        }
+
+        function getNumberValue(id, fallback = 0) {
+            const raw = getElementValue(id, String(fallback)).trim();
+            if (!raw) return fallback;
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) {
+                throw new Error(`${id} must be a valid number`);
+            }
+            return parsed;
+        }
+
+        async function postConfigUpdates(updates, successMessage) {
+            await fetchJsonOrThrow('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates),
+            });
+            invalidateCache('/api/config');
+            invalidateCache('/api/settings');
+            await loadSettings(true);
+            await loadStatus();
+            showToast(successMessage);
+        }
+
+        function renderSecretTags(keys = []) {
+            if (!settingsData || !Array.isArray(keys) || !keys.length) return '';
+            const secretMap = new Map((settingsData.secrets || []).map(item => [item.key, item]));
+            const tags = keys.map((key) => {
+                const meta = secretMap.get(key);
+                const configured = !!meta?.configured;
+                const label = meta?.name || key;
+                return `<span class="config-tag ${configured ? 'ok' : 'warn'}">${escapeHtml(label)} ${configured ? 'configured' : 'missing'}</span>`;
+            });
+            return tags.length ? `<div class="config-tags">${tags.join('')}</div>` : '';
+        }
+
+        function renderConfigOverview() {
+            const el = document.getElementById('config-overview');
+            if (!el || !settingsData) return;
+            const overview = settingsData.overview || {};
+            const byCategory = overview.secrets_by_category || {};
+            const secretSummary = Object.entries(byCategory)
+                .map(([key, value]) => `${key}: ${value.configured}/${value.total}`)
+                .join(' · ');
+            el.innerHTML = `
+                <div class="overview-stat"><span class="label">Profile Home</span><span class="value">${escapeHtml(overview.profile_home || '--')}</span></div>
+                <div class="overview-stat"><span class="label">Config Version</span><span class="value">${escapeHtml(String(overview.config_version ?? '--'))}</span></div>
+                <div class="overview-stat"><span class="label">Changed Values</span><span class="value">${escapeHtml(String(overview.changed_count ?? 0))}</span></div>
+                <div class="overview-stat"><span class="label">Configured Secrets</span><span class="value">${escapeHtml(String(overview.configured_secrets_count ?? 0))}</span></div>
+                <div class="overview-stat"><span class="label">Missing Secrets</span><span class="value">${escapeHtml(String(overview.missing_secrets_count ?? 0))}</span></div>
+                <div class="overview-stat"><span class="label">Secret Coverage</span><span class="value">${escapeHtml(secretSummary || 'No secret metadata')}</span></div>
+            `;
+        }
+
+        function renderToolsetCheckboxes(platformKey, selected, extras = []) {
+            const toolsets = settingsData?.toolsets || [];
+            return `<div class="checkbox-list">${toolsets.map((toolset) => `
+                <label class="check-item">
+                    <input type="checkbox" data-platform-toolset="${escapeHtml(platformKey)}" value="${escapeHtml(toolset.key)}" ${selected.includes(toolset.key) ? 'checked' : ''}>
+                    <div>
+                        <strong>${toolset.label}</strong>
+                        <small>${escapeHtml(toolset.description || toolset.key)}</small>
+                    </div>
+                </label>
+            `).join('')}</div>${extras.length ? `<div class="config-help" style="margin-top:0.7rem;">Preserved custom entries: ${extras.map(escapeHtml).join(', ')}</div>` : ''}`;
+        }
+
+        function renderConfigSections() {
+            const el = document.getElementById('config-sections');
+            if (!el || !settingsData) return;
+            const cfg = settingsData.config || {};
+            const model = settingsData.model || {};
+            const personality = settingsData.personality || {};
+            const memory = cfg.memory || {};
+            const display = cfg.display || {};
+            const browser = cfg.browser || {};
+            const tts = cfg.tts || {};
+            const stt = cfg.stt || {};
+            const voice = cfg.voice || {};
+            const skills = cfg.skills || {};
+            const smart = cfg.smart_model_routing || {};
+            const sessionReset = cfg.session_reset || {};
+            const platforms = (settingsData.platforms || []).filter(p => ['cli','api_server','telegram','discord','slack','whatsapp','signal','homeassistant'].includes(p.key));
+            const personalityOptions = (personality.built_in || []).map(p => `<option value="${escapeHtml(p)}" ${p === personality.current ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('') + ((personality.custom || []).length ? `<optgroup label="Custom">${(personality.custom || []).map(p => `<option value="${escapeHtml(p)}" ${p === personality.current ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}</optgroup>` : '');
+
+            el.innerHTML = `
+                <section class="config-section">
+                    <div class="config-section-header">
+                        <div>
+                            <h3>Model & Routing</h3>
+                            <p>Primary model/provider, base URL override, smart routing, fallbacks, and advanced auxiliary/delegation model slots.</p>
+                            ${renderSecretTags(['OPENROUTER_API_KEY','GLM_API_KEY','ZAI_API_KEY','OPENAI_API_KEY','KIMI_API_KEY','ANTHROPIC_API_KEY'])}
+                        </div>
+                    </div>
+                    <div class="config-fields">
+                        <div class="config-field"><label>Provider</label><select id="provider-select">${(models.providers || []).map(provider => `<option value="${escapeHtml(provider.id)}" ${provider.id === (model.provider || 'auto') ? 'selected' : ''}>${escapeHtml(provider.name)}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Model</label><select id="model-select"></select></div>
+                        <div class="config-field full"><label>Base URL Override</label><input type="text" id="model-base-url" value="${escapeHtml(model.base_url || '')}" placeholder="https://api.z.ai/api/paas/v4"></div>
+                        <div class="config-field full"><label>Fallback Providers JSON</label><textarea id="fallback-providers-json" spellcheck="false">${escapeHtml(JSON.stringify(cfg.fallback_providers || [], null, 2))}</textarea></div>
+                        <div class="config-field full"><label>Provider Routing JSON</label><textarea id="provider-routing-json" spellcheck="false">${escapeHtml(JSON.stringify(cfg.provider_routing || {}, null, 2))}</textarea></div>
+                        <div class="config-field"><label>Smart Routing</label><select id="smart-routing-enabled"><option value="true" ${smart.enabled ? 'selected' : ''}>Enabled</option><option value="false" ${!smart.enabled ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Max Simple Chars</label><input type="number" id="smart-routing-max-chars" min="1" value="${escapeHtml(String(smart.max_simple_chars ?? 160))}"></div>
+                        <div class="config-field"><label>Max Simple Words</label><input type="number" id="smart-routing-max-words" min="1" value="${escapeHtml(String(smart.max_simple_words ?? 28))}"></div>
+                        <div class="config-field full"><label>Cheap Model JSON</label><textarea id="smart-routing-cheap-model-json" spellcheck="false">${escapeHtml(JSON.stringify(smart.cheap_model || {}, null, 2))}</textarea></div>
+                        <div class="config-field full"><label>Auxiliary Models JSON</label><textarea id="auxiliary-json" spellcheck="false">${escapeHtml(JSON.stringify(cfg.auxiliary || {}, null, 2))}</textarea></div>
+                        <div class="config-field full"><label>Delegation JSON</label><textarea id="delegation-json" spellcheck="false">${escapeHtml(JSON.stringify(cfg.delegation || {}, null, 2))}</textarea></div>
+                    </div>
+                    <div class="section-actions"><button class="btn primary" onclick="saveModelRoutingSettings()">Save Model & Routing</button></div>
+                </section>
+
+                <section class="config-section">
+                    <div class="config-section-header"><div><h3>Agent & Personality</h3><p>Current personality, iteration budget, reasoning effort, and runtime custom personality definitions.</p></div></div>
+                    <div class="config-fields">
+                        <div class="config-field"><label>Personality</label><select id="personality-select">${personalityOptions}</select></div>
+                        <div class="config-field"><label>Max Turns</label><input type="number" id="max-turns" value="${escapeHtml(String((cfg.agent || {}).max_turns ?? 60))}" min="1" max="500"></div>
+                        <div class="config-field"><label>Reasoning Effort</label><select id="reasoning-effort">${(settingsData.reasoning_efforts || []).map(value => `<option value="${escapeHtml(value)}" ${(cfg.agent || {}).reasoning_effort === value ? 'selected' : ''}>${escapeHtml(value || 'default')}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Tool Use Enforcement</label><input type="text" id="tool-use-enforcement" value="${escapeHtml(String((cfg.agent || {}).tool_use_enforcement ?? 'auto'))}" placeholder="auto"></div>
+                        <div class="config-field"><label>Verbose</label><select id="agent-verbose"><option value="true" ${(cfg.agent || {}).verbose ? 'selected' : ''}>Enabled</option><option value="false" ${!(cfg.agent || {}).verbose ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field full"><label>Custom Personalities JSON</label><textarea id="custom-personalities-json" spellcheck="false">${escapeHtml(JSON.stringify(personality.custom_definitions || {}, null, 2))}</textarea><div class="config-help">Stored under <code>agent.personalities</code>.</div></div>
+                    </div>
+                    <div class="section-actions"><button class="btn primary" onclick="saveAgentPersonalitySettings()">Save Agent Settings</button></div>
+                </section>
+
+                <section class="config-section">
+                    <div class="config-section-header"><div><h3>Memory & Session</h3><p>Memory limits, flush/nudge behavior, session reset policy, privacy, and profile-scoped session behavior.</p></div></div>
+                    <div class="config-fields">
+                        <div class="config-field"><label>Memory</label><select id="memory-enabled"><option value="true" ${memory.memory_enabled ? 'selected' : ''}>Enabled</option><option value="false" ${!memory.memory_enabled ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>User Profile Memory</label><select id="user-profile-enabled"><option value="true" ${memory.user_profile_enabled ? 'selected' : ''}>Enabled</option><option value="false" ${!memory.user_profile_enabled ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Memory Char Limit</label><input type="number" id="memory-char-limit" min="0" value="${escapeHtml(String(memory.memory_char_limit ?? 2200))}"></div>
+                        <div class="config-field"><label>User Char Limit</label><input type="number" id="user-char-limit" min="0" value="${escapeHtml(String(memory.user_char_limit ?? 1375))}"></div>
+                        <div class="config-field"><label>Memory Nudge Interval</label><input type="number" id="memory-nudge-interval" min="0" value="${escapeHtml(String(memory.nudge_interval ?? 10))}"></div>
+                        <div class="config-field"><label>Flush Min Turns</label><input type="number" id="memory-flush-min-turns" min="0" value="${escapeHtml(String(memory.flush_min_turns ?? 6))}"></div>
+                        <div class="config-field"><label>Session Reset Mode</label><select id="session-reset-mode">${['both','idle','daily','none'].map(mode => `<option value="${mode}" ${mode === (sessionReset.mode || 'both') ? 'selected' : ''}>${mode}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Idle Minutes</label><input type="number" id="session-reset-idle" min="0" value="${escapeHtml(String(sessionReset.idle_minutes ?? 1440))}"></div>
+                        <div class="config-field"><label>Daily Reset Hour</label><input type="number" id="session-reset-hour" min="0" max="23" value="${escapeHtml(String(sessionReset.at_hour ?? 4))}"></div>
+                        <div class="config-field"><label>Group Sessions Per User</label><select id="group-sessions-per-user"><option value="true" ${(cfg.group_sessions_per_user ?? true) ? 'selected' : ''}>Enabled</option><option value="false" ${!(cfg.group_sessions_per_user ?? true) ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Redact PII</label><select id="privacy-redact-pii"><option value="true" ${(cfg.privacy || {}).redact_pii ? 'selected' : ''}>Enabled</option><option value="false" ${!(cfg.privacy || {}).redact_pii ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Timezone</label><input type="text" id="timezone" value="${escapeHtml(cfg.timezone || '')}" placeholder="America/New_York"></div>
+                        <div class="config-field full"><label>Prefill Messages File</label><input type="text" id="prefill-messages-file" value="${escapeHtml(cfg.prefill_messages_file || '')}" placeholder="/path/to/messages.json"></div>
+                    </div>
+                    <div class="section-actions"><button class="btn primary" onclick="saveMemorySessionSettings()">Save Memory & Session</button></div>
+                </section>
+
+                <section class="config-section">
+                    <div class="config-section-header"><div><h3>Tools & Skills</h3><p>Toolsets by platform plus skill behavior. Existing custom entries like MCP server names are preserved when saving.</p></div></div>
+                    <div class="config-fields">
+                        <div class="config-field"><label>Skill Creation Nudge Interval</label><input type="number" id="skills-creation-nudge" min="0" value="${escapeHtml(String(skills.creation_nudge_interval ?? 15))}"></div>
+                        <div class="config-field full"><label>Disabled Skills JSON</label><textarea id="skills-disabled-json" spellcheck="false">${escapeHtml(JSON.stringify(skills.disabled || [], null, 2))}</textarea></div>
+                        <div class="config-field full"><label>External Skill Dirs JSON</label><textarea id="skills-external-dirs-json" spellcheck="false">${escapeHtml(JSON.stringify(skills.external_dirs || [], null, 2))}</textarea></div>
+                    </div>
+                    <div class="advanced-editor" open>
+                        <summary>Platform Toolsets</summary>
+                        <div class="advanced-editor-body">
+                            ${platforms.map(platform => `<div><div class="subsection-title">${platform.label}</div>${renderToolsetCheckboxes(platform.key, (settingsData.resolved_platform_toolsets || {})[platform.key] || [], (settingsData.platform_toolset_extras || {})[platform.key] || [])}</div>`).join('')}
+                        </div>
+                    </div>
+                    <div class="section-actions"><button class="btn primary" onclick="saveToolsSkillsSettings()">Save Tools & Skills</button></div>
+                </section>
+
+                <section class="config-section">
+                    <div class="config-section-header"><div><h3>Browser / Web / Voice</h3><p>Browser behavior, web backend, STT/TTS providers, and voice interaction defaults.</p>${renderSecretTags(['FIRECRAWL_API_KEY','EXA_API_KEY','PARALLEL_API_KEY','TAVILY_API_KEY','BROWSERBASE_API_KEY','BROWSER_USE_API_KEY','CAMOFOX_URL','ELEVENLABS_API_KEY','VOICE_TOOLS_OPENAI_KEY','OPENAI_API_KEY','GROQ_API_KEY'])}</div></div>
+                    <div class="config-fields">
+                        <div class="config-field"><label>Web Backend</label><select id="web-backend">${(settingsData.web_backends || []).map(value => `<option value="${value}" ${value === ((cfg.web || {}).backend || 'firecrawl') ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Browser Inactivity Timeout</label><input type="number" id="browser-inactivity-timeout" min="1" value="${escapeHtml(String(browser.inactivity_timeout ?? 120))}"></div>
+                        <div class="config-field"><label>Browser Command Timeout</label><input type="number" id="browser-command-timeout" min="1" value="${escapeHtml(String(browser.command_timeout ?? 30))}"></div>
+                        <div class="config-field"><label>Record Browser Sessions</label><select id="browser-record-sessions"><option value="true" ${browser.record_sessions ? 'selected' : ''}>Enabled</option><option value="false" ${!browser.record_sessions ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Allow Private URLs</label><select id="browser-allow-private-urls"><option value="true" ${browser.allow_private_urls ? 'selected' : ''}>Enabled</option><option value="false" ${!browser.allow_private_urls ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Camofox Managed Persistence</label><select id="browser-camofox-persistence"><option value="true" ${(browser.camofox || {}).managed_persistence ? 'selected' : ''}>Enabled</option><option value="false" ${!(browser.camofox || {}).managed_persistence ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>TTS Provider</label><select id="tts-provider">${(settingsData.tts_providers || []).map(value => `<option value="${value}" ${value === (tts.provider || 'edge') ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>STT Enabled</label><select id="stt-enabled"><option value="true" ${stt.enabled ? 'selected' : ''}>Enabled</option><option value="false" ${!stt.enabled ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>STT Provider</label><select id="stt-provider">${(settingsData.stt_providers || []).map(value => `<option value="${value}" ${value === (stt.provider || 'local') ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Record Key</label><input type="text" id="voice-record-key" value="${escapeHtml(String(voice.record_key || 'ctrl+b'))}"></div>
+                        <div class="config-field"><label>Max Recording Seconds</label><input type="number" id="voice-max-recording" min="1" value="${escapeHtml(String(voice.max_recording_seconds ?? 120))}"></div>
+                        <div class="config-field"><label>Auto TTS</label><select id="voice-auto-tts"><option value="true" ${voice.auto_tts ? 'selected' : ''}>Enabled</option><option value="false" ${!voice.auto_tts ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Silence Threshold</label><input type="number" id="voice-silence-threshold" min="0" value="${escapeHtml(String(voice.silence_threshold ?? 200))}"></div>
+                        <div class="config-field"><label>Silence Duration</label><input type="number" step="0.1" id="voice-silence-duration" min="0" value="${escapeHtml(String(voice.silence_duration ?? 3))}"></div>
+                        <div class="config-field full"><label>TTS Config JSON</label><textarea id="tts-json" spellcheck="false">${escapeHtml(JSON.stringify(tts, null, 2))}</textarea></div>
+                        <div class="config-field full"><label>STT Config JSON</label><textarea id="stt-json" spellcheck="false">${escapeHtml(JSON.stringify(stt, null, 2))}</textarea></div>
+                    </div>
+                    <div class="section-actions"><button class="btn primary" onclick="saveBrowserVoiceSettings()">Save Browser / Voice</button></div>
+                </section>
+
+                <section class="config-section">
+                    <div class="config-section-header"><div><h3>Display & UX</h3><p>Display, reasoning, streaming, tool progress, and pacing settings that shape Hermes’ interactive behavior.</p></div></div>
+                    <div class="config-fields">
+                        <div class="config-field"><label>Compact UI</label><select id="display-compact"><option value="true" ${display.compact ? 'selected' : ''}>Enabled</option><option value="false" ${!display.compact ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Skin</label><select id="display-skin">${(settingsData.skins || []).map(item => `<option value="${escapeHtml(item.name)}" ${item.name === (display.skin || 'default') ? 'selected' : ''}>${escapeHtml(item.name)}${item.source === 'user' ? ' (user)' : ''}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Resume Display</label><select id="display-resume-display">${(settingsData.resume_display_modes || []).map(value => `<option value="${value}" ${value === (display.resume_display || 'full') ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Busy Input Mode</label><select id="display-busy-input-mode">${(settingsData.busy_input_modes || []).map(value => `<option value="${value}" ${value === (display.busy_input_mode || 'interrupt') ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Tool Progress</label><select id="display-tool-progress">${(settingsData.tool_progress_modes || []).map(value => `<option value="${value}" ${value === (display.tool_progress || 'all') ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Tool Preview Length</label><input type="number" id="display-tool-preview-length" min="0" value="${escapeHtml(String(display.tool_preview_length ?? 0))}"></div>
+                        <div class="config-field"><label>Show Reasoning</label><select id="display-show-reasoning"><option value="true" ${display.show_reasoning ? 'selected' : ''}>Enabled</option><option value="false" ${!display.show_reasoning ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Streaming</label><select id="display-streaming"><option value="true" ${display.streaming ? 'selected' : ''}>Enabled</option><option value="false" ${!display.streaming ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Inline Diffs</label><select id="display-inline-diffs"><option value="true" ${display.inline_diffs ? 'selected' : ''}>Enabled</option><option value="false" ${!display.inline_diffs ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Show Cost</label><select id="display-show-cost"><option value="true" ${display.show_cost ? 'selected' : ''}>Enabled</option><option value="false" ${!display.show_cost ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Background Notifications</label><select id="display-background-notifications">${(settingsData.background_notification_modes || []).map(value => `<option value="${value}" ${value === (display.background_process_notifications || 'all') ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Bell On Complete</label><select id="display-bell-on-complete"><option value="true" ${display.bell_on_complete ? 'selected' : ''}>Enabled</option><option value="false" ${!display.bell_on_complete ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Enable /verbose Command</label><select id="display-tool-progress-command"><option value="true" ${display.tool_progress_command ? 'selected' : ''}>Enabled</option><option value="false" ${!display.tool_progress_command ? 'selected' : ''}>Disabled</option></select></div>
+                        <div class="config-field"><label>Human Delay Mode</label><select id="human-delay-mode">${['off','natural','custom'].map(value => `<option value="${value}" ${value === ((cfg.human_delay || {}).mode || 'off') ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+                        <div class="config-field"><label>Human Delay Min (ms)</label><input type="number" id="human-delay-min" min="0" value="${escapeHtml(String((cfg.human_delay || {}).min_ms ?? 800))}"></div>
+                        <div class="config-field"><label>Human Delay Max (ms)</label><input type="number" id="human-delay-max" min="0" value="${escapeHtml(String((cfg.human_delay || {}).max_ms ?? 2500))}"></div>
+                    </div>
+                    <div class="section-actions"><button class="btn primary" onclick="saveDisplayUXSettings()">Save Display & UX</button></div>
+                </section>
+
+                <section class="config-section">
+                    <div class="config-section-header"><div><h3>Advanced Admin</h3><p>Raw JSON editors for the structurally complex groups that would otherwise be hidden from the dashboard.</p></div></div>
+                    <div class="config-fields">
+                        <div class="config-field full"><label>Terminal / Approvals JSON</label><textarea id="terminal-approvals-json" spellcheck="false">${escapeHtml(JSON.stringify({ terminal: cfg.terminal || {}, approvals: cfg.approvals || {}, command_allowlist: cfg.command_allowlist || [] }, null, 2))}</textarea></div>
+                        <div class="config-field full"><label>Security JSON</label><textarea id="security-json" spellcheck="false">${escapeHtml(JSON.stringify(cfg.security || {}, null, 2))}</textarea></div>
+                        <div class="config-field full"><label>Platform Behavior JSON</label><textarea id="platform-behavior-json" spellcheck="false">${escapeHtml(JSON.stringify({ discord: cfg.discord || {}, whatsapp: cfg.whatsapp || {}, streaming: cfg.streaming || {}, session_reset: cfg.session_reset || {}, group_sessions_per_user: cfg.group_sessions_per_user ?? true }, null, 2))}</textarea></div>
+                        <div class="config-field full"><label>MCP Servers JSON</label><textarea id="mcp-servers-json" spellcheck="false">${escapeHtml(JSON.stringify(cfg.mcp_servers || {}, null, 2))}</textarea></div>
+                        <div class="config-field full"><label>Cron / Quick Commands JSON</label><textarea id="cron-quick-json" spellcheck="false">${escapeHtml(JSON.stringify({ cron: cfg.cron || {}, quick_commands: cfg.quick_commands || {} }, null, 2))}</textarea></div>
+                    </div>
+                    <div class="section-actions"><button class="btn primary" onclick="saveAdvancedSettings()">Save Advanced JSON</button></div>
+                </section>
+            `;
+
+            updateModelSelect(model.default || null);
+        }
+
+        async function loadSettings(force = false) {
+            log('req', 'GET /api/settings');
+            settingsData = force ? await fetchJsonOrThrow('/api/settings') : await cachedFetch('/api/settings', 15000);
+            log('res', 'Loaded expanded config settings');
+            renderConfigOverview();
+            renderConfigSections();
+        }
+
         function syncModelControls(statusData) {
             const providerSelect = document.getElementById('provider-select');
             const modelSelect = document.getElementById('model-select');
@@ -4041,17 +4486,11 @@
             
             document.getElementById('current-model').textContent = data.model;
             document.getElementById('current-personality').textContent = `Personality: ${data.personality}`;
-            document.getElementById('max-turns').value = data.max_turns;
-            document.getElementById('memory-enabled').value = data.memory_enabled.toString();
+            const maxTurns = document.getElementById('max-turns');
+            if (maxTurns) maxTurns.value = data.max_turns;
+            const memoryEnabled = document.getElementById('memory-enabled');
+            if (memoryEnabled) memoryEnabled.value = data.memory_enabled.toString();
             syncModelControls(data);
-            
-            const keysDiv = document.getElementById('api-keys-status');
-            keysDiv.innerHTML = Object.entries(data.api_keys).map(([k, v]) => 
-                `<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.1);">
-                    <span>${k}</span>
-                    <span style="color:${v ? 'var(--success)' : 'var(--error)'}">${v ? 'configured' : 'not set'}</span>
-                </div>`
-            ).join('');
         }
         
         async function loadModels() {
@@ -4064,34 +4503,179 @@
         }
         
         function updateModelSelect(selectedModel = null) {
-            const provider = document.getElementById('provider-select').value;
+            const providerSelect = document.getElementById('provider-select');
             const modelSelect = document.getElementById('model-select');
+            if (!providerSelect || !modelSelect || !models?.providers) return;
+            const provider = providerSelect.value;
             const providerData = models.providers.find(p => p.id === provider);
             modelSelect.innerHTML = (providerData?.models || []).map(m => 
                 `<option value="${m}">${m}</option>`
             ).join('');
             if (selectedModel && (providerData?.models || []).includes(selectedModel)) {
                 modelSelect.value = selectedModel;
+            } else if ((providerData?.models || []).length) {
+                modelSelect.value = providerData.models[0];
             }
         }
-        
-        document.getElementById('provider-select').addEventListener('change', updateModelSelect);
-        
-        async function loadPersonalities() {
-            log('req', 'GET /api/personalities');
-            const resp = await fetch('/api/personalities');
-            const data = await resp.json();
-            log('res', `Loaded ${data.built_in.length} personalities`);
-            
-            const select = document.getElementById('personality-select');
-            select.innerHTML = data.built_in.map(p => 
-                `<option value="${p}" ${p === data.current ? 'selected' : ''}>${p}</option>`
-            ).join('');
-            if (data.custom.length) {
-                select.innerHTML += '<optgroup label="Custom">' + 
-                    data.custom.map(p => `<option value="${p}" ${p === data.current ? 'selected' : ''}>${p}</option>`).join('') +
-                    '</optgroup>';
+
+        document.addEventListener('change', (event) => {
+            if (event.target && event.target.id === 'provider-select') {
+                updateModelSelect();
             }
+        });
+
+        function collectPlatformToolsets() {
+            if (!settingsData) return {};
+            const existing = { ...(settingsData.raw_config?.platform_toolsets || {}) };
+            const extras = settingsData.platform_toolset_extras || {};
+            const collected = {};
+            Object.entries(existing).forEach(([platform, values]) => {
+                if (Array.isArray(values)) {
+                    collected[platform] = [...values];
+                }
+            });
+            document.querySelectorAll('[data-platform-toolset]').forEach((checkbox) => {
+                const platform = checkbox.dataset.platformToolset;
+                if (!platform) return;
+                if (!Object.prototype.hasOwnProperty.call(collected, platform)) {
+                    collected[platform] = [];
+                }
+                if (checkbox.checked) collected[platform].push(checkbox.value);
+            });
+            Object.entries(extras).forEach(([platform, values]) => {
+                if (!collected[platform]) collected[platform] = [];
+                collected[platform].push(...values);
+            });
+            Object.keys(collected).forEach((platform) => {
+                collected[platform] = Array.from(new Set(collected[platform])).sort();
+            });
+            return collected;
+        }
+
+        async function saveModelRoutingSettings() {
+            const updates = {
+                'model.provider': getElementValue('provider-select', 'auto'),
+                'model.default': getElementValue('model-select', ''),
+                'model.base_url': getElementValue('model-base-url', '').trim(),
+                'fallback_providers': parseJsonField('fallback-providers-json', []),
+                'provider_routing': parseJsonField('provider-routing-json', {}),
+                'smart_model_routing.enabled': getBooleanSelectValue('smart-routing-enabled', false),
+                'smart_model_routing.max_simple_chars': getNumberValue('smart-routing-max-chars', 160),
+                'smart_model_routing.max_simple_words': getNumberValue('smart-routing-max-words', 28),
+                'smart_model_routing.cheap_model': parseJsonField('smart-routing-cheap-model-json', {}),
+                'auxiliary': parseJsonField('auxiliary-json', {}),
+                'delegation': parseJsonField('delegation-json', {}),
+            };
+            await postConfigUpdates(updates, 'Model and routing saved');
+        }
+
+        async function saveAgentPersonalitySettings() {
+            const updates = {
+                'display.personality': getElementValue('personality-select', 'helpful'),
+                'agent.max_turns': getNumberValue('max-turns', 60),
+                'agent.reasoning_effort': getElementValue('reasoning-effort', ''),
+                'agent.tool_use_enforcement': getElementValue('tool-use-enforcement', 'auto').trim(),
+                'agent.verbose': getBooleanSelectValue('agent-verbose', false),
+                'agent.personalities': parseJsonField('custom-personalities-json', {}),
+            };
+            await postConfigUpdates(updates, 'Agent settings saved');
+        }
+
+        async function saveMemorySessionSettings() {
+            const updates = {
+                'memory.memory_enabled': getBooleanSelectValue('memory-enabled', true),
+                'memory.user_profile_enabled': getBooleanSelectValue('user-profile-enabled', true),
+                'memory.memory_char_limit': getNumberValue('memory-char-limit', 2200),
+                'memory.user_char_limit': getNumberValue('user-char-limit', 1375),
+                'memory.nudge_interval': getNumberValue('memory-nudge-interval', 10),
+                'memory.flush_min_turns': getNumberValue('memory-flush-min-turns', 6),
+                'session_reset.mode': getElementValue('session-reset-mode', 'both'),
+                'session_reset.idle_minutes': getNumberValue('session-reset-idle', 1440),
+                'session_reset.at_hour': getNumberValue('session-reset-hour', 4),
+                'group_sessions_per_user': getBooleanSelectValue('group-sessions-per-user', true),
+                'privacy.redact_pii': getBooleanSelectValue('privacy-redact-pii', false),
+                'timezone': getElementValue('timezone', '').trim(),
+                'prefill_messages_file': getElementValue('prefill-messages-file', '').trim(),
+            };
+            await postConfigUpdates(updates, 'Memory and session settings saved');
+        }
+
+        async function saveToolsSkillsSettings() {
+            const updates = {
+                'skills.creation_nudge_interval': getNumberValue('skills-creation-nudge', 15),
+                'skills.disabled': parseJsonField('skills-disabled-json', []),
+                'skills.external_dirs': parseJsonField('skills-external-dirs-json', []),
+                'platform_toolsets': collectPlatformToolsets(),
+            };
+            await postConfigUpdates(updates, 'Tools and skills settings saved');
+        }
+
+        async function saveBrowserVoiceSettings() {
+            const tts = parseJsonField('tts-json', {});
+            const stt = parseJsonField('stt-json', {});
+            tts.provider = getElementValue('tts-provider', tts.provider || 'edge');
+            stt.enabled = getBooleanSelectValue('stt-enabled', Boolean(stt.enabled));
+            stt.provider = getElementValue('stt-provider', stt.provider || 'local');
+
+            const updates = {
+                'web.backend': getElementValue('web-backend', 'firecrawl'),
+                'browser.inactivity_timeout': getNumberValue('browser-inactivity-timeout', 120),
+                'browser.command_timeout': getNumberValue('browser-command-timeout', 30),
+                'browser.record_sessions': getBooleanSelectValue('browser-record-sessions', false),
+                'browser.allow_private_urls': getBooleanSelectValue('browser-allow-private-urls', false),
+                'browser.camofox.managed_persistence': getBooleanSelectValue('browser-camofox-persistence', false),
+                'tts': tts,
+                'stt': stt,
+                'voice.record_key': getElementValue('voice-record-key', 'ctrl+b').trim(),
+                'voice.max_recording_seconds': getNumberValue('voice-max-recording', 120),
+                'voice.auto_tts': getBooleanSelectValue('voice-auto-tts', false),
+                'voice.silence_threshold': getNumberValue('voice-silence-threshold', 200),
+                'voice.silence_duration': getNumberValue('voice-silence-duration', 3),
+            };
+            await postConfigUpdates(updates, 'Browser, web, and voice settings saved');
+        }
+
+        async function saveDisplayUXSettings() {
+            const updates = {
+                'display.compact': getBooleanSelectValue('display-compact', false),
+                'display.skin': getElementValue('display-skin', 'default'),
+                'display.resume_display': getElementValue('display-resume-display', 'full'),
+                'display.busy_input_mode': getElementValue('display-busy-input-mode', 'interrupt'),
+                'display.tool_progress': getElementValue('display-tool-progress', 'all'),
+                'display.tool_preview_length': getNumberValue('display-tool-preview-length', 0),
+                'display.show_reasoning': getBooleanSelectValue('display-show-reasoning', false),
+                'display.streaming': getBooleanSelectValue('display-streaming', true),
+                'display.inline_diffs': getBooleanSelectValue('display-inline-diffs', false),
+                'display.show_cost': getBooleanSelectValue('display-show-cost', false),
+                'display.background_process_notifications': getElementValue('display-background-notifications', 'all'),
+                'display.bell_on_complete': getBooleanSelectValue('display-bell-on-complete', false),
+                'display.tool_progress_command': getBooleanSelectValue('display-tool-progress-command', false),
+                'human_delay.mode': getElementValue('human-delay-mode', 'off'),
+                'human_delay.min_ms': getNumberValue('human-delay-min', 800),
+                'human_delay.max_ms': getNumberValue('human-delay-max', 2500),
+            };
+            await postConfigUpdates(updates, 'Display and UX settings saved');
+        }
+
+        async function saveAdvancedSettings() {
+            const terminalApprovals = parseJsonField('terminal-approvals-json', {});
+            const platformBehavior = parseJsonField('platform-behavior-json', {});
+            const cronQuick = parseJsonField('cron-quick-json', {});
+            const updates = {
+                'terminal': terminalApprovals.terminal || {},
+                'approvals': terminalApprovals.approvals || {},
+                'command_allowlist': terminalApprovals.command_allowlist || [],
+                'security': parseJsonField('security-json', {}),
+                'discord': platformBehavior.discord || {},
+                'whatsapp': platformBehavior.whatsapp || {},
+                'streaming': platformBehavior.streaming || {},
+                'session_reset': platformBehavior.session_reset || {},
+                'group_sessions_per_user': Object.prototype.hasOwnProperty.call(platformBehavior, 'group_sessions_per_user') ? platformBehavior.group_sessions_per_user : true,
+                'mcp_servers': parseJsonField('mcp-servers-json', {}),
+                'cron': cronQuick.cron || {},
+                'quick_commands': cronQuick.quick_commands || {},
+            };
+            await postConfigUpdates(updates, 'Advanced settings saved');
         }
         
         async function loadSessions() {
@@ -4747,8 +5331,8 @@
         
         // Save functions
         async function saveModel() {
-            const model = document.getElementById('model-select').value;
-            const provider = document.getElementById('provider-select').value;
+            const model = getElementValue('model-select', '');
+            const provider = getElementValue('provider-select', 'auto');
             try {
                 log('req', `POST /api/model {model: ${model}, provider: ${provider}}`);
                 await fetchJsonOrThrow('/api/model', {
@@ -4766,33 +5350,11 @@
         }
         
         async function savePersonality() {
-            const personality = document.getElementById('personality-select').value;
-            log('req', `POST /api/personality {personality: ${personality}}`);
-            await fetch('/api/personality', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ personality })
-            });
-            log('res', 'Personality updated');
-            showToast('Personality updated');
-            loadStatus();
+            await saveAgentPersonalitySettings();
         }
         
         async function saveAgentSettings() {
-            const maxTurns = parseInt(document.getElementById('max-turns').value);
-            const memoryEnabled = document.getElementById('memory-enabled').value === 'true';
-            log('req', `POST /api/config {max_turns: ${maxTurns}, memory_enabled: ${memoryEnabled}}`);
-            await fetch('/api/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    'agent.max_turns': maxTurns,
-                    'memory.memory_enabled': memoryEnabled
-                })
-            });
-            log('res', 'Settings saved');
-            showToast('Settings saved');
-            loadStatus();
+            await saveMemorySessionSettings();
         }
         
         async function saveMemory(silent = false) {
@@ -4862,9 +5424,9 @@
             
             const categories = {
                 provider: [],
+                messaging: [],
                 tool: [],
-                integration: [],
-                system: [],
+                setting: [],
                 other: []
             };
             
@@ -4878,9 +5440,9 @@
             
             const categoryNames = {
                 provider: 'API Providers',
+                messaging: 'Messaging & Gateway',
                 tool: 'Tools & Services',
-                integration: 'Integrations',
-                system: 'System',
+                setting: 'Runtime Settings',
                 other: 'Other Secrets'
             };
             
@@ -4897,6 +5459,7 @@
                             <div class="secret-info">
                                 <h4>${s.name}</h4>
                                 <p>${s.key}${s.masked_value ? `: ${s.masked_value}` : ''}</p>
+                                ${s.description ? `<div class="secret-description">${escapeHtml(s.description)}</div>` : ''}
                                 ${s.url ? `<a href="${s.url}" target="_blank" class="secret-link">Get API key →</a>` : ''}
                             </div>
                             <div class="secret-actions">
@@ -6852,7 +7415,6 @@
         log('inf', 'Dashboard initialized');
         loadStatus();
         loadModels();
-        loadPersonalities();
 
         const hadActiveRun = loadActiveRun();
         
