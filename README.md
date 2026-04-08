@@ -4,6 +4,25 @@ Standalone web dashboard for the Hermes AI agent runtime.
 
 This repository packages the Hermes dashboard UI and chat proxy so other people can run the same dashboard outside the main `mojomast/hermes` monorepo.
 
+## One-Line Install
+
+Paste this into a terminal:
+
+```sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/mojomast/hermesdashboard/main/install.sh)"
+```
+
+The installer is interactive and prompts for:
+
+- your Hermes home directory
+- your Hermes runtime path
+- your Hermes venv path
+- API host and port
+- dashboard host and port
+- dashboard API key
+
+It then writes local launcher scripts so you can start the dashboard without manually re-entering paths.
+
 ## What It Includes
 
 - streaming Hermes chat UI
@@ -69,9 +88,9 @@ If your layout differs, set:
 
 ## Install
 
-1. Clone this repo.
+1. Clone this repo, or use the one-line installer.
 2. Create a Python environment for the dashboard, or reuse the Hermes venv.
-3. Install dependencies:
+3. Install dependencies if needed:
 
 ```sh
 pip install -r requirements.txt
@@ -103,6 +122,12 @@ That matters for features like:
 
 ### 1. Start the Hermes API-only server
 
+If you used the installer, this becomes:
+
+```sh
+./run-api-server.sh
+```
+
 ```sh
 cd /path/to/hermesdashboard
 
@@ -126,6 +151,12 @@ API_SERVER_KEY=your-dashboard-api-key \
 ```
 
 ### 2. Start the dashboard web app
+
+If you used the installer, this becomes:
+
+```sh
+./run-dashboard.sh
+```
 
 ```sh
 cd /path/to/hermesdashboard
@@ -151,6 +182,14 @@ http://127.0.0.1:8081
 ```
 
 ## Production-ish Background Launch
+
+If you used the installer and opted into launcher scripts:
+
+```sh
+./start-background.sh
+```
+
+Manual version:
 
 ```sh
 nohup env \
@@ -224,6 +263,8 @@ If you want to adapt this dashboard for your own Hermes deployment:
 3. Start the API-only server with `run_api_server_only.py`.
 4. Start the web app with `app.py`.
 5. Ensure your `.env` includes any keys needed by Hermes features you want surfaced in the dashboard.
+
+The easiest path for most users is the interactive installer because it writes repo-local launch scripts around their chosen Hermes paths.
 
 Important implementation note:
 

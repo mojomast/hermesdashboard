@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env.local
+run-dashboard.sh
+run-api-server.sh
+start-background.sh
