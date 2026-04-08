@@ -10,6 +10,8 @@ If you used the installer:
 ./start-background.sh
 ```
 
+Run these as your normal user, not with `sudo`.
+
 ## Optional systemd Setup
 
 If the installer generated user services on Linux:
@@ -44,6 +46,13 @@ ss -ltnp | grep 8642
 - hard refresh the browser
 - restart the `8081` dashboard process
 - verify `GET /api/settings` returns JSON from the current code
+
+### Launcher says `Permission denied`
+
+- make sure `start.sh`, `run-dashboard.sh`, and `run-api-server.sh` are executable
+- run `chmod +x ./start.sh ./run-dashboard.sh ./run-api-server.sh`
+- run them as your normal user instead of `sudo`
+- if the repo lives on a `noexec` mount, run `sh ./run-dashboard.sh` or move it to a normal executable filesystem
 
 ### Chat says Hermes is unavailable
 

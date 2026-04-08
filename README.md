@@ -29,6 +29,8 @@ cd /path/to/hermesdashboard
 ./run-dashboard.sh
 ```
 
+Run those scripts as your normal user, not with `sudo`.
+
 Then open:
 
 ```text
@@ -36,6 +38,12 @@ http://127.0.0.1:8081
 ```
 
 If your Hermes install already provides an API server, you can skip the bundled launcher and point the dashboard at it with `HERMES_API`.
+
+If you see `Permission denied` when starting the dashboard, the most likely cause is that `start.sh` is not executable. Fix it with:
+
+```sh
+chmod +x ./start.sh ./run-dashboard.sh ./run-api-server.sh
+```
 
 ## Auto-Start
 

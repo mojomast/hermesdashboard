@@ -40,6 +40,8 @@ It writes local files such as:
 - `run-dashboard.sh`
 - optional `start-background.sh`
 
+Run those scripts as your normal user. Do not use `sudo` unless your Hermes install and this dashboard repo were both intentionally set up as root-owned paths.
+
 Optional extras:
 
 - Linux user-level `systemd` units
@@ -95,6 +97,12 @@ HERMES_AGENT_PATH="$HOME/.hermes/hermes-agent" \
 HERMES_API="http://127.0.0.1:8642" \
 DASHBOARD_PORT=8081 \
 /path/to/hermes-agent/venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8081
+```
+
+If `./run-dashboard.sh` fails with `Permission denied`, make sure the launcher chain is executable:
+
+```sh
+chmod +x ./start.sh ./run-dashboard.sh ./run-api-server.sh
 ```
 
 ## Docker Wrapper

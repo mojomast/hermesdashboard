@@ -154,7 +154,7 @@ export API_SERVER_ENABLED=true
 exec "$HERMES_VENV/bin/python" "$REPO_DIR/run_api_server_only.py"
 EOF
 
-chmod +x "$REPO_DIR/run-dashboard.sh" "$REPO_DIR/run-api-server.sh"
+chmod +x "$REPO_DIR/start.sh" "$REPO_DIR/run-dashboard.sh" "$REPO_DIR/run-api-server.sh"
 
 CREATE_LAUNCHERS=$(prompt_yes_no "Create simple background launcher scripts in this repo" "y")
 if [ "$CREATE_LAUNCHERS" = "y" ]; then
