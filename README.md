@@ -35,6 +35,8 @@ Then open:
 http://127.0.0.1:8081
 ```
 
+If your Hermes install already provides an API server, you can skip the bundled launcher and point the dashboard at it with `HERMES_API`.
+
 ## Auto-Start
 
 On Linux, the installer can ask whether you want Hermes Dashboard and the Hermes API-only server to start automatically when you log in.
@@ -58,6 +60,17 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - graph visualization for sessions, files, tools, models, and skills
 - delegated task streaming inside expanded `delegate_task` blocks
 - session summaries in sessions, graph, and session detail
+
+## Upstream Compatibility
+
+This repo is intended to work with upstream Hermes installs, not just local forks.
+
+Compatibility notes:
+
+- the dashboard no longer requires `agent.session_summarizer` from the Hermes runtime
+- session summary backfill/regeneration endpoints now fall back to dashboard-local summary generation using `state.db`
+- config/env metadata features use local fallbacks when optional Hermes CLI internals are unavailable
+- if your Hermes install does not expose the bundled API-only launcher internals, use your existing Hermes API and set `HERMES_API`
 
 ## Expanded Config Surface
 

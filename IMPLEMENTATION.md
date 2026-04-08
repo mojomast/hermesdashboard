@@ -59,15 +59,19 @@ The installer should stay:
 
 The standalone dashboard expects these pieces from Hermes:
 
-- `gateway.platforms.api_server`
 - `hermes_constants`
-- `hermes_state`
-- `agent.session_summarizer`
 - `hermes_cli.config`
 - `hermes_cli.skin_engine`
 - `hermes_cli.tools_config`
 
-If the upstream Hermes runtime changes those import paths, update this repo’s `app.py`, `run_api_server_only.py`, and installer defaults together.
+Only some of those are hard dependencies now.
+
+- `hermes_constants` is used when available, but the dashboard has a local `HERMES_HOME` fallback
+- `hermes_cli.config`, `hermes_cli.skin_engine`, and `hermes_cli.tools_config` are used when available, but the dashboard now has local fallbacks for config/env handling, skins, toolset metadata, and secret metadata
+- `agent.session_summarizer` is no longer required; summary regeneration/backfill is implemented locally in the dashboard repo
+- `gateway.platforms.api_server` is only needed if the user wants to use `run_api_server_only.py`
+
+If the upstream Hermes runtime changes those import paths, the fallback behavior should keep the dashboard usable. The bundled API-only launcher remains the most fragile integration point.
 
 ## Config API Surface
 

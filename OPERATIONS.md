@@ -49,12 +49,23 @@ ss -ltnp | grep 8642
 
 - verify `8642` is listening
 - verify `API_SERVER_KEY` matches what the dashboard process is using
+- if you are not using the bundled launcher, verify `HERMES_API` points at your real Hermes API server
 
 ### Config tab does not load or save
 
 - verify `GET /api/settings` succeeds
 - verify the Hermes install used by this standalone repo includes `hermes_cli.config`, `hermes_cli.skin_engine`, and `hermes_cli.tools_config`
 - if the Config tab still reflects old markup, restart `8081` and hard refresh
+
+### Summary endpoints fail on an upstream Hermes install
+
+- this repo no longer depends on `agent.session_summarizer`; summary regeneration/backfill should work from `state.db`
+- if it still fails, verify the dashboard can read the target `HERMES_HOME/state.db`
+
+### Bundled API-only launcher fails to start
+
+- some Hermes installs do not expose the internal gateway modules used by `run_api_server_only.py`
+- in that case, start Hermes API using your normal runtime path and set `HERMES_API` for the dashboard instead of using the bundled launcher
 
 ### Sessions list still shows poor titles
 

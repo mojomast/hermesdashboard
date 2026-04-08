@@ -19,23 +19,200 @@ from sse_starlette.sse import EventSourceResponse
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "hermes-agent"))
 
-from hermes_constants import display_hermes_home, get_hermes_home
-from hermes_state import SessionDB
-from agent.session_summarizer import backfill_session_summaries, refresh_session_summary
-from hermes_cli.config import (
-    DEFAULT_CONFIG,
-    OPTIONAL_ENV_VARS,
-    load_config as load_hermes_config,
-    load_env as load_hermes_env,
-    save_config as save_hermes_config,
-    save_env_value,
-)
-from hermes_cli.skin_engine import list_skins
-from hermes_cli.tools_config import (
-    CONFIGURABLE_TOOLSETS,
-    PLATFORMS,
-    _get_platform_tools,
-)
+try:
+    from hermes_constants import display_hermes_home, get_hermes_home
+except Exception:
+
+    def get_hermes_home() -> Path:
+        return Path(os.getenv("HERMES_HOME", "~/.hermes")).expanduser().resolve()
+
+    def display_hermes_home() -> str:
+        return str(get_hermes_home())
+
+
+try:
+    from hermes_cli.config import (
+        DEFAULT_CONFIG,
+        OPTIONAL_ENV_VARS,
+        load_config as load_hermes_config,
+        load_env as load_hermes_env,
+        save_config as save_hermes_config,
+        save_env_value,
+    )
+except Exception:
+    DEFAULT_CONFIG = {
+        "_config_version": 0,
+        "model": "anthropic/claude-opus-4.6",
+        "agent": {"max_turns": 90, "tool_use_enforcement": "auto"},
+        "memory": {
+            "memory_enabled": True,
+            "user_profile_enabled": True,
+            "memory_char_limit": 22000,
+            "user_char_limit": 13750,
+            "nudge_interval": 10,
+            "flush_min_turns": 6,
+        },
+        "display": {"personality": "helpful", "skin": "default"},
+        "browser": {
+            "inactivity_timeout": 120,
+            "command_timeout": 30,
+            "record_sessions": False,
+            "allow_private_urls": False,
+            "camofox": {"managed_persistence": False},
+        },
+        "web": {"backend": "firecrawl"},
+        "voice": {
+            "record_key": "ctrl+b",
+            "max_recording_seconds": 120,
+            "auto_tts": False,
+            "silence_threshold": 200,
+            "silence_duration": 3,
+        },
+        "session_reset": {"mode": "both", "idle_minutes": 1440, "at_hour": 4},
+        "skills": {"external_dirs": [], "disabled": [], "creation_nudge_interval": 15},
+        "platform_toolsets": {},
+    }
+    OPTIONAL_ENV_VARS = {
+        "OPENROUTER_API_KEY": {
+            "description": "OpenRouter API key",
+            "prompt": "OpenRouter API key",
+            "url": "https://openrouter.ai/keys",
+            "password": True,
+            "category": "provider",
+        },
+        "ZAI_API_KEY": {
+            "description": "Z.AI / GLM API key",
+            "prompt": "Z.AI API key",
+            "url": "https://z.ai",
+            "password": True,
+            "category": "provider",
+        },
+        "GLM_API_KEY": {
+            "description": "Z.AI / GLM API key",
+            "prompt": "GLM API key",
+            "url": "https://z.ai",
+            "password": True,
+            "category": "provider",
+        },
+        "FIRECRAWL_API_KEY": {
+            "description": "Firecrawl API key",
+            "prompt": "Firecrawl API key",
+            "url": "https://www.firecrawl.dev/app/api-keys",
+            "password": True,
+            "category": "tool",
+        },
+        "TAVILY_API_KEY": {
+            "description": "Tavily API key",
+            "prompt": "Tavily API key",
+            "url": "https://app.tavily.com/home",
+            "password": True,
+            "category": "tool",
+        },
+        "BROWSERBASE_API_KEY": {
+            "description": "Browserbase API key",
+            "prompt": "Browserbase API key",
+            "url": "https://www.browserbase.com/settings",
+            "password": True,
+            "category": "tool",
+        },
+    }
+
+    def load_hermes_config():
+        config_path = get_hermes_home() / "config.yaml"
+        if not config_path.exists():
+            return json.loads(json.dumps(DEFAULT_CONFIG))
+        try:
+            with open(config_path) as f:
+                raw = yaml.safe_load(f) or {}
+        except Exception:
+            raw = {}
+        merged = json.loads(json.dumps(DEFAULT_CONFIG))
+
+        def merge(dst, src):
+            for key, value in (src or {}).items():
+                if isinstance(value, dict) and isinstance(dst.get(key), dict):
+                    merge(dst[key], value)
+                else:
+                    dst[key] = value
+
+        merge(merged, raw)
+        return merged
+
+    def load_hermes_env():
+        env = {}
+        env_path = get_hermes_home() / ".env"
+        if env_path.exists():
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, value = line.partition("=")
+                        env[key] = value
+        return env
+
+    def save_hermes_config(config):
+        config_path = get_hermes_home() / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
+
+    def save_env_value(key, value):
+        env = load_hermes_env()
+        env[key] = value
+        env_path = get_hermes_home() / ".env"
+        with open(env_path, "w") as f:
+            for env_key, env_value in env.items():
+                f.write(f"{env_key}={env_value}\n")
+
+
+try:
+    from hermes_cli.skin_engine import list_skins
+except Exception:
+
+    def list_skins():
+        return [{"name": "default", "source": "builtin"}]
+
+
+try:
+    from hermes_cli.tools_config import (
+        CONFIGURABLE_TOOLSETS,
+        PLATFORMS,
+        _get_platform_tools,
+    )
+except Exception:
+    CONFIGURABLE_TOOLSETS = [
+        ("browser", "Browser", "Browser automation"),
+        ("code_execution", "Code Execution", "Sandboxed code execution"),
+        ("delegation", "Delegation", "Subagent delegation"),
+        ("file", "File", "File read and write tools"),
+        ("memory", "Memory", "Persistent memory tools"),
+        ("session_search", "Session Search", "Session recall and search"),
+        ("skills", "Skills", "Skill browsing and use"),
+        ("terminal", "Terminal", "Shell command execution"),
+        ("todo", "Todo", "Structured task tracking"),
+        ("web", "Web", "Web search and extraction"),
+    ]
+    PLATFORMS = {
+        "cli": {"label": "CLI", "default_toolset": "hermes-cli"},
+        "api_server": {"label": "API Server", "default_toolset": "hermes-api"},
+        "telegram": {"label": "Telegram", "default_toolset": "hermes-telegram"},
+        "discord": {"label": "Discord", "default_toolset": "hermes-discord"},
+        "slack": {"label": "Slack", "default_toolset": "hermes-slack"},
+        "whatsapp": {"label": "WhatsApp", "default_toolset": "hermes-whatsapp"},
+        "signal": {"label": "Signal", "default_toolset": "hermes-signal"},
+        "homeassistant": {
+            "label": "Home Assistant",
+            "default_toolset": "hermes-homeassistant",
+        },
+    }
+
+    def _get_platform_tools(config, platform):
+        toolsets = config.get("platform_toolsets", {}) or {}
+        values = toolsets.get(platform)
+        if isinstance(values, list) and values:
+            return values
+        default_toolset = PLATFORMS.get(platform, {}).get("default_toolset")
+        return [default_toolset] if default_toolset else []
+
 
 HERMES_API = os.getenv("HERMES_API", "http://127.0.0.1:8642")
 HERMES_HOME = get_hermes_home()
@@ -372,6 +549,79 @@ def _session_overview_payload(conn: sqlite3.Connection, session_id: str) -> dict
     }
 
 
+def _extract_summary_from_messages(
+    messages: list[dict], session_meta: Optional[dict] = None
+) -> Optional[str]:
+    session_meta = session_meta or {}
+    title = str(session_meta.get("title") or "").strip()
+    user_messages = []
+    tool_names = []
+    for msg in messages:
+        role = str(msg.get("role") or "")
+        content = str(msg.get("content") or "").strip()
+        if role == "user" and content:
+            user_messages.append(content)
+        tool_calls = msg.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                func = (
+                    tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+                )
+                name = str(func.get("name") or tool_call.get("name") or "").strip()
+                if name:
+                    tool_names.append(name)
+        tool_name = str(msg.get("tool_name") or "").strip()
+        if role == "tool" and tool_name:
+            tool_names.append(tool_name)
+
+    if not user_messages and not title:
+        return None
+
+    first_user = user_messages[0] if user_messages else title
+    summary = first_user.replace("\n", " ").strip()
+    if len(summary) > 220:
+        summary = summary[:219].rstrip() + "..."
+    unique_tools = []
+    for name in tool_names:
+        if name not in unique_tools:
+            unique_tools.append(name)
+    if unique_tools:
+        tool_text = ", ".join(unique_tools[:4])
+        summary = f"{summary} Tools: {tool_text}."
+    return summary.strip() or None
+
+
+def _refresh_local_session_summary(
+    conn: sqlite3.Connection, session_id: str
+) -> Optional[str]:
+    conn.row_factory = sqlite3.Row
+    session_meta = conn.execute(
+        "SELECT id, title, source, model FROM sessions WHERE id = ?",
+        (session_id,),
+    ).fetchone()
+    if not session_meta:
+        return None
+    message_rows = conn.execute(
+        "SELECT role, content, tool_calls, tool_name FROM messages WHERE session_id = ? ORDER BY timestamp, id",
+        (session_id,),
+    ).fetchall()
+    messages = []
+    for row in message_rows:
+        item = dict(row)
+        if item.get("tool_calls"):
+            try:
+                item["tool_calls"] = json.loads(item["tool_calls"])
+            except Exception:
+                pass
+        messages.append(item)
+    summary = _extract_summary_from_messages(messages, dict(session_meta))
+    if not summary:
+        return None
+    conn.execute("UPDATE sessions SET summary = ? WHERE id = ?", (summary, session_id))
+    conn.commit()
+    return summary
+
+
 def get_raw_config():
     config_path = HERMES_HOME / "config.yaml"
     if config_path.exists():
@@ -397,6 +647,12 @@ def save_env(env):
     with open(env_path, "w") as f:
         for key, value in env.items():
             f.write(f"{key}={value}\n")
+
+
+def _save_env_value_local(key: str, value: str) -> None:
+    env = get_env()
+    env[key] = value
+    save_env(env)
 
 
 def _mask_secret(value: str) -> str:
@@ -1064,19 +1320,53 @@ async def backfill_session_summaries_endpoint(request):
 
     limit = max(1, min(int(data.get("limit", 50) or 50), 500))
     force = bool(data.get("force", False))
-    db = SessionDB(HERMES_HOME / "state.db")
+    db_path = HERMES_HOME / "state.db"
+    if not db_path.exists():
+        return JSONResponse(
+            {"success": True, "processed": 0, "updated": 0, "failed": 0}
+        )
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
     try:
-        result = backfill_session_summaries(db, limit=limit, force=force)
-        return JSONResponse({"success": True, **result})
+        query = (
+            "SELECT id FROM sessions ORDER BY started_at DESC LIMIT ?"
+            if force
+            else "SELECT id FROM sessions WHERE summary IS NULL OR trim(summary) = '' ORDER BY started_at DESC LIMIT ?"
+        )
+        rows = conn.execute(query, (limit,)).fetchall()
+        processed = 0
+        updated = 0
+        failed = 0
+        for row in rows:
+            processed += 1
+            try:
+                if _refresh_local_session_summary(conn, row["id"]):
+                    updated += 1
+            except Exception:
+                failed += 1
+        return JSONResponse(
+            {
+                "success": True,
+                "processed": processed,
+                "updated": updated,
+                "failed": failed,
+            }
+        )
     finally:
-        db.close()
+        conn.close()
 
 
 async def regenerate_session_summary_endpoint(request):
     session_id = request.path_params["session_id"]
-    db = SessionDB(HERMES_HOME / "state.db")
+    db_path = HERMES_HOME / "state.db"
+    if not db_path.exists():
+        return JSONResponse(
+            {"success": False, "error": "No sessions database"}, status_code=404
+        )
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
     try:
-        summary = refresh_session_summary(db, session_id)
+        summary = _refresh_local_session_summary(conn, session_id)
         if not summary:
             return JSONResponse(
                 {"success": False, "error": "Failed to generate summary"},
@@ -1084,7 +1374,7 @@ async def regenerate_session_summary_endpoint(request):
             )
         return JSONResponse({"success": True, "summary": summary})
     finally:
-        db.close()
+        conn.close()
 
 
 def _dashboard_allowed_roots() -> list[Path]:
@@ -1500,7 +1790,10 @@ async def set_secret(request):
             {"success": False, "error": "Key required"}, status_code=400
         )
 
-    save_env_value(key, value)
+    try:
+        save_env_value(key, value)
+    except Exception:
+        _save_env_value_local(key, value)
 
     return JSONResponse(
         {"success": True, "key": key, "masked_value": _mask_secret(value)}
