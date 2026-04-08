@@ -138,8 +138,12 @@ The dashboard session experience is designed to be more scannable and more debug
 - session titles now come from the same transcript-based summarization path used for session summaries in Hermes
 - missing titles and summaries can be backfilled automatically through the dashboard maintenance endpoints
 - the dashboard also runs a small startup maintenance pass to repair older missing titles/summaries automatically
+- graph session nodes now fall back to summary-derived labels when a stored title is still missing
+- graph edges connect sessions to skills when persisted `skill_manage` activity shows a skill was used
 - session detail now includes stored metadata such as model, timing, lineage, tokens, and cost
 - assistant messages can show persisted reasoning/debug fields when Hermes recorded them
+- the Sessions panel can attach Chat to an existing session via `Use in Chat`
+- summary regeneration uses dashboard-local metadata refresh, including forced recomputation when needed
 
 ## Secrets Tab
 

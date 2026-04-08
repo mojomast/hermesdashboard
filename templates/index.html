@@ -3051,12 +3051,14 @@
         let debugVisible = true;
         let currentSessionFiles = [];
         let activeRun = null;
+        let activeChatSessionId = null;
         
         // LocalStorage persistence
         // Version the cache key so stale chat history from older dashboard
         // builds cannot keep steering new conversations unexpectedly.
         const STORAGE_KEY = 'hermes_dashboard_conversation_v2';
         const ACTIVE_RUN_KEY = 'hermes_dashboard_active_run_v1';
+        const ACTIVE_CHAT_SESSION_KEY = 'hermes_dashboard_active_chat_session_v1';
         
         function saveConversation() {
             try {
@@ -3112,6 +3114,56 @@
         function clearActiveRun() {
             activeRun = null;
             saveActiveRun();
+        }
+
+        function saveActiveChatSession() {
+            try {
+                if (activeChatSessionId) {
+                    localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, activeChatSessionId);
+                } else {
+                    localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
+                }
+            } catch (e) {
+                log('warn', 'Failed to save active chat session: ' + e.message);
+            }
+        }
+
+        function loadActiveChatSession() {
+            try {
+                activeChatSessionId = localStorage.getItem(ACTIVE_CHAT_SESSION_KEY) || null;
+            } catch (e) {
+                activeChatSessionId = null;
+                log('warn', 'Failed to load active chat session: ' + e.message);
+            }
+        }
+
+        function updateActiveChatBanner() {
+            const banner = document.getElementById('current-personality');
+            if (!banner) return;
+            const base = banner.dataset.baseText || banner.textContent;
+            banner.dataset.baseText = base;
+            banner.textContent = activeChatSessionId ? `${base} • Continuing session ${activeChatSessionId.slice(0, 8)}` : base;
+        }
+
+        function attachChatToSession(sessionId) {
+            activeChatSessionId = sessionId;
+            conversation = [];
+            saveConversation();
+            clearActiveRun();
+            renderConversation();
+            updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
+            saveActiveChatSession();
+            updateActiveChatBanner();
+            showToast(`Chat attached to session ${sessionId.slice(0, 8)}`);
+            navigateTo('chat');
+        }
+
+        function detachChatSession() {
+            activeChatSessionId = null;
+            saveActiveChatSession();
+            clearChat();
+            updateActiveChatBanner();
+            showToast('Started a new chat');
         }
         
         function renderConversation() {
@@ -4779,6 +4831,7 @@
                         <p>${escapeHtml(s.summary || s.preview || 'No preview')} · ${new Date(s.started_at).toLocaleDateString()}</p>
                     </div>
                     <div class="session-actions">
+                        <button class="btn" onclick="event.stopPropagation();attachChatToSession('${s.id}')">Use in Chat</button>
                         <button class="export-btn" onclick="event.stopPropagation();exportSession('${s.id}')" title="Export JSON">Export</button>
                         <button class="btn" onclick="event.stopPropagation();deleteSession('${s.id}')">Delete</button>
                     </div>
@@ -4849,6 +4902,14 @@
             const detail = document.getElementById('session-detail');
             const messages = document.getElementById('session-detail-messages');
             document.getElementById('session-detail-title').textContent = data.title || `Session ${id.slice(0, 8)}`;
+            const detailActions = document.querySelector('#session-detail .detail-actions');
+            if (detailActions) {
+                detailActions.innerHTML = `
+                    <button class="btn" onclick="attachChatToSession('${id}')">Use in Chat</button>
+                    <button class="btn" id="session-regenerate-summary-btn" onclick="regenerateSessionSummary()">Regenerate Summary</button>
+                    <button class="btn" onclick="closeSessionDetail()">Close</button>
+                `;
+            }
 
             const mergedMessages = [];
             const pendingAssistantByTool = new Map();
@@ -5846,7 +5907,7 @@
                 runId: `run_${Date.now()}_${Math.random().toString(16).slice(2)}`,
                 eventOffset: 0,
                 startedAt: Date.now(),
-                sessionId: null,
+                sessionId: activeChatSessionId,
                 assistantState: null,
             };
             saveActiveRun();
@@ -5875,7 +5936,10 @@
             conversation = [];
             localStorage.removeItem(STORAGE_KEY);
             clearActiveRun();
+            activeChatSessionId = null;
+            saveActiveChatSession();
             updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
+            updateActiveChatBanner();
             log('inf', 'Chat cleared');
         }
         
@@ -7586,6 +7650,7 @@
 
         // Initialize (lazy: only load essentials for chat)
         log('inf', 'Dashboard initialized');
+        loadActiveChatSession();
         loadStatus();
         loadModels();
 
@@ -7620,6 +7685,8 @@
                 sendBtn.disabled = false;
             });
         }
+
+        updateActiveChatBanner();
         
         userInput.focus();
 

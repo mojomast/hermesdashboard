@@ -612,7 +612,7 @@ def _extract_title_from_messages(
 
 
 def _refresh_local_session_metadata(
-    conn: sqlite3.Connection, session_id: str
+    conn: sqlite3.Connection, session_id: str, force: bool = False
 ) -> dict[str, Optional[str]]:
     conn.row_factory = sqlite3.Row
     session_meta = conn.execute(
@@ -637,13 +637,17 @@ def _refresh_local_session_metadata(
     meta = dict(session_meta)
     generated_title = None
     generated_summary = None
-    if not str(meta.get("title") or "").strip():
+    if force or not str(meta.get("title") or "").strip():
         generated_title = _extract_title_from_messages(messages, meta)
-    if not str(meta.get("summary") or "").strip():
+    if generated_title:
+        meta["title"] = generated_title
+    if force or not str(meta.get("summary") or "").strip():
         generated_summary = _extract_summary_from_messages(messages, meta)
     if generated_title or generated_summary:
         conn.execute(
-            "UPDATE sessions SET title = COALESCE(?, title), summary = COALESCE(?, summary) WHERE id = ?",
+            "UPDATE sessions SET title = COALESCE(?, title), summary = COALESCE(?, summary) WHERE id = ?"
+            if not force
+            else "UPDATE sessions SET title = ?, summary = ? WHERE id = ?",
             (generated_title, generated_summary, session_id),
         )
         conn.commit()
@@ -1245,7 +1249,15 @@ async def get_sessions(request):
             """
 
         cursor = conn.execute(query, params + [limit, offset])
-        sessions = [dict(row) for row in cursor.fetchall()]
+        sessions = []
+        for row in cursor.fetchall():
+            item = dict(row)
+            item["title"] = _session_label(
+                item.get("title"),
+                item.get("summary") or item.get("preview"),
+                item.get("id", ""),
+            )
+            sessions.append(item)
         conn.close()
 
         return JSONResponse({"sessions": sessions, "total": total})
@@ -1395,7 +1407,14 @@ async def regenerate_session_summary_endpoint(request):
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        refreshed = _refresh_local_session_metadata(conn, session_id)
+        exists = conn.execute(
+            "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not exists:
+            return JSONResponse(
+                {"success": False, "error": "Session not found"}, status_code=404
+            )
+        refreshed = _refresh_local_session_metadata(conn, session_id, force=True)
         if not refreshed.get("summary") and not refreshed.get("title"):
             return JSONResponse(
                 {"success": False, "error": "Failed to generate summary"},
@@ -1937,6 +1956,42 @@ def _parse_skill_frontmatter(content: str) -> dict:
         return {}
 
 
+def _extract_skill_ids_from_payload(payload) -> list[str]:
+    skill_ids: list[str] = []
+
+    def _collect(value):
+        if isinstance(value, str):
+            if value and value not in skill_ids:
+                skill_ids.append(value)
+        elif isinstance(value, dict):
+            for key in ("skill_id", "name", "id"):
+                maybe = value.get(key)
+                if isinstance(maybe, str) and maybe and maybe not in skill_ids:
+                    skill_ids.append(maybe)
+            for nested in value.values():
+                _collect(nested)
+        elif isinstance(value, list):
+            for item in value:
+                _collect(item)
+
+    _collect(payload)
+    return skill_ids
+
+
+def _session_label(title, summary, session_id: str) -> str:
+    clean_title = " ".join(str(title or "").split()).strip()
+    if clean_title:
+        return clean_title
+    clean_summary = " ".join(str(summary or "").split()).strip()
+    if clean_summary:
+        return (
+            clean_summary[:77].rstrip() + "..."
+            if len(clean_summary) > 80
+            else clean_summary
+        )
+    return session_id[:8]
+
+
 async def get_graph_data(request):
     """
     Return nodes and edges for a relationship graph visualization.
@@ -2019,12 +2074,13 @@ async def get_graph_data(request):
             ).fetchall()
 
         model_counts: dict[str, int] = {}
+        session_skill_edges: set[tuple[str, str]] = set()
 
         for s in sessions:
             sid = f"session:{s['id']}"
             _add_node(
                 sid,
-                s["title"] or s["id"][:8],
+                _session_label(s["title"], s["summary"], s["id"]),
                 "session",
                 session_id=s["id"],
                 source=s["source"],
@@ -2075,72 +2131,88 @@ async def get_graph_data(request):
         # --- 2. Tool + file nodes (full depth only) ---
         if depth == "full":
             tool_counts: dict[str, int] = {}
+            pending_skill_calls: dict[tuple[str, str], set[str]] = {}
 
             if since_ts is not None:
                 msgs = conn.execute(
-                    """SELECT session_id, tool_calls
+                    """SELECT session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, id
                        FROM messages
-                       WHERE tool_calls IS NOT NULL AND tool_calls != ''
-                         AND session_id IN (SELECT id FROM sessions WHERE started_at >= ?)""",
+                       WHERE session_id IN (SELECT id FROM sessions WHERE started_at >= ?)
+                       ORDER BY timestamp, id""",
                     (since_ts,),
                 ).fetchall()
             else:
                 msgs = conn.execute(
-                    """SELECT session_id, tool_calls
+                    """SELECT session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, id
                        FROM messages
-                       WHERE tool_calls IS NOT NULL AND tool_calls != ''"""
+                       ORDER BY timestamp, id"""
                 ).fetchall()
 
             for msg in msgs:
                 session_id = msg["session_id"]
                 sid = f"session:{session_id}"
                 tc_data = _safe_json_loads(msg["tool_calls"])
-                if not isinstance(tc_data, list):
-                    continue
+                if isinstance(tc_data, list):
+                    for tc in tc_data:
+                        if not isinstance(tc, dict):
+                            continue
+                        func = tc.get("function", {})
+                        tool_name = func.get("name", "")
+                        if not tool_name:
+                            continue
 
-                for tc in tc_data:
-                    if not isinstance(tc, dict):
-                        continue
-                    func = tc.get("function", {})
-                    tool_name = func.get("name", "")
-                    if not tool_name:
-                        continue
+                        tool_id = f"tool:{tool_name}"
+                        tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
 
-                    # Tool node
-                    tool_id = f"tool:{tool_name}"
-                    tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+                        edges.append(
+                            {
+                                "source": sid,
+                                "target": tool_id,
+                                "type": "used_tool",
+                            }
+                        )
 
-                    # Session → tool edge
-                    edges.append(
-                        {
-                            "source": sid,
-                            "target": tool_id,
-                            "type": "used_tool",
-                        }
-                    )
+                        args_str = func.get("arguments", "")
+                        args_data = _safe_json_loads(args_str)
+                        if args_data:
+                            file_paths = _collect_paths_from_payload(args_data)
+                            for fp in file_paths:
+                                file_id = f"file:{fp}"
+                                _add_node(
+                                    file_id,
+                                    Path(fp).name,
+                                    "file",
+                                    path=fp,
+                                    basename=Path(fp).name,
+                                    category=_infer_file_category(fp),
+                                )
+                                edges.append(
+                                    {
+                                        "source": sid,
+                                        "target": file_id,
+                                        "type": "accessed",
+                                    }
+                                )
 
-                    # Extract file paths from tool arguments
-                    args_str = func.get("arguments", "")
-                    args_data = _safe_json_loads(args_str)
-                    if args_data:
-                        file_paths = _collect_paths_from_payload(args_data)
-                        for fp in file_paths:
-                            file_id = f"file:{fp}"
-                            _add_node(
-                                file_id,
-                                Path(fp).name,
-                                "file",
-                                path=fp,
-                                basename=Path(fp).name,
-                                category=_infer_file_category(fp),
+                        if tool_name == "skill_manage":
+                            skill_ids = (
+                                set(_extract_skill_ids_from_payload(args_data))
+                                if args_data
+                                else set()
                             )
-                            edges.append(
-                                {
-                                    "source": sid,
-                                    "target": file_id,
-                                    "type": "accessed",
-                                }
-                            )
+                            pending_skill_calls[
+                                (session_id, str(tc.get("id") or ""))
+                            ] = skill_ids
+
+                if str(msg["role"] or "") == "tool":
+                    key = (session_id, str(msg["tool_call_id"] or ""))
+                    skill_ids = pending_skill_calls.get(key)
+                    if skill_ids is not None:
+                        parsed_result = _safe_json_loads(msg["content"] or "")
+                        for skill_id in _extract_skill_ids_from_payload(parsed_result):
+                            skill_ids.add(skill_id)
+                        for skill_id in skill_ids:
+                            session_skill_edges.add((session_id, skill_id))
 
             # Add tool nodes (after counting)
             for tool_name, count in tool_counts.items():
@@ -2203,6 +2275,15 @@ async def get_graph_data(request):
                                             "type": "relates_to",
                                         }
                                     )
+
+                for session_id, skill_id in sorted(session_skill_edges):
+                    edges.append(
+                        {
+                            "source": f"session:{session_id}",
+                            "target": f"skill:{skill_id}",
+                            "type": "used_skill",
+                        }
+                    )
 
     except Exception as e:
         return JSONResponse(
