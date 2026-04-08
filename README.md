@@ -79,6 +79,15 @@ Highlights:
 - complex nested groups use JSON editors instead of lossy field-by-field forms
 - custom personalities are stored at `agent.personalities`
 - `platform_toolsets` preserves custom non-configurable entries such as MCP server names
+- larger memory defaults are surfaced cleanly in Config: `memory.memory_char_limit=22000` and `memory.user_char_limit=13750`
+
+## Sessions UX
+
+The dashboard session experience is designed to be more scannable and more debuggable.
+
+- session titles now come from the same transcript-based summarization path used for session summaries in Hermes
+- session detail now includes stored metadata such as model, timing, lineage, tokens, and cost
+- assistant messages can show persisted reasoning/debug fields when Hermes recorded them
 
 ## Secrets Tab
 

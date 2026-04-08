@@ -56,6 +56,16 @@ ss -ltnp | grep 8642
 - verify the Hermes install used by this standalone repo includes `hermes_cli.config`, `hermes_cli.skin_engine`, and `hermes_cli.tools_config`
 - if the Config tab still reflects old markup, restart `8081` and hard refresh
 
+### Sessions list still shows poor titles
+
+- verify the Hermes runtime includes the newer transcript-based auto-title generation
+- regenerate session summaries/titles only affects new sessions automatically; older sessions may still need manual cleanup or future backfill tooling
+
+### Session detail still feels sparse
+
+- verify `GET /api/sessions/{id}` includes token, cost, lineage, and reasoning fields from the current Hermes runtime
+- restart `8081` and hard refresh after upgrading the dashboard code
+
 ### Delegated task stream does not update live
 
 - restart both `8642` and `8081`

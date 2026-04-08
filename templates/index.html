@@ -1605,6 +1605,74 @@
             letter-spacing: 0.05em;
             margin-bottom: 0.35rem;
         }
+
+        .session-overview {
+            margin-bottom: 1rem;
+            padding: 0.9rem 1rem;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .session-overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+        }
+
+        .session-overview-item {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px;
+            padding: 0.65rem 0.75rem;
+        }
+
+        .session-overview-item .label {
+            display: block;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+        }
+
+        .session-overview-item .value {
+            font-size: 0.88rem;
+            word-break: break-word;
+        }
+
+        .session-debug-block {
+            margin-top: 0.8rem;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding-top: 0.8rem;
+        }
+
+        .session-debug-block details {
+            margin-bottom: 0.6rem;
+        }
+
+        .session-debug-block summary {
+            cursor: pointer;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+        }
+
+        .session-debug-block pre {
+            margin-top: 0.45rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.78rem;
+        }
+
+        .session-message-meta {
+            margin-bottom: 0.35rem;
+            font-size: 0.74rem;
+            color: var(--text-dim);
+            display: flex;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
         
         .clear-btn {
             position: fixed;
@@ -4345,8 +4413,8 @@
                     <div class="config-fields">
                         <div class="config-field"><label>Memory</label><select id="memory-enabled"><option value="true" ${memory.memory_enabled ? 'selected' : ''}>Enabled</option><option value="false" ${!memory.memory_enabled ? 'selected' : ''}>Disabled</option></select></div>
                         <div class="config-field"><label>User Profile Memory</label><select id="user-profile-enabled"><option value="true" ${memory.user_profile_enabled ? 'selected' : ''}>Enabled</option><option value="false" ${!memory.user_profile_enabled ? 'selected' : ''}>Disabled</option></select></div>
-                        <div class="config-field"><label>Memory Char Limit</label><input type="number" id="memory-char-limit" min="0" value="${escapeHtml(String(memory.memory_char_limit ?? 2200))}"></div>
-                        <div class="config-field"><label>User Char Limit</label><input type="number" id="user-char-limit" min="0" value="${escapeHtml(String(memory.user_char_limit ?? 1375))}"></div>
+                        <div class="config-field"><label>Memory Char Limit</label><input type="number" id="memory-char-limit" min="0" value="${escapeHtml(String(memory.memory_char_limit ?? 22000))}"></div>
+                        <div class="config-field"><label>User Char Limit</label><input type="number" id="user-char-limit" min="0" value="${escapeHtml(String(memory.user_char_limit ?? 13750))}"></div>
                         <div class="config-field"><label>Memory Nudge Interval</label><input type="number" id="memory-nudge-interval" min="0" value="${escapeHtml(String(memory.nudge_interval ?? 10))}"></div>
                         <div class="config-field"><label>Flush Min Turns</label><input type="number" id="memory-flush-min-turns" min="0" value="${escapeHtml(String(memory.flush_min_turns ?? 6))}"></div>
                         <div class="config-field"><label>Session Reset Mode</label><select id="session-reset-mode">${['both','idle','daily','none'].map(mode => `<option value="${mode}" ${mode === (sessionReset.mode || 'both') ? 'selected' : ''}>${mode}</option>`).join('')}</select></div>
@@ -4585,8 +4653,8 @@
             const updates = {
                 'memory.memory_enabled': getBooleanSelectValue('memory-enabled', true),
                 'memory.user_profile_enabled': getBooleanSelectValue('user-profile-enabled', true),
-                'memory.memory_char_limit': getNumberValue('memory-char-limit', 2200),
-                'memory.user_char_limit': getNumberValue('user-char-limit', 1375),
+                'memory.memory_char_limit': getNumberValue('memory-char-limit', 22000),
+                'memory.user_char_limit': getNumberValue('user-char-limit', 13750),
                 'memory.nudge_interval': getNumberValue('memory-nudge-interval', 10),
                 'memory.flush_min_turns': getNumberValue('memory-flush-min-turns', 6),
                 'session_reset.mode': getElementValue('session-reset-mode', 'both'),
@@ -4793,7 +4861,13 @@
                         events.push({ type: 'tool_call', tool });
                         if (tool.call_id) pendingAssistantByTool.set(tool.call_id, { tool, events });
                     });
-                    mergedMessages.push({ role: 'assistant', content: m.content || '', tools, events });
+                    mergedMessages.push({
+                        ...m,
+                        role: 'assistant',
+                        content: m.content || '',
+                        tools,
+                        events,
+                    });
                     return;
                 }
                 if (m.role === 'tool') {
@@ -4804,6 +4878,7 @@
                         pendingAssistantByTool.delete(callId);
                     } else {
                         mergedMessages.push({
+                            ...m,
                             role: 'assistant',
                             content: '',
                             tools: [{ call_id: callId, name: m.tool_name || 'tool', output: m.content || '' }],
@@ -4816,12 +4891,8 @@
             });
             
             const summaryHtml = data.summary ? `<div class="summary-block"><span class="label">Session Summary</span>${escapeHtml(data.summary)}</div>` : '';
-            messages.innerHTML = summaryHtml + mergedMessages.map(m => {
-                if (m.role === 'assistant') {
-                    return `<div class="message assistant">${renderAssistantMessage({ content: m.content || '', tools: m.tools || [], events: m.events || [] })}</div>`;
-                }
-                return `<div class="message ${m.role}">${formatMessageContent(m.content || '')}</div>`;
-            }).join('');
+            const overviewHtml = renderSessionOverview(data);
+            messages.innerHTML = overviewHtml + summaryHtml + mergedMessages.map(renderSessionMessage).join('');
 
             renderBackgroundReviews(data.background_reviews || []);
             renderRequestResultActivity(
@@ -5094,6 +5165,108 @@
                     <div class="file-item-path">${escapeHtml(file.path || file.raw_path || '')}</div>
                 </div>
             `).join('');
+        }
+
+        function formatSessionDate(value) {
+            if (!value) return '--';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return String(value);
+            return date.toLocaleString();
+        }
+
+        function formatDuration(startedAt, endedAt) {
+            if (!startedAt || !endedAt) return '--';
+            const start = new Date(startedAt).getTime();
+            const end = new Date(endedAt).getTime();
+            if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return '--';
+            const totalSeconds = Math.round((end - start) / 1000);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            if (hours) return `${hours}h ${minutes}m ${seconds}s`;
+            if (minutes) return `${minutes}m ${seconds}s`;
+            return `${seconds}s`;
+        }
+
+        function renderSessionOverview(data) {
+            const items = [
+                ['Session ID', data.id || '--'],
+                ['Source', data.source || '--'],
+                ['Model', data.model || '--'],
+                ['Started', formatSessionDate(data.started_at)],
+                ['Ended', formatSessionDate(data.ended_at)],
+                ['Duration', formatDuration(data.started_at, data.ended_at)],
+                ['Messages', data.message_count ?? '--'],
+                ['Tool Calls', data.tool_call_count ?? '--'],
+                ['Input Tokens', data.input_tokens ?? '--'],
+                ['Output Tokens', data.output_tokens ?? '--'],
+                ['Reasoning Tokens', data.reasoning_tokens ?? '--'],
+                ['Estimated Cost', data.estimated_cost_usd != null ? `$${Number(data.estimated_cost_usd).toFixed(4)}` : '--'],
+                ['Actual Cost', data.actual_cost_usd != null ? `$${Number(data.actual_cost_usd).toFixed(4)}` : '--'],
+                ['End Reason', data.end_reason || '--'],
+                ['Parent Session', data.parent_session_id || '--'],
+                ['Child Sessions', data.child_count ?? 0],
+            ];
+            const children = Array.isArray(data.children) && data.children.length
+                ? `<div class="config-help" style="margin-top:0.75rem;">Child sessions: ${data.children.map(child => escapeHtml(child.title || child.id)).join(' | ')}</div>`
+                : '';
+            const debugJson = {
+                model_config: data.model_config,
+                billing_provider: data.billing_provider,
+                billing_base_url: data.billing_base_url,
+                billing_mode: data.billing_mode,
+                cost_status: data.cost_status,
+                cost_source: data.cost_source,
+                cache_read_tokens: data.cache_read_tokens,
+                cache_write_tokens: data.cache_write_tokens,
+            };
+            return `
+                <div class="session-overview">
+                    <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                        <div>
+                            <div class="label" style="font-size:0.72rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;">Session Overview</div>
+                            <div style="font-size:0.86rem;color:var(--text-dim);margin-top:0.25rem;">Stored session metadata, lineage, and token/cost totals.</div>
+                        </div>
+                    </div>
+                    <div class="session-overview-grid">
+                        ${items.map(([label, value]) => `<div class="session-overview-item"><span class="label">${escapeHtml(String(label))}</span><span class="value">${escapeHtml(String(value ?? '--'))}</span></div>`).join('')}
+                    </div>
+                    ${children}
+                    <div class="session-debug-block">
+                        <details>
+                            <summary>Session Debug JSON</summary>
+                            <pre>${escapeHtml(JSON.stringify(debugJson, null, 2))}</pre>
+                        </details>
+                        ${data.system_prompt ? `<details><summary>System Prompt</summary><pre>${escapeHtml(data.system_prompt)}</pre></details>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSessionMessage(message) {
+            const meta = [];
+            if (message.timestamp) meta.push(formatSessionDate(message.timestamp));
+            if (message.finish_reason) meta.push(`finish=${message.finish_reason}`);
+            if (message.token_count != null) meta.push(`tokens=${message.token_count}`);
+            if (message.id != null) meta.push(`id=${message.id}`);
+            const metaHtml = meta.length ? `<div class="session-message-meta">${meta.map(escapeHtml).join(' · ')}</div>` : '';
+
+            if (message.role === 'assistant') {
+                const debugSections = [];
+                if (message.reasoning) {
+                    debugSections.push(`<details><summary>Reasoning</summary><pre>${escapeHtml(message.reasoning)}</pre></details>`);
+                }
+                if (message.reasoning_details) {
+                    debugSections.push(`<details><summary>Reasoning Details</summary><pre>${escapeHtml(JSON.stringify(message.reasoning_details, null, 2))}</pre></details>`);
+                }
+                if (message.codex_reasoning_items) {
+                    debugSections.push(`<details><summary>Codex Reasoning Items</summary><pre>${escapeHtml(JSON.stringify(message.codex_reasoning_items, null, 2))}</pre></details>`);
+                }
+                const debugHtml = debugSections.length ? `<div class="session-debug-block">${debugSections.join('')}</div>` : '';
+                return `<div class="message assistant">${metaHtml}${renderAssistantMessage({ content: message.content || '', tools: message.tools || [], events: message.events || [] })}${debugHtml}</div>`;
+            }
+
+            return `<div class="message ${message.role}">${metaHtml}${formatMessageContent(message.content || '')}</div>`;
         }
 
         async function previewSessionFile(path) {

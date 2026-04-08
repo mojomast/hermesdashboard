@@ -356,6 +356,22 @@ def _session_activity_payload(conn: sqlite3.Connection, session_id: str) -> dict
     }
 
 
+def _session_overview_payload(conn: sqlite3.Connection, session_id: str) -> dict:
+    child_rows = conn.execute(
+        """
+        SELECT id, title, summary, started_at
+        FROM sessions
+        WHERE parent_session_id = ?
+        ORDER BY started_at, id
+        """,
+        (session_id,),
+    ).fetchall()
+    return {
+        "children": [dict(row) for row in child_rows],
+        "child_count": len(child_rows),
+    }
+
+
 def get_raw_config():
     config_path = HERMES_HOME / "config.yaml"
     if config_path.exists():
@@ -983,7 +999,11 @@ async def get_session(request):
         """
         SELECT id, title, summary, source, model, started_at, ended_at,
                parent_session_id, message_count, tool_call_count,
-               input_tokens, output_tokens, estimated_cost_usd
+               input_tokens, output_tokens, estimated_cost_usd,
+               cache_read_tokens, cache_write_tokens, reasoning_tokens,
+               actual_cost_usd, cost_status, cost_source,
+               end_reason, model_config, system_prompt,
+               billing_provider, billing_base_url, billing_mode
         FROM sessions
         WHERE id = ?
     """,
@@ -995,10 +1015,12 @@ async def get_session(request):
 
     cursor = conn.execute(
         """
-        SELECT role, content, timestamp, tool_call_id, tool_calls, tool_name
+        SELECT id, role, content, timestamp, tool_call_id, tool_calls, tool_name,
+               token_count, finish_reason, reasoning, reasoning_details,
+               codex_reasoning_items
         FROM messages
         WHERE session_id = ?
-        ORDER BY timestamp
+        ORDER BY timestamp, id
     """,
         (session_id,),
     )
@@ -1011,11 +1033,26 @@ async def get_session(request):
                 item["tool_calls"] = json.loads(item["tool_calls"])
             except Exception:
                 pass
+        if item.get("reasoning_details"):
+            try:
+                item["reasoning_details"] = json.loads(item["reasoning_details"])
+            except Exception:
+                pass
+        if item.get("codex_reasoning_items"):
+            try:
+                item["codex_reasoning_items"] = json.loads(
+                    item["codex_reasoning_items"]
+                )
+            except Exception:
+                pass
         messages.append(item)
     activity = _session_activity_payload(conn, session_id)
+    overview = _session_overview_payload(conn, session_id)
     conn.close()
 
-    return JSONResponse({**dict(session_row), "messages": messages, **activity})
+    return JSONResponse(
+        {**dict(session_row), "messages": messages, **activity, **overview}
+    )
 
 
 async def backfill_session_summaries_endpoint(request):

@@ -89,6 +89,12 @@ The standalone package now depends on the richer dashboard config surface from `
 
 The frontend assumes the Config tab is rendered dynamically after `loadSettings()`. Static references to config DOM nodes before that render are unsafe.
 
+The dashboard also assumes newer Hermes runtime behavior for sessions:
+
+- larger persistent memory defaults (`memory.memory_char_limit=22000`, `memory.user_char_limit=13750`)
+- transcript-based auto-title generation aligned with session summaries
+- richer session detail fields in `GET /api/sessions/{id}` including timing, token, cost, lineage, and reasoning/debug metadata
+
 ## Auto-Start UX
 
 Preferred installer behavior:
