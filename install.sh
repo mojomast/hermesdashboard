@@ -86,15 +86,20 @@ esac
 
 printf "\n%sHermes Dashboard installer%s\n" "$COLOR_BOLD" "$COLOR_RESET"
 printf "This will configure the standalone dashboard against an existing Hermes install.\n\n"
+info "Recommended defaults:"
+info "  Hermes API: 127.0.0.1:8642"
+info "  Dashboard: 0.0.0.0:8081"
+info "If you're unsure, press Enter to accept the defaults."
+printf "\n"
 
 DEFAULT_HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 HERMES_HOME=$(prompt "Hermes home directory" "$DEFAULT_HERMES_HOME")
 HERMES_AGENT_PATH=$(prompt "Hermes agent runtime path" "${HERMES_AGENT_PATH:-$HERMES_HOME/hermes-agent}")
 HERMES_VENV=$(prompt "Hermes virtualenv path" "${HERMES_VENV:-$HERMES_AGENT_PATH/venv}")
-API_SERVER_HOST=$(prompt "Hermes API host" "${API_SERVER_HOST:-127.0.0.1}")
-API_SERVER_PORT=$(prompt "Hermes API port" "${API_SERVER_PORT:-8642}")
-DASHBOARD_HOST=$(prompt "Dashboard bind host" "${DASHBOARD_HOST:-0.0.0.0}")
-DASHBOARD_PORT=$(prompt "Dashboard port" "${DASHBOARD_PORT:-8081}")
+API_SERVER_HOST=$(prompt "Hermes API host (recommended: 127.0.0.1)" "${API_SERVER_HOST:-127.0.0.1}")
+API_SERVER_PORT=$(prompt "Hermes API port (recommended: 8642)" "${API_SERVER_PORT:-8642}")
+DASHBOARD_HOST=$(prompt "Dashboard bind host (recommended: 0.0.0.0)" "${DASHBOARD_HOST:-0.0.0.0}")
+DASHBOARD_PORT=$(prompt "Dashboard port (recommended: 8081)" "${DASHBOARD_PORT:-8081}")
 API_SERVER_KEY=$(prompt "Dashboard API key" "${API_SERVER_KEY:-hermes-dashboard-secret-9e4349ef052042545dd435d3330a2287}")
 
 require_file "$HERMES_AGENT_PATH" "Hermes agent runtime path does not exist."

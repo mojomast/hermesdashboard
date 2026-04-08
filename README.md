@@ -23,6 +23,15 @@ The installer is interactive and prompts for:
 
 It then writes local launcher scripts so you can start the dashboard without manually re-entering paths.
 
+If a user is not sure what to enter for dashboard host and port, the installer recommends the standard defaults:
+
+- dashboard host: `0.0.0.0`
+- dashboard port: `8081`
+- Hermes API host: `127.0.0.1`
+- Hermes API port: `8642`
+
+In most cases, users can just press Enter through those prompts.
+
 It can also optionally generate:
 
 - user-level `systemd` units on Linux
