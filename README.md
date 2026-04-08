@@ -23,6 +23,11 @@ The installer is interactive and prompts for:
 
 It then writes local launcher scripts so you can start the dashboard without manually re-entering paths.
 
+It can also optionally generate:
+
+- user-level `systemd` units on Linux
+- Docker wrapper files for the dashboard web app
+
 ## What It Includes
 
 - streaming Hermes chat UI
@@ -204,6 +209,38 @@ nohup sh -c 'set -a && . "$HOME/.hermes/.env" && set +a && exec ./start.sh' \
   >/tmp/hermes-dashboard.log 2>&1 &
 ```
 
+## Optional systemd Setup
+
+On Linux, the installer can generate:
+
+- `~/.config/systemd/user/hermes-dashboard-api.service`
+- `~/.config/systemd/user/hermes-dashboard-web.service`
+
+Then enable them with:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now hermes-dashboard-api.service hermes-dashboard-web.service
+```
+
+## Optional Docker Wrapper
+
+The installer can also generate:
+
+- `Dockerfile`
+- `docker-compose.yml`
+
+This is only a wrapper for the dashboard web app.
+
+It still expects the Hermes API-only server to run on the host machine at `127.0.0.1:8642`.
+
+Typical flow:
+
+```sh
+./run-api-server.sh
+docker compose up --build
+```
+
 ## Features
 
 ### Chat
@@ -265,6 +302,8 @@ If you want to adapt this dashboard for your own Hermes deployment:
 5. Ensure your `.env` includes any keys needed by Hermes features you want surfaced in the dashboard.
 
 The easiest path for most users is the interactive installer because it writes repo-local launch scripts around their chosen Hermes paths.
+
+On Linux, it can also write user-level `systemd` service files. For web-only containerization, it can generate Docker wrapper files as well.
 
 Important implementation note:
 

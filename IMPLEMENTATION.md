@@ -30,6 +30,13 @@ Then it writes:
 
 Those generated files are intentionally ignored by git so each user can keep a local setup.
 
+Optional generated files:
+
+- `~/.config/systemd/user/hermes-dashboard-api.service`
+- `~/.config/systemd/user/hermes-dashboard-web.service`
+- `Dockerfile`
+- `docker-compose.yml`
+
 ## Public Reuse
 
 When changing the dashboard for outside users, prefer:
@@ -37,6 +44,15 @@ When changing the dashboard for outside users, prefer:
 - environment variables over hardcoded local paths
 - launcher scripts over manual multi-command setup
 - repo-local generated config files instead of editing tracked source files
+
+## Installer UX Goals
+
+The installer should stay:
+
+- curl-able as a one-line setup path
+- interactive, with sensible defaults
+- path-driven instead of forcing one repo layout
+- explicit about the fact that Docker support is only for the dashboard web wrapper, not the Hermes runtime itself
 
 ## Required Runtime Surface
 
