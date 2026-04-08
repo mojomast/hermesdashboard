@@ -12,19 +12,32 @@ Paste this into a terminal:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mojomast/hermesdashboard/main/install.sh)"
 ```
 
-The installer is interactive and writes local launcher scripts for your Hermes paths.
+The installer is interactive. It will:
+
+- clone or update `hermesdashboard` into `~/hermesdashboard` by default
+- ask where your Hermes home, checkout, and virtualenv live
+- detect whether you already have a Hermes API running
+- configure the dashboard to either reuse that API or use the bundled API-only launcher
+- generate local launcher scripts and a per-install API key
+- run preflight checks for Python version, dashboard dependencies, and common path issues
 
 If you are unsure what to enter for host and port, just press Enter to accept the recommended defaults:
 
 - Hermes API: `127.0.0.1:8642`
-- Dashboard: `0.0.0.0:8081`
+- Dashboard: `127.0.0.1:8081`
+
+If you want a different install location, set `HERMESDASHBOARD_DIR` first:
+
+```sh
+HERMESDASHBOARD_DIR="$HOME/tools/hermesdashboard" bash -c "$(curl -fsSL https://raw.githubusercontent.com/mojomast/hermesdashboard/main/install.sh)"
+```
 
 ## Quick Start
 
 After installation:
 
 ```sh
-cd /path/to/hermesdashboard
+cd ~/hermesdashboard
 ./run-api-server.sh
 ./run-dashboard.sh
 ```
@@ -38,6 +51,8 @@ http://127.0.0.1:8081
 ```
 
 If your Hermes install already provides an API server, you can skip the bundled launcher and point the dashboard at it with `HERMES_API`.
+
+In that mode, `./run-api-server.sh` becomes a helper that reminds you the dashboard is reusing your existing Hermes API.
 
 If you see `Permission denied` when starting the dashboard, the most likely cause is that `start.sh` is not executable. Fix it with:
 
@@ -79,6 +94,20 @@ Compatibility notes:
 - session summary backfill/regeneration endpoints now fall back to dashboard-local summary generation using `state.db`
 - config/env metadata features use local fallbacks when optional Hermes CLI internals are unavailable
 - if your Hermes install does not expose the bundled API-only launcher internals, use your existing Hermes API and set `HERMES_API`
+
+## First-Run Verification
+
+After the installer finishes, a healthy first run looks like this:
+
+```sh
+cd ~/hermesdashboard
+./run-api-server.sh
+curl -s http://127.0.0.1:8642/health
+./run-dashboard.sh
+curl -s http://127.0.0.1:8081/api/status
+```
+
+Then open `http://127.0.0.1:8081` in your browser.
 
 ## Expanded Config Surface
 

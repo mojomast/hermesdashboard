@@ -24,14 +24,30 @@ If your layout differs, the installer lets you override those values.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mojomast/hermesdashboard/main/install.sh)"
 ```
 
+By default this installs or updates the repo at `~/hermesdashboard` and then runs the interactive configurator there.
+
+If you want a different install directory:
+
+```sh
+HERMESDASHBOARD_DIR="$HOME/tools/hermesdashboard" bash -c "$(curl -fsSL https://raw.githubusercontent.com/mojomast/hermesdashboard/main/install.sh)"
+```
+
 The installer prompts for:
 
 - Hermes home directory
 - Hermes runtime path
 - Hermes virtualenv path
 - Hermes API host and port
-- dashboard host and port
+- whether to keep the dashboard local-only or bind it externally
+- dashboard port
 - dashboard API key
+
+The installer also:
+
+- checks Python version and dashboard dependencies
+- detects whether a Hermes API is already running
+- chooses between reusing an existing API and the bundled API-only launcher
+- warns about missing `state.db`, missing `config.yaml`, and non-writable `HERMES_HOME`
 
 It writes local files such as:
 
@@ -41,6 +57,8 @@ It writes local files such as:
 - optional `start-background.sh`
 
 Run those scripts as your normal user. Do not use `sudo` unless your Hermes install and this dashboard repo were both intentionally set up as root-owned paths.
+
+If the installer selects “reuse existing Hermes API”, then `run-api-server.sh` becomes a helper that reminds you to use your already-running Hermes API instead of launching a bundled one.
 
 Optional extras:
 
@@ -103,6 +121,15 @@ If `./run-dashboard.sh` fails with `Permission denied`, make sure the launcher c
 
 ```sh
 chmod +x ./start.sh ./run-dashboard.sh ./run-api-server.sh
+```
+
+Healthy first-run smoke test:
+
+```sh
+./run-api-server.sh
+curl -s http://127.0.0.1:8642/health
+./run-dashboard.sh
+curl -s http://127.0.0.1:8081/api/status
 ```
 
 ## Docker Wrapper

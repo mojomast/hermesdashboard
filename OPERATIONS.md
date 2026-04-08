@@ -54,6 +54,18 @@ ss -ltnp | grep 8642
 - run them as your normal user instead of `sudo`
 - if the repo lives on a `noexec` mount, run `sh ./run-dashboard.sh` or move it to a normal executable filesystem
 
+### Installer completed but first run still fails
+
+- check `python3 --version` and make sure the chosen Hermes virtualenv is Python 3.11+
+- if the dashboard reports missing modules, run `"$HERMES_VENV/bin/python" -m pip install -r requirements.txt`
+- verify `curl -s http://127.0.0.1:8642/health` if using the bundled API path
+- verify `curl -s http://127.0.0.1:8081/api/status` after starting the dashboard
+
+### Address already in use
+
+- choose a different `DASHBOARD_PORT` or `API_SERVER_PORT` during install
+- or stop the existing service already listening on that port
+
 ### Chat says Hermes is unavailable
 
 - verify `8642` is listening
