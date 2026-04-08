@@ -136,6 +136,8 @@ Highlights:
 The dashboard session experience is designed to be more scannable and more debuggable.
 
 - session titles now come from the same transcript-based summarization path used for session summaries in Hermes
+- missing titles and summaries can be backfilled automatically through the dashboard maintenance endpoints
+- the dashboard also runs a small startup maintenance pass to repair older missing titles/summaries automatically
 - session detail now includes stored metadata such as model, timing, lineage, tokens, and cost
 - assistant messages can show persisted reasoning/debug fields when Hermes recorded them
 

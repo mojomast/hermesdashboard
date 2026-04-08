@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import sqlite3
+import threading
 import time
 import uuid
 from collections import deque
@@ -228,6 +229,7 @@ templates = Jinja2Templates(
 
 ACTIVE_RUN_TTL_SECONDS = 1800
 ACTIVE_RUNS: dict[str, dict] = {}
+_STARTUP_METADATA_BACKFILL_STARTED = False
 
 BUILT_IN_PERSONALITIES = [
     "helpful",
@@ -591,16 +593,34 @@ def _extract_summary_from_messages(
     return summary.strip() or None
 
 
-def _refresh_local_session_summary(
-    conn: sqlite3.Connection, session_id: str
+def _extract_title_from_messages(
+    messages: list[dict], session_meta: Optional[dict] = None
 ) -> Optional[str]:
+    session_meta = session_meta or {}
+    for msg in messages:
+        if str(msg.get("role") or "") != "user":
+            continue
+        content = str(msg.get("content") or "").strip()
+        if not content:
+            continue
+        title = content.replace("\n", " ").strip()
+        if len(title) > 80:
+            title = title[:77].rstrip() + "..."
+        return title
+    fallback = str(session_meta.get("title") or "").strip()
+    return fallback or None
+
+
+def _refresh_local_session_metadata(
+    conn: sqlite3.Connection, session_id: str
+) -> dict[str, Optional[str]]:
     conn.row_factory = sqlite3.Row
     session_meta = conn.execute(
-        "SELECT id, title, source, model FROM sessions WHERE id = ?",
+        "SELECT id, title, source, model, summary FROM sessions WHERE id = ?",
         (session_id,),
     ).fetchone()
     if not session_meta:
-        return None
+        return {"title": None, "summary": None}
     message_rows = conn.execute(
         "SELECT role, content, tool_calls, tool_name FROM messages WHERE session_id = ? ORDER BY timestamp, id",
         (session_id,),
@@ -614,12 +634,20 @@ def _refresh_local_session_summary(
             except Exception:
                 pass
         messages.append(item)
-    summary = _extract_summary_from_messages(messages, dict(session_meta))
-    if not summary:
-        return None
-    conn.execute("UPDATE sessions SET summary = ? WHERE id = ?", (summary, session_id))
-    conn.commit()
-    return summary
+    meta = dict(session_meta)
+    generated_title = None
+    generated_summary = None
+    if not str(meta.get("title") or "").strip():
+        generated_title = _extract_title_from_messages(messages, meta)
+    if not str(meta.get("summary") or "").strip():
+        generated_summary = _extract_summary_from_messages(messages, meta)
+    if generated_title or generated_summary:
+        conn.execute(
+            "UPDATE sessions SET title = COALESCE(?, title), summary = COALESCE(?, summary) WHERE id = ?",
+            (generated_title, generated_summary, session_id),
+        )
+        conn.commit()
+    return {"title": generated_title, "summary": generated_summary}
 
 
 def get_raw_config():
@@ -1331,7 +1359,7 @@ async def backfill_session_summaries_endpoint(request):
         query = (
             "SELECT id FROM sessions ORDER BY started_at DESC LIMIT ?"
             if force
-            else "SELECT id FROM sessions WHERE summary IS NULL OR trim(summary) = '' ORDER BY started_at DESC LIMIT ?"
+            else "SELECT id FROM sessions WHERE summary IS NULL OR trim(summary) = '' OR title IS NULL OR trim(title) = '' ORDER BY started_at DESC LIMIT ?"
         )
         rows = conn.execute(query, (limit,)).fetchall()
         processed = 0
@@ -1340,7 +1368,8 @@ async def backfill_session_summaries_endpoint(request):
         for row in rows:
             processed += 1
             try:
-                if _refresh_local_session_summary(conn, row["id"]):
+                refreshed = _refresh_local_session_metadata(conn, row["id"])
+                if refreshed.get("title") or refreshed.get("summary"):
                     updated += 1
             except Exception:
                 failed += 1
@@ -1366,15 +1395,46 @@ async def regenerate_session_summary_endpoint(request):
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        summary = _refresh_local_session_summary(conn, session_id)
-        if not summary:
+        refreshed = _refresh_local_session_metadata(conn, session_id)
+        if not refreshed.get("summary") and not refreshed.get("title"):
             return JSONResponse(
                 {"success": False, "error": "Failed to generate summary"},
                 status_code=500,
             )
-        return JSONResponse({"success": True, "summary": summary})
+        return JSONResponse({"success": True, **refreshed})
     finally:
         conn.close()
+
+
+def _run_startup_session_metadata_backfill() -> None:
+    global _STARTUP_METADATA_BACKFILL_STARTED
+    if _STARTUP_METADATA_BACKFILL_STARTED:
+        return
+    _STARTUP_METADATA_BACKFILL_STARTED = True
+
+    def _worker() -> None:
+        db_path = HERMES_HOME / "state.db"
+        if not db_path.exists():
+            return
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT id FROM sessions WHERE summary IS NULL OR trim(summary) = '' OR title IS NULL OR trim(title) = '' ORDER BY started_at DESC LIMIT 200"
+            ).fetchall()
+            for row in rows:
+                try:
+                    _refresh_local_session_metadata(conn, row["id"])
+                except Exception:
+                    continue
+        finally:
+            conn.close()
+
+    threading.Thread(
+        target=_worker,
+        daemon=True,
+        name="dashboard-session-metadata-backfill",
+    ).start()
 
 
 def _dashboard_allowed_roots() -> list[Path]:
@@ -2209,7 +2269,7 @@ routes = [
     Route("/api/graph", get_graph_data),
 ]
 
-app = Starlette(routes=routes)
+app = Starlette(routes=routes, on_startup=[_run_startup_session_metadata_backfill])
 
 if __name__ == "__main__":
     import uvicorn

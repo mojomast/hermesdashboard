@@ -97,6 +97,7 @@ The dashboard also assumes newer Hermes runtime behavior for sessions:
 
 - larger persistent memory defaults (`memory.memory_char_limit=22000`, `memory.user_char_limit=13750`)
 - transcript-based auto-title generation aligned with session summaries
+- local session maintenance endpoints backfill both missing titles and missing summaries for older rows in `state.db`
 - richer session detail fields in `GET /api/sessions/{id}` including timing, token, cost, lineage, and reasoning/debug metadata
 
 ## Auto-Start UX
