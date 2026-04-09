@@ -90,8 +90,8 @@ ss -ltnp | grep 8642
 
 ### Sessions list still shows poor titles
 
-- verify the Hermes runtime includes the newer transcript-based auto-title generation
-- regenerate session summaries/titles only affects new sessions automatically; older sessions may still need manual cleanup or future backfill tooling
+- use the dashboard summary regeneration action to recompute both title and summary from the persisted transcript
+- if older sessions still look wrong, verify the dashboard can read the target `HERMES_HOME/state.db` and retry the backfill endpoint
 
 ### Session detail still feels sparse
 
@@ -106,5 +106,11 @@ ss -ltnp | grep 8642
 
 ### Session summary regeneration fails
 
-- verify `OPENROUTER_API_KEY` is present in `~/.hermes/.env`
-- make sure the dashboard process loaded that `.env`
+- verify the dashboard can read the target `HERMES_HOME/state.db`
+- verify the selected session actually has persisted transcript messages to summarize
+
+### Graph settings do not stick
+
+- hard refresh once after deploying updated frontend assets
+- verify your browser allows localStorage for the dashboard origin
+- use the graph settings reset action if a previous saved value is causing an odd layout

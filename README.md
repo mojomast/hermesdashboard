@@ -81,6 +81,7 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - memory, skills, secrets, and config panels
 - expanded config editor with sectioned settings and advanced JSON editors
 - graph visualization for sessions, files, tools, models, and skills
+- persisted graph display settings for labels, spacing, edges, motion, and panel sizing
 - delegated task streaming inside expanded `delegate_task` blocks
 - session summaries in sessions, graph, and session detail
 
@@ -135,15 +136,17 @@ Highlights:
 
 The dashboard session experience is designed to be more scannable and more debuggable.
 
-- session titles now come from the same transcript-based summarization path used for session summaries in Hermes
+- session titles now come from the same transcript-based local metadata extraction path used for session summaries
 - missing titles and summaries can be backfilled automatically through the dashboard maintenance endpoints
 - the dashboard also runs a small startup maintenance pass to repair older missing titles/summaries automatically
 - graph session nodes now fall back to summary-derived labels when a stored title is still missing
 - graph edges connect sessions to skills when persisted `skill_manage` activity shows a skill was used
+- graph floating session panels render assistant/tool activity in transcript order instead of separating tool calls from tool results
+- graph display settings persist in the browser for label density, font sizing, node scale, spacing, edge visibility, edge types, motion mode, and panel sizing
 - session detail now includes stored metadata such as model, timing, lineage, tokens, and cost
 - assistant messages can show persisted reasoning/debug fields when Hermes recorded them
-- the Sessions panel can attach Chat to an existing session via `Use in Chat`
-- summary regeneration uses dashboard-local metadata refresh, including forced recomputation when needed
+- the Sessions panel can attach Chat to an existing session via `Use in Chat`, loading the persisted session transcript into Chat
+- summary regeneration refreshes both title and summary through dashboard-local metadata recomputation
 
 ## Secrets Tab
 

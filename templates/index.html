@@ -2050,6 +2050,10 @@
         position: relative;
         flex: 1;
         overflow: hidden;
+        --graph-height: calc(100vh - 120px);
+        --graph-sidebar-width: 340px;
+        --graph-sidebar-offset: 360px;
+        --graph-floating-panel-width: 500px;
     }
 
     #graph-panel.active {
@@ -2060,7 +2064,7 @@
     #graph-container {
         position: relative;
         width: 100%;
-        height: calc(100vh - 120px);
+        height: var(--graph-height);
         overflow: hidden;
         flex: 1;
     }
@@ -2211,11 +2215,11 @@
         top: 1rem;
         right: 1rem;
         bottom: 1rem;
-        width: 340px;
+        width: var(--graph-sidebar-width);
         padding: 1.5rem;
         z-index: 10;
         overflow-y: auto;
-        transform: translateX(360px);
+        transform: translateX(var(--graph-sidebar-offset));
         transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
         background: rgba(15, 15, 35, 0.92);
         backdrop-filter: blur(20px);
@@ -2285,7 +2289,7 @@
     /* ── Floating panels ── */
     .floating-panel {
         position: absolute;
-        width: 500px;
+        width: var(--graph-floating-panel-width);
         max-height: 70vh;
         background: rgba(15, 15, 35, 0.96);
         backdrop-filter: blur(16px);
@@ -2594,6 +2598,118 @@
         font-weight: 600;
     }
 
+    .graph-settings-drawer {
+        position: absolute;
+        top: 4.25rem;
+        right: 1rem;
+        width: min(380px, calc(100vw - 2rem));
+        max-height: calc(100% - 6rem);
+        overflow-y: auto;
+        z-index: 12;
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(15, 15, 35, 0.95);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+        display: none;
+    }
+
+    .graph-settings-drawer.open {
+        display: block;
+    }
+
+    .graph-settings-grid {
+        display: grid;
+        gap: 0.9rem;
+    }
+
+    .graph-settings-row {
+        display: grid;
+        gap: 0.4rem;
+    }
+
+    .graph-settings-row.inline {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.6rem;
+    }
+
+    .graph-settings-row label,
+    .graph-settings-heading {
+        font-size: 0.76rem;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .graph-settings-row input[type="range"],
+    .graph-settings-row select {
+        width: 100%;
+    }
+
+    .graph-settings-row select {
+        padding: 0.45rem 0.6rem;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255,255,255,0.04);
+        color: var(--text);
+        font-family: inherit;
+    }
+
+    .graph-settings-value {
+        font-size: 0.72rem;
+        color: var(--primary);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .graph-settings-help {
+        font-size: 0.72rem;
+        color: var(--text-dim);
+        line-height: 1.45;
+    }
+
+    .graph-settings-check {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        font-size: 0.82rem;
+        color: var(--text);
+        text-transform: none;
+        letter-spacing: 0;
+    }
+
+    .graph-settings-check input[type="checkbox"] {
+        accent-color: var(--primary);
+    }
+
+    .graph-edge-checks {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.4rem 0.8rem;
+    }
+
+    .graph-edge-checks label {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-size: 0.8rem;
+        color: var(--text);
+        text-transform: none;
+        letter-spacing: 0;
+    }
+
+    .graph-edge-checks input[type="checkbox"] {
+        accent-color: var(--primary);
+    }
+
+    .graph-settings-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
     /* GRAPH_STYLES_END */
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme">
@@ -2838,8 +2954,108 @@
                         <option value="720">Last 30d</option>
                         <option value="0">All Time</option>
                     </select>
+                    <button type="button" id="graph-settings-toggle">Settings</button>
                     <button class="btn" id="graph-reset">Reset</button>
                     <span id="graph-badge" class="graph-badge"></span>
+                </div>
+                <div id="graph-settings-drawer" class="graph-settings-drawer">
+                    <div class="graph-settings-grid">
+                        <div class="graph-settings-row">
+                            <div class="graph-settings-heading">Graph Settings</div>
+                            <div class="graph-settings-help">Adjust label density, spacing, edges, and panel sizing. Settings are saved in this browser.</div>
+                        </div>
+                        <div class="graph-settings-row inline">
+                            <div>
+                                <label for="graph-setting-label-density">Label Density</label>
+                                <select id="graph-setting-label-density">
+                                    <option value="auto">Auto</option>
+                                    <option value="sparse">Sparse</option>
+                                    <option value="normal">Normal</option>
+                                    <option value="dense">Dense</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="graph-setting-font-family">Font Family</label>
+                                <select id="graph-setting-font-family">
+                                    <option value="system">System Sans</option>
+                                    <option value="sans">UI Sans</option>
+                                    <option value="mono">Monospace</option>
+                                    <option value="serif">Serif</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="graph-settings-row">
+                            <label for="graph-setting-label-font-size">Label Font Size <span class="graph-settings-value" data-setting-value="labelFontSize"></span></label>
+                            <input type="range" id="graph-setting-label-font-size" min="7" max="18" step="1">
+                        </div>
+                        <div class="graph-settings-row">
+                            <label for="graph-setting-label-max-length">Label Max Length <span class="graph-settings-value" data-setting-value="labelMaxLength"></span></label>
+                            <input type="range" id="graph-setting-label-max-length" min="12" max="64" step="1">
+                        </div>
+                        <div class="graph-settings-row inline">
+                            <div>
+                                <label for="graph-setting-node-scale">Node Scale <span class="graph-settings-value" data-setting-value="nodeScale"></span></label>
+                                <input type="range" id="graph-setting-node-scale" min="0.7" max="1.8" step="0.05">
+                            </div>
+                            <div>
+                                <label for="graph-setting-spacing">Spacing <span class="graph-settings-value" data-setting-value="spacing"></span></label>
+                                <input type="range" id="graph-setting-spacing" min="0.7" max="1.8" step="0.05">
+                            </div>
+                        </div>
+                        <div class="graph-settings-row">
+                            <label class="graph-settings-check" for="graph-setting-show-edges">
+                                <input type="checkbox" id="graph-setting-show-edges">
+                                Show edges
+                            </label>
+                        </div>
+                        <div class="graph-settings-row inline">
+                            <div>
+                                <label for="graph-setting-edge-opacity">Edge Opacity <span class="graph-settings-value" data-setting-value="edgeOpacity"></span></label>
+                                <input type="range" id="graph-setting-edge-opacity" min="0.05" max="1" step="0.05">
+                            </div>
+                            <div>
+                                <label for="graph-setting-edge-style">Edge Style</label>
+                                <select id="graph-setting-edge-style">
+                                    <option value="mixed">Mixed</option>
+                                    <option value="solid">Solid</option>
+                                    <option value="dashed">Dashed</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="graph-settings-row">
+                            <span class="graph-settings-heading">Visible Edge Types</span>
+                            <div class="graph-edge-checks">
+                                <label><input type="checkbox" id="graph-setting-edge-accessed"> Files</label>
+                                <label><input type="checkbox" id="graph-setting-edge-used_tool"> Tools</label>
+                                <label><input type="checkbox" id="graph-setting-edge-used_model"> Models</label>
+                                <label><input type="checkbox" id="graph-setting-edge-delegated"> Delegation</label>
+                                <label><input type="checkbox" id="graph-setting-edge-relates_to"> Related Skills</label>
+                                <label><input type="checkbox" id="graph-setting-edge-used_skill"> Session Skills</label>
+                            </div>
+                        </div>
+                        <div class="graph-settings-row inline">
+                            <div>
+                                <label for="graph-setting-motion-mode">Motion</label>
+                                <select id="graph-setting-motion-mode">
+                                    <option value="system">System</option>
+                                    <option value="reduced">Reduced</option>
+                                    <option value="full">Full</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="graph-setting-sidebar-width">Sidebar Width <span class="graph-settings-value" data-setting-value="sidebarWidth"></span></label>
+                                <input type="range" id="graph-setting-sidebar-width" min="280" max="520" step="10">
+                            </div>
+                        </div>
+                        <div class="graph-settings-row">
+                            <label for="graph-setting-floating-panel-width">Floating Panel Width <span class="graph-settings-value" data-setting-value="floatingPanelWidth"></span></label>
+                            <input type="range" id="graph-setting-floating-panel-width" min="360" max="760" step="10">
+                        </div>
+                        <div class="graph-settings-actions">
+                            <button class="btn" type="button" id="graph-settings-reset">Reset Settings</button>
+                            <button class="btn" type="button" id="graph-settings-close">Close</button>
+                        </div>
+                    </div>
                 </div>
                 <canvas id="graph-canvas"></canvas>
                 <div id="graph-tooltip" class="graph-tooltip">
@@ -2864,7 +3080,7 @@
         <div class="session-detail-header">
             <h2 id="session-detail-title">Session</h2>
             <div class="session-detail-actions">
-                <button class="btn" id="session-regenerate-summary-btn" onclick="regenerateSessionSummary()">Regenerate Summary</button>
+                <button class="btn" id="session-regenerate-summary-btn" onclick="regenerateSessionSummary()">Regenerate Title + Summary</button>
                 <button class="btn" onclick="closeSessionDetail()">Close</button>
             </div>
         </div>
@@ -3146,16 +3362,10 @@
         }
 
         function attachChatToSession(sessionId) {
-            activeChatSessionId = sessionId;
-            conversation = [];
-            saveConversation();
-            clearActiveRun();
-            renderConversation();
-            updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
-            saveActiveChatSession();
-            updateActiveChatBanner();
-            showToast(`Chat attached to session ${sessionId.slice(0, 8)}`);
-            navigateTo('chat');
+            hydrateChatFromSession(sessionId).catch((error) => {
+                showToast('Failed to load session into chat: ' + error.message, true);
+                log('err', 'Failed to attach chat to session: ' + error.message, true);
+            });
         }
 
         function detachChatSession() {
@@ -3174,6 +3384,67 @@
                 }
             });
             log('inf', `Restored ${conversation.length} messages from cache`);
+        }
+
+        function buildConversationFromSessionData(data) {
+            const mergedMessages = [];
+            const pendingAssistantByTool = new Map();
+            (data.messages || []).forEach(m => {
+                if (m.role === 'assistant') {
+                    const tools = normalizeToolCallEntries(m.tool_calls);
+                    const events = [];
+                    if (m.content) events.push({ type: 'content', text: m.content });
+                    tools.forEach(tool => {
+                        events.push({ type: 'tool_call', tool });
+                        if (tool.call_id) pendingAssistantByTool.set(tool.call_id, { tool, events });
+                    });
+                    mergedMessages.push({
+                        ...m,
+                        role: 'assistant',
+                        content: m.content || '',
+                        tools,
+                        events,
+                    });
+                    return;
+                }
+                if (m.role === 'tool') {
+                    const callId = m.tool_call_id || '';
+                    const pending = callId ? pendingAssistantByTool.get(callId) : null;
+                    if (pending) {
+                        pending.tool.output = m.content || '';
+                        pendingAssistantByTool.delete(callId);
+                    } else {
+                        mergedMessages.push({
+                            ...m,
+                            role: 'assistant',
+                            content: '',
+                            tools: [{ call_id: callId, name: m.tool_name || 'tool', output: m.content || '' }],
+                            events: [{ type: 'tool_output', tool: { call_id: callId, name: m.tool_name || 'tool', output: m.content || '' } }],
+                        });
+                    }
+                    return;
+                }
+                if (m.role === 'user') {
+                    mergedMessages.push({ role: 'user', content: m.content || '' });
+                }
+            });
+            return mergedMessages;
+        }
+
+        async function hydrateChatFromSession(sessionId) {
+            log('req', `GET /api/sessions/${sessionId} for chat hydration`);
+            const data = await fetchJsonOrThrow(`/api/sessions/${sessionId}`);
+            activeChatSessionId = sessionId;
+            conversation = buildConversationFromSessionData(data);
+            saveConversation();
+            clearActiveRun();
+            renderConversation();
+            const lastAssistant = [...conversation].reverse().find(msg => msg.role === 'assistant');
+            updateContextDisplay(lastAssistant ? normalizeAssistantMessage(lastAssistant) : { usage: null, last_prompt_tokens: 0 });
+            saveActiveChatSession();
+            updateActiveChatBanner();
+            showToast(`Loaded session ${sessionId.slice(0, 8)} into chat`);
+            navigateTo('chat');
         }
         
         function normalizeAssistantMessage(message) {
@@ -4906,7 +5177,7 @@
             if (detailActions) {
                 detailActions.innerHTML = `
                     <button class="btn" onclick="attachChatToSession('${id}')">Use in Chat</button>
-                    <button class="btn" id="session-regenerate-summary-btn" onclick="regenerateSessionSummary()">Regenerate Summary</button>
+                    <button class="btn" id="session-regenerate-summary-btn" onclick="regenerateSessionSummary()">Regenerate Title + Summary</button>
                     <button class="btn" onclick="closeSessionDetail()">Close</button>
                 `;
             }
@@ -5330,6 +5601,49 @@
             return `<div class="message ${message.role}">${metaHtml}${formatMessageContent(message.content || '')}</div>`;
         }
 
+        function mergeSessionMessages(data) {
+            const mergedMessages = [];
+            const pendingAssistantByTool = new Map();
+            (data.messages || []).forEach(m => {
+                if (m.role === 'assistant') {
+                    const tools = normalizeToolCallEntries(m.tool_calls);
+                    const events = [];
+                    if (m.content) events.push({ type: 'content', text: m.content });
+                    tools.forEach(tool => {
+                        events.push({ type: 'tool_call', tool });
+                        if (tool.call_id) pendingAssistantByTool.set(tool.call_id, { tool, events });
+                    });
+                    mergedMessages.push({
+                        ...m,
+                        role: 'assistant',
+                        content: m.content || '',
+                        tools,
+                        events,
+                    });
+                    return;
+                }
+                if (m.role === 'tool') {
+                    const callId = m.tool_call_id || '';
+                    const pending = callId ? pendingAssistantByTool.get(callId) : null;
+                    if (pending) {
+                        pending.tool.output = m.content || '';
+                        pendingAssistantByTool.delete(callId);
+                    } else {
+                        mergedMessages.push({
+                            ...m,
+                            role: 'assistant',
+                            content: '',
+                            tools: [{ call_id: callId, name: m.tool_name || 'tool', output: m.content || '' }],
+                            events: [{ type: 'tool_output', tool: { call_id: callId, name: m.tool_name || 'tool', output: m.content || '' } }],
+                        });
+                    }
+                    return;
+                }
+                mergedMessages.push(m);
+            });
+            return mergedMessages;
+        }
+
         async function previewSessionFile(path) {
             renderSessionFiles(path);
             document.getElementById('file-preview-title').textContent = path;
@@ -5409,7 +5723,7 @@
                 const data = await fetchJsonOrThrow(`/api/sessions/${encodeURIComponent(sessionId)}/summary`, {
                     method: 'POST'
                 });
-                showToast('Session summary regenerated');
+                showToast('Session title and summary regenerated');
                 invalidateCache('/api/sessions');
                 invalidateCache('/api/graph');
                 if (location.hash.slice(1) === `sessions/detail/${sessionId}`) {
@@ -5425,7 +5739,7 @@
             } finally {
                 if (button) {
                     button.disabled = false;
-                    button.textContent = previousText || 'Regenerate Summary';
+                    button.textContent = previousText || 'Regenerate Title + Summary';
                 }
             }
         }
@@ -5972,6 +6286,265 @@
         let graphLoaded = false;
         const floatingPanels = new Map();
         let floatingZCounter = 200;
+        const GRAPH_SETTINGS_STORAGE_KEY = 'hermes-dashboard-graph-settings-v1';
+        const GRAPH_EDGE_TYPES = ['accessed', 'used_tool', 'used_model', 'delegated', 'relates_to', 'used_skill'];
+        const GRAPH_FONT_FAMILIES = {
+          system: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          sans: 'Inter, "Segoe UI", Roboto, sans-serif',
+          mono: '"JetBrains Mono", "Fira Code", monospace',
+          serif: 'Iowan Old Style, Georgia, serif',
+        };
+        const DEFAULT_GRAPH_SETTINGS = {
+          labelDensity: 'auto',
+          labelFontSize: 9,
+          fontFamily: 'system',
+          labelMaxLength: 25,
+          nodeScale: 1,
+          spacing: 1,
+          showEdges: true,
+          edgeOpacity: 0.3,
+          edgeStyle: 'mixed',
+          edgeTypes: {
+            accessed: true,
+            used_tool: true,
+            used_model: true,
+            delegated: true,
+            relates_to: true,
+            used_skill: true,
+          },
+          motionMode: 'system',
+          sidebarWidth: 340,
+          floatingPanelWidth: 500,
+        };
+        let graphSettings = loadGraphSettings();
+
+        function clampGraphSetting(value, min, max, fallback) {
+          const num = Number(value);
+          if (!Number.isFinite(num)) return fallback;
+          return Math.min(max, Math.max(min, num));
+        }
+
+        function normalizeGraphSettings(raw) {
+          const edgeTypes = { ...DEFAULT_GRAPH_SETTINGS.edgeTypes };
+          const incomingEdgeTypes = raw && typeof raw.edgeTypes === 'object' ? raw.edgeTypes : {};
+          GRAPH_EDGE_TYPES.forEach(type => {
+            if (type in incomingEdgeTypes) edgeTypes[type] = !!incomingEdgeTypes[type];
+          });
+          return {
+            labelDensity: ['auto', 'sparse', 'normal', 'dense'].includes(raw?.labelDensity) ? raw.labelDensity : DEFAULT_GRAPH_SETTINGS.labelDensity,
+            labelFontSize: clampGraphSetting(raw?.labelFontSize, 7, 18, DEFAULT_GRAPH_SETTINGS.labelFontSize),
+            fontFamily: Object.prototype.hasOwnProperty.call(GRAPH_FONT_FAMILIES, raw?.fontFamily) ? raw.fontFamily : DEFAULT_GRAPH_SETTINGS.fontFamily,
+            labelMaxLength: clampGraphSetting(raw?.labelMaxLength, 12, 64, DEFAULT_GRAPH_SETTINGS.labelMaxLength),
+            nodeScale: clampGraphSetting(raw?.nodeScale, 0.7, 1.8, DEFAULT_GRAPH_SETTINGS.nodeScale),
+            spacing: clampGraphSetting(raw?.spacing, 0.7, 1.8, DEFAULT_GRAPH_SETTINGS.spacing),
+            showEdges: raw?.showEdges !== undefined ? !!raw.showEdges : DEFAULT_GRAPH_SETTINGS.showEdges,
+            edgeOpacity: clampGraphSetting(raw?.edgeOpacity, 0.05, 1, DEFAULT_GRAPH_SETTINGS.edgeOpacity),
+            edgeStyle: ['mixed', 'solid', 'dashed'].includes(raw?.edgeStyle) ? raw.edgeStyle : DEFAULT_GRAPH_SETTINGS.edgeStyle,
+            edgeTypes,
+            motionMode: ['system', 'reduced', 'full'].includes(raw?.motionMode) ? raw.motionMode : DEFAULT_GRAPH_SETTINGS.motionMode,
+            sidebarWidth: clampGraphSetting(raw?.sidebarWidth, 280, 520, DEFAULT_GRAPH_SETTINGS.sidebarWidth),
+            floatingPanelWidth: clampGraphSetting(raw?.floatingPanelWidth, 360, 760, DEFAULT_GRAPH_SETTINGS.floatingPanelWidth),
+          };
+        }
+
+        function loadGraphSettings() {
+          try {
+            const raw = JSON.parse(localStorage.getItem(GRAPH_SETTINGS_STORAGE_KEY) || '{}');
+            return normalizeGraphSettings(raw);
+          } catch {
+            return normalizeGraphSettings({});
+          }
+        }
+
+        function saveGraphSettings() {
+          localStorage.setItem(GRAPH_SETTINGS_STORAGE_KEY, JSON.stringify(graphSettings));
+        }
+
+        function resolvedGraphMotionMode() {
+          if (graphSettings.motionMode === 'full') return 'full';
+          if (graphSettings.motionMode === 'reduced') return 'reduced';
+          return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full';
+        }
+
+        function graphFontFamily() {
+          return GRAPH_FONT_FAMILIES[graphSettings.fontFamily] || GRAPH_FONT_FAMILIES.system;
+        }
+
+        function getFloatingPanelWidth(minimum = 320) {
+          return Math.max(minimum, Math.round(graphSettings.floatingPanelWidth || DEFAULT_GRAPH_SETTINGS.floatingPanelWidth));
+        }
+
+        function setFloatingPanelWidth(panel, minimum = 320) {
+          panel.dataset.minWidth = String(minimum);
+          panel.style.width = `${getFloatingPanelWidth(minimum)}px`;
+        }
+
+        function refreshFloatingPanelWidths() {
+          document.querySelectorAll('#graph-container .floating-panel').forEach(panel => {
+            setFloatingPanelWidth(panel, Number(panel.dataset.minWidth || 320));
+          });
+        }
+
+        function applyGraphPanelCssVars() {
+          const graphPanel = document.getElementById('graph-panel');
+          if (!graphPanel) return;
+          const sidebarWidth = Math.round(graphSettings.sidebarWidth);
+          const floatingWidth = Math.round(graphSettings.floatingPanelWidth);
+          graphPanel.style.setProperty('--graph-sidebar-width', `${sidebarWidth}px`);
+          graphPanel.style.setProperty('--graph-sidebar-offset', `${sidebarWidth + 20}px`);
+          graphPanel.style.setProperty('--graph-floating-panel-width', `${floatingWidth}px`);
+          refreshFloatingPanelWidths();
+        }
+
+        function updateGraphSettingsValueLabels() {
+          document.querySelectorAll('[data-setting-value="labelFontSize"]').forEach(el => { el.textContent = `${Math.round(graphSettings.labelFontSize)}px`; });
+          document.querySelectorAll('[data-setting-value="labelMaxLength"]').forEach(el => { el.textContent = `${Math.round(graphSettings.labelMaxLength)} chars`; });
+          document.querySelectorAll('[data-setting-value="nodeScale"]').forEach(el => { el.textContent = `${graphSettings.nodeScale.toFixed(2)}x`; });
+          document.querySelectorAll('[data-setting-value="spacing"]').forEach(el => { el.textContent = `${graphSettings.spacing.toFixed(2)}x`; });
+          document.querySelectorAll('[data-setting-value="edgeOpacity"]').forEach(el => { el.textContent = `${Math.round(graphSettings.edgeOpacity * 100)}%`; });
+          document.querySelectorAll('[data-setting-value="sidebarWidth"]').forEach(el => { el.textContent = `${Math.round(graphSettings.sidebarWidth)}px`; });
+          document.querySelectorAll('[data-setting-value="floatingPanelWidth"]').forEach(el => { el.textContent = `${Math.round(graphSettings.floatingPanelWidth)}px`; });
+        }
+
+        function syncGraphSettingsControls() {
+          const values = {
+            'graph-setting-label-density': graphSettings.labelDensity,
+            'graph-setting-label-font-size': String(graphSettings.labelFontSize),
+            'graph-setting-font-family': graphSettings.fontFamily,
+            'graph-setting-label-max-length': String(graphSettings.labelMaxLength),
+            'graph-setting-node-scale': String(graphSettings.nodeScale),
+            'graph-setting-spacing': String(graphSettings.spacing),
+            'graph-setting-edge-opacity': String(graphSettings.edgeOpacity),
+            'graph-setting-edge-style': graphSettings.edgeStyle,
+            'graph-setting-motion-mode': graphSettings.motionMode,
+            'graph-setting-sidebar-width': String(graphSettings.sidebarWidth),
+            'graph-setting-floating-panel-width': String(graphSettings.floatingPanelWidth),
+          };
+          Object.entries(values).forEach(([id, value]) => {
+            const el = document.getElementById(id);
+            if (el) el.value = value;
+          });
+          const showEdges = document.getElementById('graph-setting-show-edges');
+          if (showEdges) showEdges.checked = !!graphSettings.showEdges;
+          GRAPH_EDGE_TYPES.forEach(type => {
+            const el = document.getElementById(`graph-setting-edge-${type}`);
+            if (el) el.checked = graphSettings.edgeTypes[type] !== false;
+          });
+          updateGraphSettingsValueLabels();
+        }
+
+        function applyGraphSettingsToUi() {
+          applyGraphPanelCssVars();
+          syncGraphSettingsControls();
+          const toggle = document.getElementById('graph-settings-toggle');
+          const drawer = document.getElementById('graph-settings-drawer');
+          if (toggle && drawer) toggle.classList.toggle('active', drawer.classList.contains('open'));
+        }
+
+        function toggleGraphSettingsDrawer(forceOpen) {
+          const drawer = document.getElementById('graph-settings-drawer');
+          if (!drawer) return;
+          const nextOpen = typeof forceOpen === 'boolean' ? forceOpen : !drawer.classList.contains('open');
+          drawer.classList.toggle('open', nextOpen);
+          applyGraphSettingsToUi();
+        }
+
+        function persistGraphSettings(changedKey, options = {}) {
+          saveGraphSettings();
+          applyGraphSettingsToUi();
+          if (!graphLoaded) return;
+          if (options.reload || typeof window._graphOnSettingsChanged !== 'function') {
+            loadGraph();
+            return;
+          }
+          window._graphOnSettingsChanged(changedKey);
+        }
+
+        function initGraphSettingsControls() {
+          const toggle = document.getElementById('graph-settings-toggle');
+          const close = document.getElementById('graph-settings-close');
+          const reset = document.getElementById('graph-settings-reset');
+          const drawer = document.getElementById('graph-settings-drawer');
+          if (toggle && !toggle.dataset.bound) {
+            toggle.dataset.bound = 'true';
+            toggle.addEventListener('click', () => toggleGraphSettingsDrawer());
+          }
+          if (close && !close.dataset.bound) {
+            close.dataset.bound = 'true';
+            close.addEventListener('click', () => toggleGraphSettingsDrawer(false));
+          }
+          if (reset && !reset.dataset.bound) {
+            reset.dataset.bound = 'true';
+            reset.addEventListener('click', () => {
+              graphSettings = normalizeGraphSettings({});
+              persistGraphSettings('reset', { reload: true });
+            });
+          }
+          if (drawer && !drawer.dataset.bound) {
+            drawer.dataset.bound = 'true';
+            drawer.addEventListener('click', (e) => e.stopPropagation());
+          }
+          if (!document.body.dataset.graphSettingsOutsideBound) {
+            document.body.dataset.graphSettingsOutsideBound = 'true';
+            document.addEventListener('click', (e) => {
+              const panel = document.getElementById('graph-panel');
+              const currentDrawer = document.getElementById('graph-settings-drawer');
+              const currentToggle = document.getElementById('graph-settings-toggle');
+              if (!panel || !currentDrawer || !currentDrawer.classList.contains('open')) return;
+              if (currentDrawer.contains(e.target) || currentToggle?.contains(e.target)) return;
+              if (!panel.contains(e.target)) return;
+              toggleGraphSettingsDrawer(false);
+            });
+          }
+
+          const layoutKeys = new Set(['nodeScale', 'spacing', 'motionMode']);
+          const bindValueControl = (id, key, parser = (value) => value) => {
+            const el = document.getElementById(id);
+            if (!el || el.dataset.bound) return;
+            el.dataset.bound = 'true';
+            const eventName = el.tagName === 'SELECT' ? 'change' : 'input';
+            el.addEventListener(eventName, () => {
+              graphSettings = normalizeGraphSettings({ ...graphSettings, [key]: parser(el.value) });
+              persistGraphSettings(key, { reload: layoutKeys.has(key) });
+            });
+          };
+
+          bindValueControl('graph-setting-label-density', 'labelDensity');
+          bindValueControl('graph-setting-label-font-size', 'labelFontSize', Number);
+          bindValueControl('graph-setting-font-family', 'fontFamily');
+          bindValueControl('graph-setting-label-max-length', 'labelMaxLength', Number);
+          bindValueControl('graph-setting-node-scale', 'nodeScale', Number);
+          bindValueControl('graph-setting-spacing', 'spacing', Number);
+          bindValueControl('graph-setting-edge-opacity', 'edgeOpacity', Number);
+          bindValueControl('graph-setting-edge-style', 'edgeStyle');
+          bindValueControl('graph-setting-motion-mode', 'motionMode');
+          bindValueControl('graph-setting-sidebar-width', 'sidebarWidth', Number);
+          bindValueControl('graph-setting-floating-panel-width', 'floatingPanelWidth', Number);
+
+          const showEdges = document.getElementById('graph-setting-show-edges');
+          if (showEdges && !showEdges.dataset.bound) {
+            showEdges.dataset.bound = 'true';
+            showEdges.addEventListener('change', () => {
+              graphSettings = normalizeGraphSettings({ ...graphSettings, showEdges: showEdges.checked });
+              persistGraphSettings('showEdges', { reload: false });
+            });
+          }
+
+          GRAPH_EDGE_TYPES.forEach(type => {
+            const el = document.getElementById(`graph-setting-edge-${type}`);
+            if (!el || el.dataset.bound) return;
+            el.dataset.bound = 'true';
+            el.addEventListener('change', () => {
+              graphSettings = normalizeGraphSettings({
+                ...graphSettings,
+                edgeTypes: { ...graphSettings.edgeTypes, [type]: el.checked },
+              });
+              persistGraphSettings(`edgeType:${type}`, { reload: false });
+            });
+          });
+
+          applyGraphSettingsToUi();
+        }
 
         // ── Shape generators ──
         function hexagonPath(r) {
@@ -6052,6 +6625,7 @@
           const container = document.getElementById('graph-container');
           const panel = document.createElement('div');
           panel.className = 'floating-panel';
+          setFloatingPanelWidth(panel, 420);
 
           const offset = floatingPanels.size * 30;
           panel.style.left = (200 + offset) + 'px';
@@ -6125,7 +6699,7 @@
           const container = document.getElementById('graph-container');
           const panel = document.createElement('div');
           panel.className = 'floating-panel';
-          panel.style.width = '550px';
+          setFloatingPanelWidth(panel, 550);
           panel.style.maxHeight = '80vh';
 
           const offset = floatingPanels.size * 30;
@@ -6182,90 +6756,16 @@
               body.innerHTML = summaryHtml || '<div style="color:var(--text-dim);padding:1rem">No messages in this session</div>';
               return;
             }
-
-            // Build a map from tool_call_id to tool name for tool result messages
-            const toolCallNameMap = {};
-            data.messages.forEach(m => {
-              if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
-                m.tool_calls.forEach(tc => {
-                  if (tc.id && tc.function) toolCallNameMap[tc.id] = tc.function.name;
-                });
+            const mergedMessages = mergeSessionMessages(data);
+            const html = mergedMessages.map(m => {
+              if (m.role === 'assistant') {
+                return `<div class="fp-msg" style="border-left-color:#06b6d4">
+                  <div class="fp-msg-role" style="color:#06b6d4">assistant</div>
+                  ${renderAssistantMessage({ content: m.content || '', tools: m.tools || [], events: m.events || [] })}
+                </div>`;
               }
-            });
-
-            const html = data.messages.map(m => {
               const role = m.role || 'unknown';
-              const roleColor = role === 'user' ? '#a855f7' : (role === 'assistant' ? '#06b6d4' : '#f97316');
-
-              if (role === 'user') {
-                const content = escapeHtml(m.content || '').replace(/\n/g, '<br>');
-                return `<div class="fp-msg" style="border-left-color:${roleColor}">
-                  <div class="fp-msg-role" style="color:${roleColor}">${escapeHtml(role)}</div>
-                  <div style="font-size:0.8rem;line-height:1.4">${content}</div>
-                </div>`;
-              }
-
-              if (role === 'assistant') {
-                let parts = '';
-                if (m.content) {
-                  parts += `<div style="font-size:0.8rem;line-height:1.4">${formatMessageContent(m.content)}</div>`;
-                }
-                if (Array.isArray(m.tool_calls)) {
-                  m.tool_calls.forEach(tc => {
-                    const fnName = (tc.function && tc.function.name) || 'unknown';
-                    let argsHtml = '';
-                    try {
-                      const parsed = JSON.parse(tc.function.arguments || '{}');
-                      argsHtml = highlightJSON(JSON.stringify(parsed, null, 2));
-                    } catch {
-                      argsHtml = escapeHtml(tc.function.arguments || '');
-                    }
-                    parts += `<details class="fp-tool-call">
-                      <summary>
-                        <span class="fp-tc-name">${escapeHtml(fnName)}</span>
-                        <span class="fp-tc-badge">tool call</span>
-                      </summary>
-                      <div class="fp-tc-section">
-                        <div class="fp-tc-label">Arguments</div>
-                        <pre><code>${argsHtml}</code></pre>
-                      </div>
-                    </details>`;
-                  });
-                }
-                return `<div class="fp-msg" style="border-left-color:${roleColor}">
-                  <div class="fp-msg-role" style="color:${roleColor}">${escapeHtml(role)}</div>
-                  ${parts}
-                </div>`;
-              }
-
-              if (role === 'tool') {
-                const toolName = (m.tool_call_id && toolCallNameMap[m.tool_call_id]) || 'tool result';
-                let contentStr = m.content || '';
-                let resultHtml = '';
-                try {
-                  const parsed = JSON.parse(contentStr);
-                  contentStr = JSON.stringify(parsed, null, 2);
-                } catch { /* use raw content */ }
-                const truncated = contentStr.length > 2000;
-                const displayStr = truncated ? contentStr.slice(0, 2000) : contentStr;
-                const uid = 'tr-' + Math.random().toString(36).slice(2, 9);
-                resultHtml = `<pre><code id="${uid}-short">${highlightJSON(displayStr)}${truncated ? '\n...' : ''}</code>${truncated ? `<code id="${uid}-full" style="display:none">${highlightJSON(contentStr)}</code>` : ''}</pre>`;
-                if (truncated) {
-                  resultHtml += `<button class="fp-expand-btn" onclick="var s=document.getElementById('${uid}-short'),f=document.getElementById('${uid}-full');if(f.style.display==='none'){f.style.display='';s.style.display='none';this.textContent='Show less'}else{s.style.display='';f.style.display='none';this.textContent='Show more'}">Show more</button>`;
-                }
-                return `<details class="fp-tool-result">
-                  <summary>
-                    <span class="fp-tc-name">${escapeHtml(toolName)}</span>
-                    <span class="fp-tc-badge" style="background:rgba(6,182,212,0.15);color:#06b6d4">result</span>
-                  </summary>
-                  <div class="fp-tc-section">
-                    <div class="fp-tc-label">Result</div>
-                    ${resultHtml}
-                  </div>
-                </details>`;
-              }
-
-              // Fallback for other roles
+              const roleColor = role === 'user' ? '#a855f7' : '#f97316';
               const content = escapeHtml(m.content || '').replace(/\n/g, '<br>');
               return `<div class="fp-msg" style="border-left-color:${roleColor}">
                 <div class="fp-msg-role" style="color:${roleColor}">${escapeHtml(role)}</div>
@@ -6291,7 +6791,7 @@
           const container = document.getElementById('graph-container');
           const panel = document.createElement('div');
           panel.className = 'floating-panel';
-          panel.style.width = '420px';
+          setFloatingPanelWidth(panel, 420);
 
           const offset = floatingPanels.size * 30;
           panel.style.left = (220 + offset) + 'px';
@@ -6380,7 +6880,7 @@
           const container = document.getElementById('graph-container');
           const panel = document.createElement('div');
           panel.className = 'floating-panel';
-          panel.style.width = '420px';
+          setFloatingPanelWidth(panel, 420);
 
           const offset = floatingPanels.size * 30;
           panel.style.left = (240 + offset) + 'px';
@@ -6482,7 +6982,7 @@
           const container = document.getElementById('graph-container');
           const panel = document.createElement('div');
           panel.className = 'floating-panel';
-          panel.style.width = '440px';
+          setFloatingPanelWidth(panel, 440);
 
           const offset = floatingPanels.size * 30;
           panel.style.left = (200 + offset) + 'px';
@@ -6867,8 +7367,13 @@
           buildGraphLegend();
 
           // ── Active filter state ──
-          const activeTypes = new Set(['session', 'file', 'tool', 'model', 'skill']);
-          let minDegree = 0;
+          const activeTypes = new Set(
+            Array.from(document.querySelectorAll('.type-toggle.active')).map(btn => btn.dataset.type)
+          );
+          if (!activeTypes.size) {
+            ['session', 'file', 'tool', 'model', 'skill'].forEach(type => activeTypes.add(type));
+          }
+          let minDegree = Number(document.getElementById('graph-degree-slider')?.value || 0);
           const visibleNodeIds = new Set(nodes.map(n => n.id));
 
           // Update type counts in toggle buttons
@@ -6892,26 +7397,60 @@
             used_model: { stroke: '#06b6d4', dash: [],    width: 1.5 },
             delegated:  { stroke: '#a855f7', dash: [],    width: 2 },
             relates_to: { stroke: '#ffd700', dash: [4,4], width: 1 },
+            used_skill: { stroke: '#ffd700', dash: [2,4], width: 1.4 },
           };
           const defaultEdge = { stroke: '#4b5563', dash: [], width: 1 };
-          function edgeCfg(d) { return edgeConfig[d.type] || defaultEdge; }
+          function edgeCfg(d) {
+            const base = edgeConfig[d.type] || defaultEdge;
+            if (graphSettings.edgeStyle === 'solid') return { ...base, dash: [] };
+            if (graphSettings.edgeStyle === 'dashed') return { ...base, dash: [4, 3] };
+            return base;
+          }
+
+          function applyNodeSizing() {
+            nodes.forEach(n => {
+              const cfg = typeConfig[n.type] || typeConfig.file;
+              const baseRadius = Math.max(cfg.r * 0.7, radiusScale(n.degree));
+              n._r = baseRadius * graphSettings.nodeScale;
+              n._visible = true;
+              n._searchMatch = true;
+              n._alpha = 1;
+            });
+          }
 
           // Compute radii for all nodes
-          nodes.forEach(n => {
-            const cfg = typeConfig[n.type] || typeConfig.file;
-            n._r = Math.max(cfg.r * 0.5, radiusScale(n.degree));
-            n._visible = true;
-            n._searchMatch = true;
-            n._alpha = 1;
-          });
+          applyNodeSizing();
           edges.forEach(e => { e._filtered = false; });
 
           // ── Interaction state ──
           let hoveredNode = null;
           let selectedNode = null;
           let dragNode = null;
-          let showLabels = true;
+          let showLabels = document.getElementById('graph-toggle-labels')?.checked !== false;
           let currentZoomK = 1;
+          const reducedMotion = resolvedGraphMotionMode() === 'reduced';
+
+          function isEdgeVisible(edge) {
+            if (!graphSettings.showEdges) return false;
+            return graphSettings.edgeTypes[edge.type] !== false;
+          }
+
+          function shouldDrawLabel(node) {
+            if (!showLabels || !node._visible) return false;
+            if (node === hoveredNode || node === selectedNode) return true;
+            const density = graphSettings.labelDensity;
+            if (density === 'dense') return currentZoomK >= 0.45;
+            if (density === 'normal') return currentZoomK >= 0.65 && (node.type === 'session' || node.type === 'model' || node.type === 'skill' || node.degree >= 4);
+            if (density === 'sparse') return currentZoomK >= 1 && (node.type === 'session' || node.type === 'model' || node.degree >= 6);
+            if (currentZoomK >= 1.2) return true;
+            return currentZoomK >= 0.8 && (node.type === 'session' || node.type === 'model' || (node.type === 'skill' && node.degree >= 2));
+          }
+
+          function trimGraphLabel(label) {
+            const value = String(label || '');
+            const maxLength = Math.max(4, Math.round(graphSettings.labelMaxLength));
+            return value.length > maxLength ? value.slice(0, maxLength - 1).trimEnd() + '\u2026' : value;
+          }
 
           // ── Quadtree ──
           let quadtree = d3.quadtree()
@@ -7004,7 +7543,15 @@
               ctx.save();
               ctx.strokeStyle = cfg.stroke;
               ctx.lineWidth = cfg.width / transform.k;
-              ctx.globalAlpha = focusNode ? 0.7 : 0.35;
+              let edgeAlpha = graphSettings.edgeOpacity;
+              if (focusNode) {
+                const isConnected = s.id === focusNode.id || t.id === focusNode.id;
+                edgeAlpha = selectedNode
+                  ? (isConnected ? Math.max(graphSettings.edgeOpacity, 0.9) : graphSettings.edgeOpacity * 0.25)
+                  : (isConnected ? Math.max(graphSettings.edgeOpacity, 0.75) : graphSettings.edgeOpacity * 0.4);
+              }
+              if ((!s._searchMatch || !t._searchMatch) && !focusNode) edgeAlpha = Math.min(edgeAlpha, 0.06);
+              ctx.globalAlpha = edgeAlpha;
               if (cfg.dash.length > 0) ctx.setLineDash(cfg.dash.map(v => v / transform.k));
               else ctx.setLineDash([]);
 
@@ -7015,7 +7562,7 @@
 
               ctx.setLineDash([]);
               ctx.fillStyle = cfg.stroke;
-              ctx.globalAlpha = focusNode ? 0.8 : 0.45;
+              ctx.globalAlpha = Math.min(1, edgeAlpha + 0.1);
               drawArrow(ctx, s.x, s.y, t.x, t.y, t._r || 6);
 
               ctx.restore();
@@ -7091,12 +7638,12 @@
               }
             });
 
-            // Draw labels (LOD: only when zoomed in enough)
-            if (showLabels && currentZoomK >= 0.6) {
+            // Draw labels
+            if (showLabels) {
               ctx.textAlign = 'center';
               ctx.textBaseline = 'top';
               nodes.forEach(n => {
-                if (!n._visible) return;
+                if (!shouldDrawLabel(n)) return;
                 if (n.x == null || n.y == null) return;
 
                 let alpha = 0.7;
@@ -7110,12 +7657,14 @@
                 if (!n._searchMatch) alpha = 0.08;
 
                 ctx.globalAlpha = alpha;
-                const fontSize = (n.type === 'session' || n.type === 'model') ? 9 : 7;
-                ctx.font = `${fontSize / transform.k}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+                const baseFontSize = n.type === 'session' || n.type === 'model'
+                  ? graphSettings.labelFontSize + 1
+                  : graphSettings.labelFontSize;
+                ctx.font = `${baseFontSize / transform.k}px ${graphFontFamily()}`;
                 ctx.fillStyle = '#a0a0b0';
 
                 const name = n.label || n.name || n.id || '';
-                const label = name.length > 25 ? name.substring(0, 22) + '\u2026' : name;
+                const label = trimGraphLabel(name);
                 ctx.fillText(label, n.x, n.y + (n._r || 8) + 4);
               });
             }
@@ -7137,7 +7686,7 @@
             edges.forEach(e => {
               const sid = typeof e.source === 'object' ? e.source.id : e.source;
               const tid = typeof e.target === 'object' ? e.target.id : e.target;
-              e._filtered = !(visibleNodeIds.has(sid) && visibleNodeIds.has(tid));
+              e._filtered = !(visibleNodeIds.has(sid) && visibleNodeIds.has(tid) && isEdgeVisible(e));
             });
 
             // Clear selection if node is now hidden
@@ -7179,6 +7728,7 @@
           // ── Force simulation ──
           const isLarge = nodes.length > 300;
           if (graphSim) graphSim.stop();
+          const spacingMultiplier = graphSettings.spacing;
 
           // Pre-initialize node positions around center to avoid phantom clusters
           // D3's default phyllotaxis places nodes around (0,0) which is off-screen
@@ -7190,11 +7740,11 @@
           graphSim = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(edges).id(d => d.id)
               .distance(d => {
-                if (d.type === 'accessed')   return isLarge ? 40 : 60;
-                if (d.type === 'used_tool')  return isLarge ? 30 : 50;
-                if (d.type === 'used_model') return isLarge ? 50 : 80;
-                if (d.type === 'delegated')  return isLarge ? 60 : 90;
-                return isLarge ? 35 : 55;
+                if (d.type === 'accessed')   return (isLarge ? 40 : 60) * spacingMultiplier;
+                if (d.type === 'used_tool')  return (isLarge ? 30 : 50) * spacingMultiplier;
+                if (d.type === 'used_model') return (isLarge ? 50 : 80) * spacingMultiplier;
+                if (d.type === 'delegated')  return (isLarge ? 60 : 90) * spacingMultiplier;
+                return (isLarge ? 35 : 55) * spacingMultiplier;
               })
               .strength(d => {
                 if (d.type === 'accessed')   return isLarge ? 0.2  : 0.4;
@@ -7205,22 +7755,22 @@
             )
             .force('charge', d3.forceManyBody()
               .strength(d => {
-                if (d.type === 'session') return isLarge ? -80  : -200;
-                if (d.type === 'model')   return isLarge ? -60  : -150;
-                if (d.type === 'skill')   return isLarge ? -50  : -120;
-                return isLarge ? -30 : -80;
+                if (d.type === 'session') return (isLarge ? -80  : -200) * spacingMultiplier;
+                if (d.type === 'model')   return (isLarge ? -60  : -150) * spacingMultiplier;
+                if (d.type === 'skill')   return (isLarge ? -50  : -120) * spacingMultiplier;
+                return (isLarge ? -30 : -80) * spacingMultiplier;
               })
-              .distanceMax(isLarge ? 200 : 500)
+              .distanceMax((isLarge ? 200 : 500) * spacingMultiplier)
               .theta(1.2)
             )
             .force('center', d3.forceCenter(width / 2, height / 2).strength(0.08))
             .force('collision', d3.forceCollide()
-              .radius(d => (d._r || 6) + (isLarge ? 2 : 3))
+              .radius(d => ((d._r || 6) + (isLarge ? 2 : 3)) * Math.max(0.9, spacingMultiplier))
             )
-            .force('x', d3.forceX(width / 2).strength(0.06))
-            .force('y', d3.forceY(height / 2).strength(0.06))
-            .alphaDecay(0.04)
-            .velocityDecay(0.5);
+            .force('x', d3.forceX(width / 2).strength(reducedMotion ? 0.1 : 0.06))
+            .force('y', d3.forceY(height / 2).strength(reducedMotion ? 0.1 : 0.06))
+            .alphaDecay(reducedMotion ? 0.1 : 0.04)
+            .velocityDecay(reducedMotion ? 0.65 : 0.5);
 
           // ── Zoom / pan ──
           let transform = d3.zoomIdentity;
@@ -7512,7 +8062,33 @@
           graphSim.on('tick', () => {
             rebuildQuadtree();
             scheduleRender();
+            if (reducedMotion && graphSim.alpha() < 0.03) {
+              graphSim.stop();
+            }
           });
+
+          window._graphOnSettingsChanged = function(changedKey) {
+            if (changedKey === 'sidebarWidth' || changedKey === 'floatingPanelWidth') {
+              applyGraphPanelCssVars();
+              scheduleRender();
+              return;
+            }
+            if (
+              changedKey === 'labelDensity' ||
+              changedKey === 'labelFontSize' ||
+              changedKey === 'fontFamily' ||
+              changedKey === 'labelMaxLength' ||
+              changedKey === 'showEdges' ||
+              changedKey === 'edgeOpacity' ||
+              changedKey === 'edgeStyle' ||
+              String(changedKey || '').startsWith('edgeType:')
+            ) {
+              applyVisibilityFilter();
+              scheduleRender();
+              return;
+            }
+            loadGraph();
+          };
 
           applyVisibilityFilter();
           graphLoaded = true;
@@ -7647,6 +8223,9 @@
         }, 300));
 
         // GRAPH_INTEGRATION_END
+
+        initGraphSettingsControls();
+        applyGraphSettingsToUi();
 
         // Initialize (lazy: only load essentials for chat)
         log('inf', 'Dashboard initialized');

@@ -557,12 +557,15 @@ def _extract_summary_from_messages(
     session_meta = session_meta or {}
     title = str(session_meta.get("title") or "").strip()
     user_messages = []
+    assistant_messages = []
     tool_names = []
     for msg in messages:
         role = str(msg.get("role") or "")
         content = str(msg.get("content") or "").strip()
         if role == "user" and content:
             user_messages.append(content)
+        elif role == "assistant" and content:
+            assistant_messages.append(content)
         tool_calls = msg.get("tool_calls")
         if isinstance(tool_calls, list):
             for tool_call in tool_calls:
@@ -576,11 +579,17 @@ def _extract_summary_from_messages(
         if role == "tool" and tool_name:
             tool_names.append(tool_name)
 
-    if not user_messages and not title:
+    if not user_messages and not assistant_messages and not title and not tool_names:
         return None
 
-    first_user = user_messages[0] if user_messages else title
-    summary = first_user.replace("\n", " ").strip()
+    seed = (
+        user_messages[0]
+        if user_messages
+        else assistant_messages[0]
+        if assistant_messages
+        else title
+    )
+    summary = seed.replace("\n", " ").strip() if seed else ""
     if len(summary) > 220:
         summary = summary[:219].rstrip() + "..."
     unique_tools = []
@@ -589,7 +598,9 @@ def _extract_summary_from_messages(
             unique_tools.append(name)
     if unique_tools:
         tool_text = ", ".join(unique_tools[:4])
-        summary = f"{summary} Tools: {tool_text}."
+        summary = (
+            f"{summary} Tools: {tool_text}." if summary else f"Tools: {tool_text}."
+        )
     return summary.strip() or None
 
 
@@ -597,18 +608,72 @@ def _extract_title_from_messages(
     messages: list[dict], session_meta: Optional[dict] = None
 ) -> Optional[str]:
     session_meta = session_meta or {}
+    tool_names = []
+
+    def _condense_title(text: str) -> Optional[str]:
+        cleaned = " ".join((text or "").split()).strip(" .:-")
+        if not cleaned:
+            return None
+        if cleaned.startswith("[SYSTEM:"):
+            return None
+        if cleaned.startswith("--- name:"):
+            return None
+        if "skill content is loaded below" in cleaned.lower():
+            return None
+        if cleaned.lower().startswith("the user has invoked the"):
+            return None
+        cleaned = cleaned.replace("Tools:", "").strip(" .:-")
+        if ". " in cleaned:
+            cleaned = cleaned.split(". ", 1)[0].strip()
+        if " Tools: " in cleaned:
+            cleaned = cleaned.split(" Tools: ", 1)[0].strip()
+        if cleaned.lower().startswith("now i have a complete picture"):
+            return None
+        if cleaned.lower().startswith("let me compile"):
+            return None
+        words = cleaned.split()
+        if len(words) > 8:
+            cleaned = " ".join(words[:8]).rstrip(" ,;:-") + "..."
+        return cleaned[:77].rstrip() + "..." if len(cleaned) > 80 else cleaned
+
     for msg in messages:
-        if str(msg.get("role") or "") != "user":
-            continue
         content = str(msg.get("content") or "").strip()
-        if not content:
-            continue
-        title = content.replace("\n", " ").strip()
-        if len(title) > 80:
-            title = title[:77].rstrip() + "..."
-        return title
+        role = str(msg.get("role") or "")
+        if role == "user" and content:
+            title = _condense_title(content.replace("\n", " "))
+            if title:
+                return title
+        if role == "assistant" and content:
+            title = _condense_title(content.replace("\n", " "))
+            if title:
+                return title
+        tool_name = str(msg.get("tool_name") or "").strip()
+        if tool_name:
+            tool_names.append(tool_name)
+        tool_calls = msg.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                func = (
+                    tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+                )
+                name = str(func.get("name") or tool_call.get("name") or "").strip()
+                if name:
+                    tool_names.append(name)
+    if tool_names:
+        title = f"Session using {tool_names[0]}"
+        return title[:77].rstrip() + "..." if len(title) > 80 else title
     fallback = str(session_meta.get("title") or "").strip()
-    return fallback or None
+    if fallback:
+        return fallback
+    summary = str(session_meta.get("summary") or "").strip()
+    if summary:
+        title = _condense_title(summary)
+        if title:
+            return title
+    session_id = str(session_meta.get("id") or "").strip()
+    if session_id:
+        return f"Session {session_id[:8]}"
+    return None
 
 
 def _refresh_local_session_metadata(
@@ -635,23 +700,38 @@ def _refresh_local_session_metadata(
                 pass
         messages.append(item)
     meta = dict(session_meta)
+    existing_title = str(meta.get("title") or "").strip() or None
+    existing_summary = str(meta.get("summary") or "").strip() or None
     generated_title = None
     generated_summary = None
-    if force or not str(meta.get("title") or "").strip():
+    if force or not existing_title:
         generated_title = _extract_title_from_messages(messages, meta)
     if generated_title:
         meta["title"] = generated_title
-    if force or not str(meta.get("summary") or "").strip():
+    if force or not existing_summary:
         generated_summary = _extract_summary_from_messages(messages, meta)
-    if generated_title or generated_summary:
+    title_to_store = generated_title or existing_title
+    summary_to_store = generated_summary or existing_summary
+    if not title_to_store and summary_to_store:
+        title_to_store = (
+            summary_to_store[:77].rstrip() + "..."
+            if len(summary_to_store) > 80
+            else summary_to_store
+        )
+    changed = (generated_title is not None and generated_title != existing_title) or (
+        generated_summary is not None and generated_summary != existing_summary
+    )
+    if changed:
         conn.execute(
             "UPDATE sessions SET title = COALESCE(?, title), summary = COALESCE(?, summary) WHERE id = ?"
             if not force
             else "UPDATE sessions SET title = ?, summary = ? WHERE id = ?",
-            (generated_title, generated_summary, session_id),
+            (generated_title, generated_summary, session_id)
+            if not force
+            else (title_to_store, summary_to_store, session_id),
         )
         conn.commit()
-    return {"title": generated_title, "summary": generated_summary}
+    return {"title": title_to_store, "summary": summary_to_store, "changed": changed}
 
 
 def get_raw_config():
@@ -1415,9 +1495,9 @@ async def regenerate_session_summary_endpoint(request):
                 {"success": False, "error": "Session not found"}, status_code=404
             )
         refreshed = _refresh_local_session_metadata(conn, session_id, force=True)
-        if not refreshed.get("summary") and not refreshed.get("title"):
+        if not refreshed.get("summary"):
             return JSONResponse(
-                {"success": False, "error": "Failed to generate summary"},
+                {"success": False, "error": "Failed to regenerate title and summary"},
                 status_code=500,
             )
         return JSONResponse({"success": True, **refreshed})
@@ -1978,6 +2058,19 @@ def _extract_skill_ids_from_payload(payload) -> list[str]:
     return skill_ids
 
 
+def _canonical_skill_id(raw_skill_id: str) -> str:
+    value = str(raw_skill_id or "").strip().strip("/")
+    if not value:
+        return ""
+    if "/" in value:
+        value = value.split("/")[-1]
+    if value.endswith("SKILL.md"):
+        parts = Path(value).parts
+        if len(parts) >= 2:
+            value = parts[-2]
+    return value
+
+
 def _session_label(title, summary, session_id: str) -> str:
     clean_title = " ".join(str(title or "").split()).strip()
     if clean_title:
@@ -2232,6 +2325,7 @@ async def get_graph_data(request):
             config = get_config()
             disabled_skills = set(config.get("skills", {}).get("disabled", []))
 
+            known_skill_ids: set[str] = set()
             if skills_dir.exists():
                 for category_dir in sorted(skills_dir.iterdir()):
                     if not category_dir.is_dir() or category_dir.name.startswith("."):
@@ -2241,6 +2335,7 @@ async def get_graph_data(request):
                             continue
 
                         skill_id_str = skill_dir.name
+                        known_skill_ids.add(skill_id_str)
                         skill_md = skill_dir / "SKILL.md"
                         fm = {}
                         if skill_md.exists():
@@ -2277,10 +2372,15 @@ async def get_graph_data(request):
                                     )
 
                 for session_id, skill_id in sorted(session_skill_edges):
+                    canonical_skill_id = _canonical_skill_id(skill_id)
+                    if not canonical_skill_id:
+                        continue
+                    if canonical_skill_id not in known_skill_ids:
+                        continue
                     edges.append(
                         {
                             "source": f"session:{session_id}",
-                            "target": f"skill:{skill_id}",
+                            "target": f"skill:{canonical_skill_id}",
                             "type": "used_skill",
                         }
                     )
