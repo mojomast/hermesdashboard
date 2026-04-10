@@ -173,6 +173,22 @@ It depends on an existing Hermes install for:
 - [Setup Guide](SETUP.md)
 - [Operations Guide](OPERATIONS.md)
 - [Implementation Notes](IMPLEMENTATION.md)
+- [Contributing Guide](CONTRIBUTING.md)
+
+## Contributing
+
+Contributions are welcome.
+
+If you want to help build Hermes Dashboard:
+
+- check the open issues and pick something small or well-scoped
+- discuss bigger changes before starting them
+- test your changes locally before opening a pull request
+- update docs when behavior or setup changes
+
+Start here:
+
+- [Contributing Guide](CONTRIBUTING.md)
 
 ## Repository
 
