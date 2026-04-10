@@ -551,6 +551,34 @@ def _session_overview_payload(conn: sqlite3.Connection, session_id: str) -> dict
     }
 
 
+def _clean_transcript_seed_text(text: str) -> str:
+    cleaned = " ".join(str(text or "").split()).strip()
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+    if cleaned.startswith("[SYSTEM:"):
+        return ""
+    if cleaned.startswith("--- name:"):
+        return ""
+    if "skill content is loaded below" in lowered:
+        return ""
+    if lowered.startswith("the user has invoked the"):
+        return ""
+    return cleaned
+
+
+def _extract_tool_output_preview(raw_content: str) -> str:
+    payload = _safe_json_loads(raw_content)
+    if isinstance(payload, dict):
+        for key in ("summary", "message", "output", "content", "result"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return " ".join(value.split()).strip()
+    if isinstance(payload, str) and payload.strip():
+        return " ".join(payload.split()).strip()
+    return " ".join(str(raw_content or "").split()).strip()
+
+
 def _extract_summary_from_messages(
     messages: list[dict], session_meta: Optional[dict] = None
 ) -> Optional[str]:
@@ -559,13 +587,15 @@ def _extract_summary_from_messages(
     user_messages = []
     assistant_messages = []
     tool_names = []
+    tool_output_previews = []
     for msg in messages:
         role = str(msg.get("role") or "")
         content = str(msg.get("content") or "").strip()
-        if role == "user" and content:
-            user_messages.append(content)
-        elif role == "assistant" and content:
-            assistant_messages.append(content)
+        cleaned_content = _clean_transcript_seed_text(content)
+        if role == "user" and cleaned_content:
+            user_messages.append(cleaned_content)
+        elif role == "assistant" and cleaned_content:
+            assistant_messages.append(cleaned_content)
         tool_calls = msg.get("tool_calls")
         if isinstance(tool_calls, list):
             for tool_call in tool_calls:
@@ -578,8 +608,18 @@ def _extract_summary_from_messages(
         tool_name = str(msg.get("tool_name") or "").strip()
         if role == "tool" and tool_name:
             tool_names.append(tool_name)
+        if role == "tool" and content:
+            preview = _extract_tool_output_preview(content)
+            if preview:
+                tool_output_previews.append(preview)
 
-    if not user_messages and not assistant_messages and not title and not tool_names:
+    if (
+        not user_messages
+        and not assistant_messages
+        and not title
+        and not tool_names
+        and not tool_output_previews
+    ):
         return None
 
     seed = (
@@ -587,6 +627,8 @@ def _extract_summary_from_messages(
         if user_messages
         else assistant_messages[0]
         if assistant_messages
+        else tool_output_previews[0]
+        if tool_output_previews
         else title
     )
     summary = seed.replace("\n", " ").strip() if seed else ""
@@ -609,24 +651,19 @@ def _extract_title_from_messages(
 ) -> Optional[str]:
     session_meta = session_meta or {}
     tool_names = []
+    tool_output_previews = []
 
     def _condense_title(text: str) -> Optional[str]:
-        cleaned = " ".join((text or "").split()).strip(" .:-")
+        cleaned = _clean_transcript_seed_text(text).strip(" .:-=")
         if not cleaned:
-            return None
-        if cleaned.startswith("[SYSTEM:"):
-            return None
-        if cleaned.startswith("--- name:"):
-            return None
-        if "skill content is loaded below" in cleaned.lower():
-            return None
-        if cleaned.lower().startswith("the user has invoked the"):
             return None
         cleaned = cleaned.replace("Tools:", "").strip(" .:-")
         if ". " in cleaned:
             cleaned = cleaned.split(". ", 1)[0].strip()
         if " Tools: " in cleaned:
             cleaned = cleaned.split(" Tools: ", 1)[0].strip()
+        if cleaned.startswith("==="):
+            cleaned = cleaned.strip("=").strip()
         if cleaned.lower().startswith("now i have a complete picture"):
             return None
         if cleaned.lower().startswith("let me compile"):
@@ -650,6 +687,10 @@ def _extract_title_from_messages(
         tool_name = str(msg.get("tool_name") or "").strip()
         if tool_name:
             tool_names.append(tool_name)
+        if role == "tool" and content:
+            preview = _extract_tool_output_preview(content)
+            if preview:
+                tool_output_previews.append(preview)
         tool_calls = msg.get("tool_calls")
         if isinstance(tool_calls, list):
             for tool_call in tool_calls:
@@ -659,6 +700,10 @@ def _extract_title_from_messages(
                 name = str(func.get("name") or tool_call.get("name") or "").strip()
                 if name:
                     tool_names.append(name)
+    if tool_output_previews:
+        title = _condense_title(tool_output_previews[0])
+        if title:
+            return title
     if tool_names:
         title = f"Session using {tool_names[0]}"
         return title[:77].rstrip() + "..." if len(title) > 80 else title
@@ -1332,6 +1377,13 @@ async def get_sessions(request):
         sessions = []
         for row in cursor.fetchall():
             item = dict(row)
+            if (
+                not str(item.get("title") or "").strip()
+                or not str(item.get("summary") or "").strip()
+            ):
+                refreshed = _refresh_local_session_metadata(conn, item.get("id", ""))
+                item["title"] = refreshed.get("title") or item.get("title")
+                item["summary"] = refreshed.get("summary") or item.get("summary")
             item["title"] = _session_label(
                 item.get("title"),
                 item.get("summary") or item.get("preview"),
@@ -1389,6 +1441,19 @@ async def get_session(request):
         conn.close()
         return JSONResponse({"error": "Session not found"}, status_code=404)
 
+    session_payload = dict(session_row)
+    if (
+        not str(session_payload.get("title") or "").strip()
+        or not str(session_payload.get("summary") or "").strip()
+    ):
+        refreshed = _refresh_local_session_metadata(conn, session_id)
+        session_payload["title"] = refreshed.get("title") or session_payload.get(
+            "title"
+        )
+        session_payload["summary"] = refreshed.get("summary") or session_payload.get(
+            "summary"
+        )
+
     cursor = conn.execute(
         """
         SELECT id, role, content, timestamp, tool_call_id, tool_calls, tool_name,
@@ -1427,7 +1492,7 @@ async def get_session(request):
     conn.close()
 
     return JSONResponse(
-        {**dict(session_row), "messages": messages, **activity, **overview}
+        {**session_payload, "messages": messages, **activity, **overview}
     )
 
 
@@ -1541,6 +1606,7 @@ def _dashboard_allowed_roots() -> list[Path]:
     env_root = os.getenv("HERMES_WRITE_SAFE_ROOT", "").strip()
     if env_root:
         roots.append(Path(env_root).expanduser().resolve())
+    roots.append(Path.home().resolve())
     roots.append(Path.cwd().resolve())
     roots.append(HERMES_HOME.resolve())
     repos_dir = Path.home() / "repos"

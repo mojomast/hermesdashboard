@@ -3517,6 +3517,105 @@
             return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
         }
 
+        function summarizeToolSubject(value, limit = 72) {
+            const text = summarizeValue(value, limit).replace(/\s+/g, ' ').trim();
+            return text.replace(/^['"]|['"]$/g, '');
+        }
+
+        function toolVerbPhrase(toolName) {
+            const map = {
+                read_file: 'Reading file',
+                write_file: 'Writing file',
+                patch: 'Patching file',
+                terminal: 'Running terminal command',
+                execute_code: 'Executing code',
+                web_search: 'Searching the web',
+                web_extract: 'Extracting web page content',
+                fetch_url: 'Fetching URL',
+                skill_view: 'Opening skill instructions',
+                skill_manage: 'Updating skill metadata',
+                session_search: 'Searching session history',
+                delegate_task: 'Delegating subtask',
+                todo: 'Updating task list',
+                mcp_becomussy_project_list: 'Listing projects',
+                mcp_becomussy_thread_list: 'Listing project threads',
+            };
+            return map[toolName] || `Running ${toolName || 'tool'}`;
+        }
+
+        function summarizeToolArgs(toolName, args) {
+            if (!args || typeof args !== 'object') return '';
+            switch (toolName) {
+                case 'read_file':
+                case 'write_file':
+                case 'patch':
+                    return summarizeToolSubject(args.path || args.file_path || args.target_file || args.paths?.[0]);
+                case 'terminal':
+                    return summarizeToolSubject(args.command || args.cmd, 88);
+                case 'execute_code':
+                    return summarizeToolSubject(args.language || args.filename || args.code, 88);
+                case 'web_search':
+                case 'session_search':
+                    return summarizeToolSubject(args.query || args.prompt || args.search || args.mode, 88);
+                case 'web_extract':
+                case 'fetch_url':
+                    return summarizeToolSubject(args.url || args.urls?.[0], 88);
+                case 'skill_view':
+                    return summarizeToolSubject(args.skill || args.skill_id || args.name);
+                case 'skill_manage':
+                    return summarizeToolSubject(args.name || args.skill_id || args.action, 88);
+                case 'delegate_task':
+                    return summarizeToolSubject(args.task_description || args.prompt || args.description, 88);
+                case 'todo':
+                    return summarizeToolSubject(args.content || args.items?.[0]?.content || args.action, 88);
+                case 'mcp_becomussy_project_list':
+                    return summarizeToolSubject(args.status || args.filter || 'available projects');
+                case 'mcp_becomussy_thread_list':
+                    return summarizeToolSubject(args.project_id || args.project || args.status || 'project threads');
+                default:
+                    return summarizeToolSubject(
+                        args.path || args.query || args.url || args.command || args.name || args.id || args.action,
+                        88,
+                    );
+            }
+        }
+
+        function summarizeToolResult(toolName, result) {
+            if (result == null || result === '') return '';
+            if (typeof result === 'string') {
+                return summarizeToolSubject(result, 88);
+            }
+            if (typeof result === 'object') {
+                if (typeof result.message === 'string' && result.message.trim()) return summarizeToolSubject(result.message, 88);
+                if (typeof result.summary === 'string' && result.summary.trim()) return summarizeToolSubject(result.summary, 88);
+                if (typeof result.error === 'string' && result.error.trim()) return summarizeToolSubject(result.error, 88);
+                if (typeof result.path === 'string' && result.path.trim()) return summarizeToolSubject(result.path, 88);
+                if (typeof result.count === 'number') return `${result.count} item${result.count === 1 ? '' : 's'}`;
+                if (Array.isArray(result.results)) return `${result.results.length} result${result.results.length === 1 ? '' : 's'}`;
+                if (typeof result.status === 'string' && result.status.trim()) return summarizeToolSubject(result.status, 88);
+            }
+            return summarizeToolSubject(result, 88);
+        }
+
+        function describeToolLog(toolName, phase, payload = null) {
+            const verb = toolVerbPhrase(toolName);
+            const subject = summarizeToolArgs(toolName, payload && typeof payload === 'object' ? payload : null);
+            const prefix = subject ? `${verb}: ${subject}` : verb;
+            if (phase === 'start') return `${prefix}...`;
+            if (phase === 'progress') {
+                const progressText = typeof payload === 'string'
+                    ? summarizeToolSubject(payload, 88)
+                    : summarizeToolSubject(payload?.progress || payload?.message || payload?.status || payload, 88);
+                return progressText ? `${prefix} • ${progressText}` : `${prefix} in progress`;
+            }
+            if (phase === 'delegated') return `${prefix} • handed off to a subagent`;
+            if (phase === 'output') {
+                const summary = summarizeToolResult(toolName, payload);
+                return summary ? `${prefix} • completed: ${summary}` : `${prefix} • completed`;
+            }
+            return prefix;
+        }
+
         function renderToolRequest(parsedArgs, rawArgs) {
             if (parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
                 const important = Object.entries(parsedArgs).slice(0, 5);
@@ -5099,7 +5198,7 @@
                 <div class="session-item" onclick="viewSession('${s.id}')">
                     <div class="session-info">
                         <h4>${escapeHtml(s.title || 'Untitled')}${s.source ? ' <span style="font-size:0.75rem;color:var(--text-dim);font-weight:normal;">(' + escapeHtml(s.source) + ')</span>' : ''}</h4>
-                        <p>${escapeHtml(s.summary || s.preview || 'No preview')} · ${new Date(s.started_at).toLocaleDateString()}</p>
+                        <p>${escapeHtml(s.summary || s.preview || 'No preview')} · ${escapeHtml(formatSessionDate(s.started_at))}</p>
                     </div>
                     <div class="session-actions">
                         <button class="btn" onclick="event.stopPropagation();attachChatToSession('${s.id}')">Use in Chat</button>
@@ -5173,7 +5272,7 @@
             const detail = document.getElementById('session-detail');
             const messages = document.getElementById('session-detail-messages');
             document.getElementById('session-detail-title').textContent = data.title || `Session ${id.slice(0, 8)}`;
-            const detailActions = document.querySelector('#session-detail .detail-actions');
+            const detailActions = document.querySelector('#session-detail .session-detail-actions');
             if (detailActions) {
                 detailActions.innerHTML = `
                     <button class="btn" onclick="attachChatToSession('${id}')">Use in Chat</button>
@@ -5419,9 +5518,9 @@
                             startToolTimerUpdates();
                             renderDirty = true;
                             if (tool.name === 'delegate_task') {
-                                log('tool', `Delegation started: ${tool.name}()`, false, { args: tool.arguments });
+                                log('tool', describeToolLog(tool.name, 'delegated', tool.arguments), false, { args: tool.arguments });
                             } else {
-                                log('tool', `${tool.name}()`, false, { args: tool.arguments });
+                                log('tool', describeToolLog(tool.name, 'start', tool.arguments), false, { args: tool.arguments });
                             }
                         } else if (parsed.type === 'tool_output') {
                             if (parsed.arguments?.subagent && appendDelegateChildEvent(assistantState, parsed)) {
@@ -5433,7 +5532,7 @@
                             const tool = upsertToolEvent(assistantState, parsed);
                             stopToolTimer(parsed.call_id || parsed.name);
                             renderDirty = true;
-                            log('tool', `${tool.name}() output`, false, { result: tool.output });
+                            log('tool', describeToolLog(tool.name, 'output', tool.output), false, { result: tool.output });
                         } else if (parsed.type === 'tool_progress') {
                             if ((parsed.arguments?.delegate_call_id || parsed.arguments?.call_id) && appendDelegateChildEvent(assistantState, parsed)) {
                                 renderDirty = true;
@@ -5442,7 +5541,7 @@
                             }
                             const tool = appendToolProgress(assistantState, parsed);
                             renderDirty = true;
-                            log('tool', `${tool.name}() progress`, false, { result: parsed.progress || parsed.arguments || '' });
+                            log('tool', describeToolLog(tool.name, 'progress', parsed.progress || parsed.arguments || ''), false, { result: parsed.progress || parsed.arguments || '' });
                         } else if (parsed.type === 'meta') {
                             if (parsed.usage) assistantState.usage = parsed.usage;
                             if (parsed.last_prompt_tokens) assistantState.last_prompt_tokens = parsed.last_prompt_tokens;
@@ -5488,7 +5587,7 @@
                 return;
             }
             list.innerHTML = currentSessionFiles.map(file => `
-                <div class="file-item ${activePath === file.path ? 'active' : ''}" onclick="previewSessionFile(${JSON.stringify(file.path)})">
+                <div class="file-item ${activePath === file.path ? 'active' : ''}" onclick="previewSessionFile(${JSON.stringify(file.path)}, ${file.previewable ? 'true' : 'false'})">
                     <div class="file-item-meta">
                         <span class="meta-pill">${escapeHtml(file.action || 'file')}</span>
                         <span class="meta-pill">${escapeHtml(file.tool || 'tool')}</span>
@@ -5499,17 +5598,28 @@
             `).join('');
         }
 
+        function toSessionDateMs(value) {
+            if (value == null || value === '') return null;
+            const numeric = Number(value);
+            if (Number.isFinite(numeric)) {
+                return numeric < 1e12 ? numeric * 1000 : numeric;
+            }
+            const parsed = Date.parse(String(value));
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+
         function formatSessionDate(value) {
-            if (!value) return '--';
-            const date = new Date(value);
+            const ms = toSessionDateMs(value);
+            if (ms == null) return value ? String(value) : '--';
+            const date = new Date(ms);
             if (Number.isNaN(date.getTime())) return String(value);
             return date.toLocaleString();
         }
 
         function formatDuration(startedAt, endedAt) {
             if (!startedAt || !endedAt) return '--';
-            const start = new Date(startedAt).getTime();
-            const end = new Date(endedAt).getTime();
+            const start = toSessionDateMs(startedAt);
+            const end = toSessionDateMs(endedAt);
             if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return '--';
             const totalSeconds = Math.round((end - start) / 1000);
             const hours = Math.floor(totalSeconds / 3600);
@@ -5644,9 +5754,13 @@
             return mergedMessages;
         }
 
-        async function previewSessionFile(path) {
+        async function previewSessionFile(path, previewable = true) {
             renderSessionFiles(path);
             document.getElementById('file-preview-title').textContent = path;
+            if (!previewable) {
+                document.getElementById('file-preview-body').innerHTML = '<div style="color:var(--text-dim);margin-top:0.5rem;">Preview unavailable for this path, but the file activity metadata was recorded for the session.</div>';
+                return;
+            }
             document.getElementById('file-preview-body').innerHTML = '<div style="color:var(--text-dim);margin-top:0.5rem;">Loading preview...</div>';
             const resp = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`);
             const data = await resp.json();
