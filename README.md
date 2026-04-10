@@ -50,6 +50,48 @@ Then open:
 http://127.0.0.1:8081
 ```
 
+## Accessing the Dashboard After Install
+
+If a user asks "how do I open it?", the short answer is:
+
+1. Go to your install directory, usually `~/hermesdashboard`
+2. Start the launchers:
+
+```sh
+./run-api-server.sh
+./run-dashboard.sh
+```
+
+3. Open the dashboard URL in a browser
+
+Default local URL:
+
+```text
+http://127.0.0.1:8081
+```
+
+If you chose a different host or port during install, check `.env.local` in the repo directory.
+
+Important values:
+
+- `DASHBOARD_HOST`
+- `DASHBOARD_PORT`
+- `HERMES_API`
+
+Examples:
+
+- if `DASHBOARD_HOST=127.0.0.1` and `DASHBOARD_PORT=8081`, open `http://127.0.0.1:8081`
+- if `DASHBOARD_HOST=0.0.0.0` and `DASHBOARD_PORT=8081`, open `http://localhost:8081` on the same machine
+- if the dashboard is bound externally on another machine, open `http://<that-machine-ip>:<DASHBOARD_PORT>` from your browser
+
+Quick check:
+
+```sh
+curl -s http://127.0.0.1:8081/api/status
+```
+
+If that returns JSON, the dashboard is running and reachable.
+
 If your Hermes install already provides an API server, you can skip the bundled launcher and point the dashboard at it with `HERMES_API`.
 
 In that mode, `./run-api-server.sh` becomes a helper that reminds you the dashboard is reusing your existing Hermes API.
@@ -109,6 +151,8 @@ curl -s http://127.0.0.1:8081/api/status
 ```
 
 Then open `http://127.0.0.1:8081` in your browser.
+
+If you forgot which port was selected during install, open `~/hermesdashboard/.env.local` and look for `DASHBOARD_PORT`.
 
 ## Expanded Config Surface
 

@@ -60,6 +60,45 @@ Run those scripts as your normal user. Do not use `sudo` unless your Hermes inst
 
 If the installer selects “reuse existing Hermes API”, then `run-api-server.sh` becomes a helper that reminds you to use your already-running Hermes API instead of launching a bundled one.
 
+## Opening the Dashboard
+
+After install, most users can open the dashboard like this:
+
+```sh
+cd ~/hermesdashboard
+./run-api-server.sh
+./run-dashboard.sh
+```
+
+Then open this URL in a browser:
+
+```text
+http://127.0.0.1:8081
+```
+
+If you picked a different host or port during install, check `.env.local` in the install directory.
+
+The main values are:
+
+- `DASHBOARD_HOST`
+- `DASHBOARD_PORT`
+- `HERMES_API`
+
+How to interpret them:
+
+- `DASHBOARD_HOST=127.0.0.1` means open the dashboard from the same machine only
+- `DASHBOARD_HOST=0.0.0.0` means the dashboard is listening on all interfaces; on the same machine you can usually open `http://localhost:<port>`
+- if you are accessing it from another machine, use `http://<server-ip>:<port>`
+
+Quick health checks:
+
+```sh
+curl -s http://127.0.0.1:8642/health
+curl -s http://127.0.0.1:8081/api/status
+```
+
+If the second command returns JSON, the web dashboard is up.
+
 Optional extras:
 
 - Linux user-level `systemd` units
