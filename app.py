@@ -551,6 +551,34 @@ def _session_overview_payload(conn: sqlite3.Connection, session_id: str) -> dict
     }
 
 
+def _sessions_table_exists(conn: sqlite3.Connection) -> bool:
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
+    )
+    return cursor.fetchone() is not None
+
+
+def _sessions_table_has_column(conn: sqlite3.Connection, column_name: str) -> bool:
+    try:
+        rows = conn.execute("PRAGMA table_info(sessions)").fetchall()
+    except Exception:
+        return False
+    for row in rows:
+        name = row[1] if not isinstance(row, sqlite3.Row) else row["name"]
+        if name == column_name:
+            return True
+    return False
+
+
+def _ensure_sessions_summary_column(conn: sqlite3.Connection) -> None:
+    if not _sessions_table_exists(conn):
+        return
+    if _sessions_table_has_column(conn, "summary"):
+        return
+    conn.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
+    conn.commit()
+
+
 def _clean_transcript_seed_text(text: str) -> str:
     cleaned = " ".join(str(text or "").split()).strip()
     if not cleaned:
@@ -725,6 +753,7 @@ def _refresh_local_session_metadata(
     conn: sqlite3.Connection, session_id: str, force: bool = False
 ) -> dict[str, Optional[str]]:
     conn.row_factory = sqlite3.Row
+    _ensure_sessions_summary_column(conn)
     session_meta = conn.execute(
         "SELECT id, title, source, model, summary FROM sessions WHERE id = ?",
         (session_id,),
@@ -1323,11 +1352,9 @@ async def get_sessions(request):
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
+        _ensure_sessions_summary_column(conn)
 
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
-        )
-        if not cursor.fetchone():
+        if not _sessions_table_exists(conn):
             conn.close()
             return JSONResponse({"sessions": [], "total": 0})
 
@@ -1422,6 +1449,7 @@ async def get_session(request):
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
+    _ensure_sessions_summary_column(conn)
 
     session_row = conn.execute(
         """
@@ -1512,6 +1540,7 @@ async def backfill_session_summaries_endpoint(request):
         )
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
+    _ensure_sessions_summary_column(conn)
     try:
         query = (
             "SELECT id FROM sessions ORDER BY started_at DESC LIMIT ?"
@@ -1551,6 +1580,7 @@ async def regenerate_session_summary_endpoint(request):
         )
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
+    _ensure_sessions_summary_column(conn)
     try:
         exists = conn.execute(
             "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
@@ -1582,6 +1612,7 @@ def _run_startup_session_metadata_backfill() -> None:
             return
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
+        _ensure_sessions_summary_column(conn)
         try:
             rows = conn.execute(
                 "SELECT id FROM sessions WHERE summary IS NULL OR trim(summary) = '' OR title IS NULL OR trim(title) = '' ORDER BY started_at DESC LIMIT 200"
@@ -2198,12 +2229,9 @@ async def get_graph_data(request):
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
+        _ensure_sessions_summary_column(conn)
 
-        # Check sessions table exists
-        cur = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
-        )
-        if not cur.fetchone():
+        if not _sessions_table_exists(conn):
             conn.close()
             return JSONResponse(
                 {
