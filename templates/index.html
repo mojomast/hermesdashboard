@@ -1673,6 +1673,168 @@
             gap: 0.6rem;
             flex-wrap: wrap;
         }
+
+        .execution-group {
+            margin-top: 1rem;
+        }
+
+        .execution-node {
+            scroll-margin-top: 84px;
+        }
+
+        .execution-target-link {
+            color: var(--primary);
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .execution-target-link:hover {
+            text-decoration: underline;
+        }
+
+        .execution-pulse {
+            animation: execution-pulse 1.4s ease-out;
+        }
+
+        @keyframes execution-pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.4);
+                border-color: rgba(255, 215, 0, 0.55);
+                background: rgba(255, 215, 0, 0.12);
+            }
+            100% {
+                box-shadow: 0 0 0 18px rgba(255, 215, 0, 0);
+            }
+        }
+
+        .assistant-step-block {
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+            padding: 0.85rem 0.95rem;
+            background: rgba(255,255,255,0.02);
+            margin-bottom: 0.85rem;
+        }
+
+        .parallel-group {
+            margin-top: 0.75rem;
+            border: 1px solid rgba(168,85,247,0.22);
+            border-radius: 10px;
+            background: rgba(168,85,247,0.06);
+            overflow: hidden;
+        }
+
+        .parallel-group summary {
+            list-style: none;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.7rem 0.85rem;
+            font-size: 0.82rem;
+            color: var(--text);
+        }
+
+        .parallel-group summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .parallel-group-body {
+            padding: 0 0.75rem 0.75rem;
+            display: grid;
+            gap: 0.65rem;
+        }
+
+        .parallel-group-title {
+            font-weight: 600;
+        }
+
+        .parallel-group-meta {
+            font-size: 0.74rem;
+            color: var(--text-dim);
+        }
+
+        .inline-child-stage,
+        .diagnostic-artifact {
+            margin-top: 0.8rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.03);
+            overflow: hidden;
+        }
+
+        .inline-child-stage summary,
+        .diagnostic-artifact summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 0.8rem 0.9rem;
+        }
+
+        .inline-child-stage summary::-webkit-details-marker,
+        .diagnostic-artifact summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .inline-child-stage-body,
+        .diagnostic-artifact-body {
+            padding: 0 0.9rem 0.9rem;
+        }
+
+        .inline-stage-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            font-weight: 600;
+        }
+
+        .inline-stage-meta {
+            margin-top: 0.25rem;
+            font-size: 0.74rem;
+            color: var(--text-dim);
+        }
+
+        .inline-stage-summary {
+            margin-top: 0.45rem;
+            color: var(--text);
+            line-height: 1.45;
+        }
+
+        .inline-stage-links {
+            margin-top: 0.65rem;
+            display: flex;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        .orphan-tool-block {
+            margin-top: 0.75rem;
+            border: 1px dashed rgba(249,115,22,0.42);
+            border-radius: 10px;
+            background: rgba(249,115,22,0.06);
+            padding: 0.7rem 0.8rem;
+        }
+
+        .orphan-tool-label {
+            display: block;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.45rem;
+        }
+
+        .transcript-anchor-list {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            margin-top: 0.45rem;
+        }
+
+        .activity-item .meta-pill {
+            margin-top: 0.35rem;
+        }
         
         .clear-btn {
             position: fixed;
@@ -3266,6 +3428,8 @@
         let settingsData = null;
         let debugVisible = true;
         let currentSessionFiles = [];
+        let currentSessionTraceContext = null;
+        let pendingSessionExecutionTarget = null;
         let activeRun = null;
         let activeChatSessionId = null;
         
@@ -3386,49 +3550,1214 @@
             log('inf', `Restored ${conversation.length} messages from cache`);
         }
 
-        function buildConversationFromSessionData(data) {
-            const mergedMessages = [];
-            const pendingAssistantByTool = new Map();
-            (data.messages || []).forEach(m => {
-                if (m.role === 'assistant') {
-                    const tools = normalizeToolCallEntries(m.tool_calls);
-                    const events = [];
-                    if (m.content) events.push({ type: 'content', text: m.content });
-                    tools.forEach(tool => {
-                        events.push({ type: 'tool_call', tool });
-                        if (tool.call_id) pendingAssistantByTool.set(tool.call_id, { tool, events });
+        function makeExecutionNodeId(kind, sessionId, value, fallbackIndex = 0) {
+            const cleanedSession = String(sessionId || 'session').replace(/[^A-Za-z0-9_-]/g, '_');
+            const cleanedValue = String(value || `${kind}_${fallbackIndex}`).replace(/[^A-Za-z0-9_-]/g, '_');
+            return `${kind}-${cleanedSession}-${cleanedValue}`;
+        }
+
+        function normalizeExecutionTarget(target) {
+            if (!target || typeof target !== 'object') return null;
+            const kind = String(target.kind || '').trim();
+            const id = String(target.id || '').trim();
+            if (!kind || !id) return null;
+            return { kind, id };
+        }
+
+        function routeForExecutionTarget(sessionId, target) {
+            const normalized = normalizeExecutionTarget(target);
+            if (!sessionId || !normalized) return null;
+            return `sessions/detail/${encodeURIComponent(sessionId)}/${encodeURIComponent(normalized.kind)}/${encodeURIComponent(normalized.id)}`;
+        }
+
+        function normalizeActivityTarget(item) {
+            const explicit = normalizeExecutionTarget(item?.target);
+            if (explicit) return explicit;
+            if (item?.tool_call_id) return { kind: 'tool', id: item.tool_call_id };
+            return null;
+        }
+
+        function summarizeParallelGroupLabel(tools) {
+            const names = Array.from(new Set((tools || []).map(tool => tool?.name || 'tool')));
+            if (!names.length) return 'Parallel tool batch';
+            if (names.length === 1) return `${names[0]} batch: ${tools.length} parallel calls`;
+            if (names.length <= 3) return `${names.join(', ')} batch`;
+            return `${tools.length} parallel calls`;
+        }
+
+        function createAssistantTraceState(seed = {}) {
+            const traceNode = seed.traceNode || null;
+            const stepNode = traceNode?.kind === 'assistant_step'
+                ? traceNode
+                : (seed.trace?.stepNode?.kind === 'assistant_step' ? seed.trace.stepNode : null);
+            return {
+                role: 'assistant',
+                content: '',
+                tools: [],
+                events: [],
+                usage: seed.usage || null,
+                last_prompt_tokens: seed.last_prompt_tokens || 0,
+                prompt_breakdown: Array.isArray(seed.prompt_breakdown) ? seed.prompt_breakdown.map(item => item && typeof item === 'object' ? { ...item } : item) : [],
+                traceNode: traceNode || stepNode || null,
+                trace: {
+                    sessionId: seed.sessionId || traceNode?.session_id || seed.trace?.sessionId || null,
+                    stepNode: stepNode || null,
+                    contentNode: seed.trace?.contentNode || stepNode?.payload?.contentNode || null,
+                    toolNodes: Array.isArray(seed.trace?.toolNodes)
+                        ? seed.trace.toolNodes
+                        : (Array.isArray(stepNode?.payload?.toolNodes) ? stepNode.payload.toolNodes : []),
+                    orphanNodes: Array.isArray(seed.trace?.orphanNodes)
+                        ? seed.trace.orphanNodes
+                        : (Array.isArray(stepNode?.payload?.orphanNodes) ? stepNode.payload.orphanNodes : []),
+                    items: Array.isArray(seed.trace?.items)
+                        ? seed.trace.items
+                        : (Array.isArray(stepNode?.payload?.items) ? stepNode.payload.items : []),
+                    toolIndexByCallId: seed.trace?.toolIndexByCallId && typeof seed.trace.toolIndexByCallId === 'object'
+                        ? { ...seed.trace.toolIndexByCallId }
+                        : (stepNode?.payload?.toolIndexByCallId && typeof stepNode.payload.toolIndexByCallId === 'object'
+                            ? { ...stepNode.payload.toolIndexByCallId }
+                            : {}),
+                    contentOrder: seed.trace?.contentOrder === 'after_tools' ? 'after_tools' : 'before_tools',
+                    pendingDelegateChildren: seed.trace?.pendingDelegateChildren && typeof seed.trace.pendingDelegateChildren === 'object'
+                        ? JSON.parse(JSON.stringify(seed.trace.pendingDelegateChildren))
+                        : {},
+                    contentSequence: Number.isInteger(seed.trace?.contentSequence) ? seed.trace.contentSequence : 0,
+                    toolSequence: Number.isInteger(seed.trace?.toolSequence) ? seed.trace.toolSequence : 0,
+                    orphanSequence: Number.isInteger(seed.trace?.orphanSequence) ? seed.trace.orphanSequence : 0,
+                },
+            };
+        }
+
+        function buildAssistantContentNode(sessionId, stepNode, message, sortKey, fallbackIndex = 0) {
+            return {
+                kind: 'assistant_content',
+                node_id: makeExecutionNodeId('content', sessionId, message?.id ?? `assistant_${fallbackIndex}`, fallbackIndex),
+                dom_id: null,
+                session_id: sessionId,
+                timestamp: message?.timestamp || null,
+                sort_key: sortKey,
+                parent_node_id: stepNode?.node_id || null,
+                call_id: null,
+                label: 'assistant content',
+                payload: { text: message?.content || '' },
+            };
+        }
+
+        function ensureAssistantTraceCollections(state) {
+            if (!state.trace || typeof state.trace !== 'object') {
+                state.trace = {};
+            }
+            const trace = state.trace;
+            if (!Array.isArray(trace.toolNodes)) trace.toolNodes = [];
+            if (!Array.isArray(trace.orphanNodes)) trace.orphanNodes = [];
+            if (!Array.isArray(trace.items)) trace.items = [];
+            if (!trace.toolIndexByCallId || typeof trace.toolIndexByCallId !== 'object') {
+                trace.toolIndexByCallId = {};
+            }
+            if (!trace.pendingDelegateChildren || typeof trace.pendingDelegateChildren !== 'object') {
+                trace.pendingDelegateChildren = {};
+            }
+            if (!Number.isInteger(trace.contentSequence)) trace.contentSequence = 0;
+            if (!Number.isInteger(trace.toolSequence)) trace.toolSequence = 0;
+            if (!Number.isInteger(trace.orphanSequence)) trace.orphanSequence = 0;
+            return trace;
+        }
+
+        function buildAssistantTraceContentSegmentNode(state, details = {}) {
+            const trace = ensureAssistantTraceCollections(state);
+            const sessionId = details.sessionId || trace.sessionId || state.traceNode?.session_id || 'live';
+            const stepNode = trace.stepNode || state.traceNode || null;
+            const sequence = Number.isInteger(details.sequence) ? details.sequence : trace.contentSequence++;
+            return buildAssistantContentNode(
+                sessionId,
+                stepNode,
+                {
+                    id: details.id || `segment_${sequence}`,
+                    content: details.text || '',
+                    timestamp: Object.prototype.hasOwnProperty.call(details, 'timestamp') ? details.timestamp : null,
+                },
+                Object.prototype.hasOwnProperty.call(details, 'sortKey') ? details.sortKey : null,
+                sequence,
+            );
+        }
+
+        function collectAssistantTraceContentText(trace, fallbackText = '') {
+            const items = Array.isArray(trace?.items) ? trace.items : [];
+            if (items.length) {
+                return items
+                    .filter(node => node?.kind === 'assistant_content')
+                    .map(node => node?.payload?.text || '')
+                    .join('');
+            }
+            return fallbackText || trace?.contentNode?.payload?.text || '';
+        }
+
+        function populateAssistantTraceItemsFromLegacyState(state) {
+            const trace = ensureAssistantTraceCollections(state);
+            if (trace.items.length) return;
+            const items = [];
+            const text = state?.content || trace.contentNode?.payload?.text || '';
+            const contentNode = text
+                ? (trace.contentNode || buildAssistantTraceContentSegmentNode(state, { text, sortKey: trace.stepNode?.sort_key || null }))
+                : null;
+            if (contentNode?.payload) contentNode.payload.text = text;
+            if (contentNode && (trace.contentOrder !== 'after_tools' || !trace.toolNodes.length)) {
+                items.push(contentNode);
+            }
+            trace.toolNodes.forEach(node => items.push(node));
+            if (contentNode && trace.contentOrder === 'after_tools' && trace.toolNodes.length) {
+                items.push(contentNode);
+            }
+            trace.orphanNodes.forEach(node => items.push(node));
+            trace.items = items;
+        }
+
+        function rebuildAssistantTraceToolIndex(trace) {
+            trace.toolIndexByCallId = {};
+            trace.toolNodes.forEach((node, index) => {
+                const callId = node?.payload?.tool?.call_id || node?.call_id || '';
+                if (callId) trace.toolIndexByCallId[callId] = index;
+            });
+        }
+
+        function removeAssistantTraceNode(nodes, targetNode) {
+            if (!Array.isArray(nodes) || !targetNode) return;
+            const index = nodes.indexOf(targetNode);
+            if (index >= 0) nodes.splice(index, 1);
+        }
+
+        function normalizeAssistantTraceToolIdentityValue(value) {
+            if (value === null || value === undefined || value === '') return '';
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!trimmed) return '';
+                try {
+                    return JSON.stringify(JSON.parse(trimmed));
+                } catch {
+                    return trimmed;
+                }
+            }
+            if (typeof value === 'object') {
+                try {
+                    return JSON.stringify(value);
+                } catch {
+                    return summarizeValue(value, 500);
+                }
+            }
+            return String(value);
+        }
+
+        function normalizeAssistantTracePreviewText(value) {
+            const normalized = normalizeAssistantTraceToolIdentityValue(value)
+                .toLowerCase()
+                .replace(/^[^:]+:\s*/, '')
+                .replace(/^['"]|['"]$/g, '')
+                .replace(/\.\.\.$/, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            return normalized;
+        }
+
+        function collectAssistantTraceScalarArgumentValues(value, bucket = []) {
+            if (value === null || value === undefined || value === '') return bucket;
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!trimmed) return bucket;
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    if (parsed && typeof parsed === 'object') {
+                        return collectAssistantTraceScalarArgumentValues(parsed, bucket);
+                    }
+                } catch {
+                    // Keep raw string below.
+                }
+                bucket.push(trimmed);
+                return bucket;
+            }
+            if (Array.isArray(value)) {
+                value.forEach(item => collectAssistantTraceScalarArgumentValues(item, bucket));
+                return bucket;
+            }
+            if (typeof value === 'object') {
+                Object.values(value).forEach(item => collectAssistantTraceScalarArgumentValues(item, bucket));
+                return bucket;
+            }
+            bucket.push(String(value));
+            return bucket;
+        }
+
+        function assistantTracePreviewMatchesToolArguments(previewValue, toolArguments) {
+            const preview = normalizeAssistantTracePreviewText(previewValue);
+            if (!preview) return false;
+            const candidates = collectAssistantTraceScalarArgumentValues(toolArguments)
+                .map(value => normalizeAssistantTracePreviewText(value))
+                .filter(Boolean);
+            return candidates.some((candidate) => candidate === preview || candidate.startsWith(preview));
+        }
+
+        function findPromotableProgressDiagnosticNode(state, toolEvent) {
+            const trace = ensureAssistantTraceCollections(state);
+            const orphanNodes = Array.isArray(trace.orphanNodes) ? trace.orphanNodes : [];
+            const toolName = toolEvent?.name || '';
+            if (!toolName) return null;
+            const normalizedArgs = normalizeAssistantTraceToolIdentityValue(toolEvent.arguments);
+            const candidates = orphanNodes.filter((node) => {
+                if (node?.payload?.reason !== 'unmatched_tool_progress') return false;
+                const orphanTool = node?.payload?.tool || {};
+                if ((orphanTool.name || '') !== toolName) return false;
+                if (orphanTool.output) return false;
+                if (orphanTool.call_id) return false;
+                return true;
+            });
+            if (!candidates.length) return null;
+            if (normalizedArgs) {
+                const exact = candidates.filter((node) => normalizeAssistantTraceToolIdentityValue(node?.payload?.tool?.arguments) === normalizedArgs);
+                if (exact.length === 1) return exact[0];
+                const adjacent = trace.items[trace.items.length - 1] || null;
+                if (
+                    adjacent
+                    && candidates.includes(adjacent)
+                    && assistantTracePreviewMatchesToolArguments(adjacent?.payload?.tool?.arguments, toolEvent.arguments)
+                ) {
+                    return adjacent;
+                }
+                return null;
+            }
+            return candidates.length === 1 ? candidates[0] : null;
+        }
+
+        function promoteAssistantDiagnosticToToolNode(state, diagnosticNode, tool, options = {}) {
+            const trace = ensureAssistantTraceCollections(state);
+            const preserveOutput = options.preserveOutput === true;
+            const preserveProgress = options.preserveProgress !== false;
+            const normalizedTool = {
+                ...(diagnosticNode?.payload?.tool || {}),
+                ...tool,
+                progress: normalizeToolProgressEntries(tool?.progress || diagnosticNode?.payload?.tool?.progress),
+            };
+            if (preserveOutput && diagnosticNode?.payload?.tool?.output) {
+                normalizedTool.output = diagnosticNode.payload.tool.output;
+            }
+            if (preserveProgress && (!Array.isArray(normalizedTool.progress) || !normalizedTool.progress.length)) {
+                normalizedTool.progress = normalizeToolProgressEntries(diagnosticNode?.payload?.tool?.progress);
+            }
+            diagnosticNode.kind = 'tool_run';
+            diagnosticNode.parent_node_id = trace.stepNode?.node_id || state.traceNode?.node_id || null;
+            diagnosticNode.call_id = normalizedTool.call_id || diagnosticNode.call_id || null;
+            diagnosticNode.label = normalizedTool.name || diagnosticNode.label || 'tool';
+            diagnosticNode.session_id = diagnosticNode.session_id || trace.sessionId || state.traceNode?.session_id || 'live';
+            diagnosticNode.timestamp = Object.prototype.hasOwnProperty.call(options, 'timestamp') ? options.timestamp : diagnosticNode.timestamp;
+            diagnosticNode.sort_key = Object.prototype.hasOwnProperty.call(options, 'sortKey') ? options.sortKey : diagnosticNode.sort_key;
+            if (options.node?.dom_id && !diagnosticNode.dom_id) diagnosticNode.dom_id = options.node.dom_id;
+            diagnosticNode.payload = {
+                tool: normalizedTool,
+            };
+            if (Object.prototype.hasOwnProperty.call(options, 'sourceMessage')) {
+                diagnosticNode.payload.sourceMessage = options.sourceMessage;
+            }
+            if (Object.prototype.hasOwnProperty.call(options, 'toolRow')) {
+                diagnosticNode.payload.toolRow = options.toolRow;
+            }
+            removeAssistantTraceNode(trace.orphanNodes, diagnosticNode);
+            if (!trace.toolNodes.includes(diagnosticNode)) {
+                trace.toolNodes.push(diagnosticNode);
+            }
+            return diagnosticNode;
+        }
+
+        function buildAssistantTraceToolNode(state, tool, options = {}) {
+            const trace = state.trace || {};
+            const sessionId = options.sessionId || trace.sessionId || state.traceNode?.session_id || 'live';
+            const stepNode = trace.stepNode || state.traceNode || null;
+            const sequence = Number.isInteger(options.sequence) ? options.sequence : (trace.toolSequence || 0);
+            if (!Number.isInteger(options.sequence)) {
+                trace.toolSequence = sequence + 1;
+            }
+            const normalizedTool = {
+                ...tool,
+                call_id: tool.call_id || tool.id || `${stepNode?.node_id || 'tool'}_${sequence}`,
+                name: tool.name || 'tool',
+                arguments: tool.arguments || '',
+                output: tool.output || '',
+                progress: normalizeToolProgressEntries(tool.progress),
+            };
+            const baseNode = options.node && typeof options.node === 'object'
+                ? {
+                    ...options.node,
+                    payload: { ...(options.node.payload || {}) },
+                }
+                : {
+                    kind: 'tool_run',
+                    node_id: makeExecutionNodeId('tool', sessionId, normalizedTool.call_id, sequence),
+                    dom_id: null,
+                    session_id: sessionId,
+                    timestamp: options.timestamp || null,
+                    sort_key: options.sortKey || null,
+                    parent_node_id: stepNode?.node_id || null,
+                    call_id: normalizedTool.call_id,
+                    label: normalizedTool.name,
+                    payload: {},
+                };
+            if (!Object.prototype.hasOwnProperty.call(baseNode, 'dom_id')) {
+                baseNode.dom_id = null;
+            }
+            baseNode.kind = 'tool_run';
+            baseNode.session_id = baseNode.session_id || sessionId;
+            baseNode.timestamp = Object.prototype.hasOwnProperty.call(options, 'timestamp') ? options.timestamp : (baseNode.timestamp || null);
+            baseNode.sort_key = Object.prototype.hasOwnProperty.call(options, 'sortKey') ? options.sortKey : (baseNode.sort_key || null);
+            baseNode.parent_node_id = baseNode.parent_node_id || stepNode?.node_id || null;
+            baseNode.call_id = normalizedTool.call_id;
+            baseNode.label = normalizedTool.name;
+            baseNode.payload.tool = normalizedTool;
+            if (Object.prototype.hasOwnProperty.call(options, 'sourceMessage')) {
+                baseNode.payload.sourceMessage = options.sourceMessage;
+            }
+            if (Object.prototype.hasOwnProperty.call(options, 'toolRow')) {
+                baseNode.payload.toolRow = options.toolRow;
+            }
+            return baseNode;
+        }
+
+        function buildAssistantTraceDiagnosticNode(state, details = {}) {
+            const trace = state.trace || {};
+            const sessionId = details.sessionId || trace.sessionId || state.traceNode?.session_id || 'live';
+            const sequence = Number.isInteger(details.sequence) ? details.sequence : (trace.orphanSequence || 0);
+            if (!Number.isInteger(details.sequence)) {
+                trace.orphanSequence = sequence + 1;
+            }
+            const tool = {
+                call_id: details.tool?.call_id || '',
+                name: details.tool?.name || 'tool',
+                arguments: details.tool?.arguments || '',
+                output: details.tool?.output || '',
+                progress: normalizeToolProgressEntries(details.tool?.progress),
+            };
+            const baseNode = details.node && typeof details.node === 'object'
+                ? {
+                    ...details.node,
+                    payload: { ...(details.node.payload || {}) },
+                }
+                : {
+                    kind: 'diagnostic_artifact',
+                    node_id: makeExecutionNodeId('orphan', sessionId, tool.call_id || `tool_${sequence}`, sequence),
+                    dom_id: null,
+                    session_id: sessionId,
+                    timestamp: details.timestamp || null,
+                    sort_key: details.sortKey || null,
+                    parent_node_id: null,
+                    call_id: tool.call_id || null,
+                    label: details.label || `Unmatched ${tool.name} output`,
+                    payload: {},
+                };
+            baseNode.kind = 'diagnostic_artifact';
+            baseNode.session_id = baseNode.session_id || sessionId;
+            baseNode.timestamp = Object.prototype.hasOwnProperty.call(details, 'timestamp') ? details.timestamp : (baseNode.timestamp || null);
+            baseNode.sort_key = Object.prototype.hasOwnProperty.call(details, 'sortKey') ? details.sortKey : (baseNode.sort_key || null);
+            baseNode.call_id = tool.call_id || baseNode.call_id || null;
+            baseNode.label = details.label || baseNode.label || `Unmatched ${tool.name} output`;
+            baseNode.payload.message = Object.prototype.hasOwnProperty.call(details, 'message') ? details.message : (baseNode.payload.message || null);
+            baseNode.payload.tool = tool;
+            baseNode.payload.orphan = true;
+            baseNode.payload.reason = details.reason || baseNode.payload.reason || 'unmatched_tool_output';
+            return baseNode;
+        }
+
+        function findAssistantToolNode(state, callId) {
+            const trace = state?.trace;
+            if (!callId || !trace?.toolNodes) return null;
+            const indexed = trace.toolIndexByCallId && Object.prototype.hasOwnProperty.call(trace.toolIndexByCallId, callId)
+                ? trace.toolNodes[trace.toolIndexByCallId[callId]]
+                : null;
+            if (indexed) return indexed;
+            const index = trace.toolNodes.findIndex(node => node?.payload?.tool?.call_id === callId);
+            if (index >= 0) {
+                trace.toolIndexByCallId[callId] = index;
+                return trace.toolNodes[index];
+            }
+            return null;
+        }
+
+        function findAssistantDiagnosticNode(state, matcher) {
+            const nodes = Array.isArray(state?.trace?.orphanNodes) ? state.trace.orphanNodes : [];
+            for (let i = nodes.length - 1; i >= 0; i--) {
+                if (matcher(nodes[i])) return nodes[i];
+            }
+            return null;
+        }
+
+        function syncAssistantTraceStepNode(state) {
+            const stepNode = state?.trace?.stepNode;
+            if (!stepNode?.payload) return;
+            stepNode.payload.contentNode = state.trace.contentNode || null;
+            stepNode.payload.toolNodes = state.trace.toolNodes || [];
+            stepNode.payload.orphanNodes = state.trace.orphanNodes || [];
+            stepNode.payload.items = state.trace.items || [];
+            stepNode.payload.toolIndexByCallId = state.trace.toolIndexByCallId || {};
+        }
+
+        function buildAssistantEventsFromTraceState(state) {
+            const items = Array.isArray(state?.trace?.items) ? state.trace.items : [];
+            if (items.length) {
+                return groupParallelToolEvents(items.map((node) => {
+                    if (node?.kind === 'assistant_content') {
+                        const text = node?.payload?.text || '';
+                        return text ? { type: 'content', text, node } : null;
+                    }
+                    if (node?.kind === 'tool_run') {
+                        const tool = node?.payload?.tool || {};
+                        return {
+                            type: tool.output ? 'tool_output' : 'tool_call',
+                            tool,
+                            node,
+                        };
+                    }
+                    if (node?.kind === 'diagnostic_artifact') {
+                        return { type: 'diagnostic', node };
+                    }
+                    return null;
+                }).filter(Boolean));
+            }
+            const events = [];
+            const contentNode = state?.trace?.contentNode || null;
+            const text = state?.content || contentNode?.payload?.text || '';
+            const toolNodes = Array.isArray(state?.trace?.toolNodes) ? state.trace.toolNodes : [];
+            const orphanNodes = Array.isArray(state?.trace?.orphanNodes) ? state.trace.orphanNodes : [];
+            const contentEvent = text ? { type: 'content', text, node: contentNode } : null;
+            const contentAfterTools = state?.trace?.contentOrder === 'after_tools' && toolNodes.length > 0;
+            if (contentEvent && !contentAfterTools) {
+                events.push(contentEvent);
+            }
+            if (toolNodes.length > 1) {
+                events.push({
+                    type: 'parallel_group',
+                    node: {
+                        kind: 'parallel_group',
+                        payload: {
+                            label: summarizeParallelGroupLabel(toolNodes.map(node => node?.payload?.tool)),
+                            toolNodes,
+                        },
+                    },
+                });
+            } else {
+                toolNodes.forEach((node) => {
+                    const tool = node?.payload?.tool || {};
+                    events.push({
+                        type: tool.output ? 'tool_output' : 'tool_call',
+                        tool,
+                        node,
                     });
-                    mergedMessages.push({
-                        ...m,
+                });
+            }
+            if (contentEvent && contentAfterTools) {
+                events.push(contentEvent);
+            }
+            orphanNodes.forEach((node) => {
+                events.push({ type: 'diagnostic', node });
+            });
+            return events;
+        }
+
+        function syncAssistantTraceDerivedFields(state) {
+            const trace = ensureAssistantTraceCollections(state);
+            if (!trace.items.length) {
+                populateAssistantTraceItemsFromLegacyState(state);
+            }
+            if (trace.items.length) {
+                trace.toolNodes = trace.items.filter(node => node?.kind === 'tool_run');
+                trace.orphanNodes = trace.items.filter(node => node?.kind === 'diagnostic_artifact' && node?.payload?.orphan);
+                trace.contentNode = trace.items.find(node => node?.kind === 'assistant_content') || null;
+            }
+            rebuildAssistantTraceToolIndex(trace);
+            if (state.trace.contentOrder !== 'after_tools') {
+                state.trace.contentOrder = 'before_tools';
+            }
+            syncAssistantTraceStepNode(state);
+            state.content = collectAssistantTraceContentText(trace, state.content || '');
+            state.tools = trace.toolNodes.map(node => node.payload.tool);
+            state.events = buildAssistantEventsFromTraceState(state);
+            return state;
+        }
+
+        function appendAssistantTraceDiagnostic(state, details = {}) {
+            const existingByCallId = details.tool?.call_id
+                ? findAssistantDiagnosticNode(state, node => node?.payload?.tool?.call_id === details.tool.call_id)
+                : null;
+            if (existingByCallId) {
+                existingByCallId.payload.tool = {
+                    ...(existingByCallId.payload.tool || {}),
+                    ...(details.tool || {}),
+                    progress: normalizeToolProgressEntries(
+                        Object.prototype.hasOwnProperty.call(details.tool || {}, 'progress')
+                            ? details.tool.progress
+                            : existingByCallId.payload.tool?.progress,
+                    ),
+                };
+                existingByCallId.label = details.label || existingByCallId.label;
+                existingByCallId.payload.reason = details.reason || existingByCallId.payload.reason;
+                if (Object.prototype.hasOwnProperty.call(details, 'message')) {
+                    existingByCallId.payload.message = details.message;
+                }
+                return syncAssistantTraceDerivedFields(state);
+            }
+            const node = buildAssistantTraceDiagnosticNode(state, details);
+            state.trace.orphanNodes.push(node);
+            state.trace.items.push(node);
+            return syncAssistantTraceDerivedFields(state);
+        }
+
+        function reduceAssistantTraceEvent(state, event, options = {}) {
+            if (!state || !event || typeof event !== 'object') return state;
+            const trace = ensureAssistantTraceCollections(state);
+
+            if (event.type === 'content') {
+                const nextText = event.text || '';
+                if (event.replace && !trace.toolNodes.length) {
+                    trace.contentOrder = 'before_tools';
+                }
+                if (event.replace) {
+                    trace.items = trace.items.filter(node => node?.kind !== 'assistant_content');
+                    trace.contentNode = null;
+                }
+                const lastItem = trace.items[trace.items.length - 1] || null;
+                const reuseLastContentNode = !event.replace
+                    && lastItem?.kind === 'assistant_content'
+                    && (!event.node || event.node === lastItem || event.node?.node_id === lastItem.node_id);
+                let contentNode = reuseLastContentNode ? lastItem : null;
+                if (!contentNode && nextText) {
+                    contentNode = event.node?.kind === 'assistant_content'
+                        ? event.node
+                        : buildAssistantTraceContentSegmentNode(state, {
+                            text: '',
+                            timestamp: event.timestamp,
+                            sortKey: event.sortKey,
+                            sessionId: trace.sessionId,
+                        });
+                    trace.items.push(contentNode);
+                }
+                if (contentNode?.payload) {
+                    contentNode.payload.text = event.replace
+                        ? nextText
+                        : `${contentNode.payload.text || ''}${nextText}`;
+                }
+                trace.contentNode = trace.items.find(node => node?.kind === 'assistant_content') || contentNode || null;
+                return syncAssistantTraceDerivedFields(state);
+            }
+
+            if (event.type === 'meta') {
+                if (event.usage) state.usage = event.usage;
+                if (event.last_prompt_tokens) state.last_prompt_tokens = event.last_prompt_tokens;
+                if (Array.isArray(event.prompt_breakdown)) {
+                    state.prompt_breakdown = event.prompt_breakdown.map(item => item && typeof item === 'object' ? { ...item } : item);
+                }
+                return syncAssistantTraceDerivedFields(state);
+            }
+
+            if (event.type === 'diagnostic') {
+                return appendAssistantTraceDiagnostic(state, {
+                    ...event,
+                    tool: event.tool || event.node?.payload?.tool || {},
+                    node: event.node || null,
+                });
+            }
+
+            const callId = event.call_id || event.arguments?.call_id || '';
+            const toolEvent = {
+                call_id: callId,
+                name: event.name || event.tool?.name || 'tool',
+                arguments: Object.prototype.hasOwnProperty.call(event, 'arguments') ? event.arguments : (event.tool?.arguments || ''),
+                output: Object.prototype.hasOwnProperty.call(event, 'output') ? event.output : (event.tool?.output || ''),
+                progress: Object.prototype.hasOwnProperty.call(event, 'progress') ? event.progress : (event.tool?.progress || []),
+            };
+
+            if (event.type === 'tool_call') {
+                const existingNode = findAssistantToolNode(state, toolEvent.call_id);
+                const existingDiagnostic = !existingNode && toolEvent.call_id
+                    ? findAssistantDiagnosticNode(state, node => node?.payload?.tool?.call_id === toolEvent.call_id)
+                    : null;
+                const promotableProgressDiagnostic = !existingNode && !existingDiagnostic
+                    ? findPromotableProgressDiagnosticNode(state, toolEvent)
+                    : null;
+                const targetNode = existingNode
+                    || (existingDiagnostic
+                        ? promoteAssistantDiagnosticToToolNode(state, existingDiagnostic, toolEvent, {
+                            node: event.node || null,
+                            sortKey: event.sortKey,
+                            timestamp: event.timestamp,
+                            sourceMessage: event.sourceMessage,
+                            toolRow: event.toolRow,
+                            preserveOutput: !Object.prototype.hasOwnProperty.call(event, 'output'),
+                        })
+                        : promotableProgressDiagnostic
+                            ? promoteAssistantDiagnosticToToolNode(state, promotableProgressDiagnostic, toolEvent, {
+                                node: event.node || null,
+                                sortKey: event.sortKey,
+                                timestamp: event.timestamp,
+                                sourceMessage: event.sourceMessage,
+                                toolRow: event.toolRow,
+                                preserveOutput: !Object.prototype.hasOwnProperty.call(event, 'output'),
+                            })
+                        : buildAssistantTraceToolNode(state, toolEvent, {
+                            node: event.node || null,
+                            sortKey: event.sortKey,
+                            timestamp: event.timestamp,
+                            sourceMessage: event.sourceMessage,
+                            toolRow: event.toolRow,
+                            sessionId: trace.sessionId,
+                            sequence: event.sequence,
+                        }));
+                if (!existingNode) {
+                    if (!trace.toolNodes.includes(targetNode)) {
+                        trace.toolNodes.push(targetNode);
+                    }
+                    if (!trace.items.includes(targetNode)) {
+                        trace.items.push(targetNode);
+                    }
+                }
+                const mergedTool = {
+                    ...targetNode.payload.tool,
+                    ...toolEvent,
+                    progress: normalizeToolProgressEntries(toolEvent.progress || targetNode.payload.tool.progress),
+                };
+                if (!Object.prototype.hasOwnProperty.call(event, 'output') && targetNode.payload.tool?.output) {
+                    mergedTool.output = targetNode.payload.tool.output;
+                }
+                if (!Object.prototype.hasOwnProperty.call(event, 'progress') && Array.isArray(targetNode.payload.tool?.progress) && targetNode.payload.tool.progress.length) {
+                    mergedTool.progress = normalizeToolProgressEntries(targetNode.payload.tool.progress);
+                }
+                targetNode.payload.tool = mergedTool;
+                if (Object.prototype.hasOwnProperty.call(event, 'toolRow')) {
+                    targetNode.payload.toolRow = event.toolRow;
+                }
+                return syncAssistantTraceDerivedFields(state);
+            }
+
+            if (event.type === 'tool_output') {
+                const existingNode = findAssistantToolNode(state, toolEvent.call_id);
+                if (existingNode) {
+                    existingNode.payload.tool = {
+                        ...existingNode.payload.tool,
+                        ...toolEvent,
+                        progress: normalizeToolProgressEntries(existingNode.payload.tool.progress),
+                    };
+                    if (Object.prototype.hasOwnProperty.call(event, 'toolRow')) {
+                        existingNode.payload.toolRow = event.toolRow;
+                    }
+                    return syncAssistantTraceDerivedFields(state);
+                }
+                if (options.unmatchedToDiagnostic !== false) {
+                    return appendAssistantTraceDiagnostic(state, {
+                        node: event.node || null,
+                        tool: toolEvent,
+                        message: event.toolRow || null,
+                        timestamp: event.timestamp || null,
+                        sortKey: event.sortKey || null,
+                        label: event.label || `Unmatched ${toolEvent.name} output`,
+                        reason: event.reason || 'unmatched_tool_output',
+                    });
+                }
+                return syncAssistantTraceDerivedFields(state);
+            }
+
+            if (event.type === 'tool_progress') {
+                const existingNode = findAssistantToolNode(state, toolEvent.call_id);
+                const progressEntry = {
+                    label: typeof event.progress === 'string'
+                        ? event.progress
+                        : summarizeValue(event.progress || event.arguments || '', 160),
+                    task_index: Number.isInteger(event?.arguments?.task_index) ? event.arguments.task_index : null,
+                    task_count: Number.isInteger(event?.arguments?.task_count) ? event.arguments.task_count : null,
+                };
+                if (existingNode) {
+                    const progress = Array.isArray(existingNode.payload.tool.progress) ? existingNode.payload.tool.progress : [];
+                    const last = progress[progress.length - 1];
+                    if (progressEntry.label && (!last || last.label !== progressEntry.label || last.task_index !== progressEntry.task_index)) {
+                        progress.push(progressEntry);
+                    }
+                    if (progress.length > 30) {
+                        existingNode.payload.tool.progress = progress.slice(-30);
+                    } else {
+                        existingNode.payload.tool.progress = progress;
+                    }
+                    return syncAssistantTraceDerivedFields(state);
+                }
+                const diagnosticByCallId = toolEvent.call_id
+                    ? findAssistantDiagnosticNode(state, node => node?.payload?.tool?.call_id === toolEvent.call_id)
+                    : null;
+                if (diagnosticByCallId) {
+                    const progress = Array.isArray(diagnosticByCallId.payload.tool.progress) ? diagnosticByCallId.payload.tool.progress : [];
+                    const last = progress[progress.length - 1];
+                    if (progressEntry.label && (!last || last.label !== progressEntry.label || last.task_index !== progressEntry.task_index)) {
+                        progress.push(progressEntry);
+                    }
+                    diagnosticByCallId.payload.tool.progress = progress.length > 30 ? progress.slice(-30) : progress;
+                    return syncAssistantTraceDerivedFields(state);
+                }
+                const unmatchedTool = {
+                    ...toolEvent,
+                    output: '',
+                    progress: progressEntry.label ? [progressEntry] : [],
+                };
+                const diagnosticNode = findAssistantDiagnosticNode(
+                    state,
+                    node => node?.payload?.reason === 'unmatched_tool_progress'
+                        && node?.payload?.tool?.name === unmatchedTool.name
+                        && !node?.payload?.tool?.output,
+                );
+                if (diagnosticNode) {
+                    const progress = Array.isArray(diagnosticNode.payload.tool.progress) ? diagnosticNode.payload.tool.progress : [];
+                    const last = progress[progress.length - 1];
+                    if (progressEntry.label && (!last || last.label !== progressEntry.label || last.task_index !== progressEntry.task_index)) {
+                        progress.push(progressEntry);
+                    }
+                    if (progress.length > 30) {
+                        diagnosticNode.payload.tool.progress = progress.slice(-30);
+                    } else {
+                        diagnosticNode.payload.tool.progress = progress;
+                    }
+                    return syncAssistantTraceDerivedFields(state);
+                }
+                return appendAssistantTraceDiagnostic(state, {
+                    node: event.node || null,
+                    tool: unmatchedTool,
+                    message: event.toolRow || null,
+                    timestamp: event.timestamp || null,
+                    sortKey: event.sortKey || null,
+                    label: event.label || `Unmatched ${unmatchedTool.name} progress`,
+                    reason: 'unmatched_tool_progress',
+                });
+            }
+
+            return syncAssistantTraceDerivedFields(state);
+        }
+
+        function groupParallelToolEvents(events) {
+            if (!Array.isArray(events) || !events.length) return [];
+            const grouped = [];
+            let idx = 0;
+            while (idx < events.length) {
+                const event = events[idx];
+                const isTool = event && (event.type === 'tool_call' || event.type === 'tool_output');
+                if (!isTool) {
+                    grouped.push(event);
+                    idx += 1;
+                    continue;
+                }
+                const batch = [];
+                let cursor = idx;
+                while (cursor < events.length) {
+                    const current = events[cursor];
+                    if (!(current && (current.type === 'tool_call' || current.type === 'tool_output'))) break;
+                    batch.push(current);
+                    cursor += 1;
+                }
+                if (batch.length > 1) {
+                    grouped.push({
+                        type: 'parallel_group',
+                        node: {
+                            kind: 'parallel_group',
+                            payload: {
+                                label: summarizeParallelGroupLabel(batch.map(item => item.tool || item)),
+                                toolNodes: batch.map(item => ({ payload: { tool: item.tool || item }, dom_id: item.node?.dom_id || null })),
+                            },
+                        },
+                    });
+                } else {
+                    grouped.push(batch[0]);
+                }
+                idx = cursor;
+            }
+            return grouped;
+        }
+
+        function buildHistoricalExecutionTrace(data) {
+            const sessionId = data?.id || data?.session_id || '';
+            const nodes = [];
+            const messages = [];
+            const pendingAssistantByTool = new Map();
+            const toolTargets = new Map();
+            const rows = Array.isArray(data?.messages) ? data.messages : [];
+
+            rows.forEach((message, messageIndex) => {
+                const sortKey = [message?.timestamp || '', String(messageIndex).padStart(6, '0')].join(':');
+                if (message.role === 'assistant') {
+                    const tools = normalizeToolCallEntries(message.tool_calls);
+                    const messageId = makeExecutionNodeId('message', sessionId, message.id ?? `assistant_${messageIndex}`, messageIndex);
+                    const stepNode = {
+                        kind: 'assistant_step',
+                        node_id: messageId,
+                        dom_id: `message-${message.id != null ? String(message.id) : `assistant-${messageIndex}`}`,
+                        session_id: sessionId,
+                        timestamp: message.timestamp || null,
+                        sort_key: sortKey,
+                        parent_node_id: null,
+                        call_id: null,
+                        label: 'assistant',
+                        payload: {
+                            message,
+                            toolNodes: [],
+                        },
+                    };
+                    const assistantState = createAssistantTraceState({
+                        traceNode: stepNode,
+                        sessionId,
+                    });
+                    reduceAssistantTraceEvent(assistantState, {
+                        type: 'content',
+                        text: message.content || '',
+                        replace: true,
+                        node: buildAssistantContentNode(sessionId, stepNode, message, `${sortKey}:content`, messageIndex),
+                        timestamp: message.timestamp || null,
+                        sortKey: `${sortKey}:content`,
+                    }, { unmatchedToDiagnostic: false });
+                    tools.forEach((tool, toolIndex) => {
+                        const callId = tool.call_id || tool.id || `${message?.id || 'assistant'}_${toolIndex}`;
+                        const toolNode = buildAssistantTraceToolNode(assistantState, {
+                            ...tool,
+                            call_id: callId,
+                        }, {
+                            node: {
+                                kind: 'tool_run',
+                                node_id: makeExecutionNodeId('tool', sessionId, callId, toolIndex),
+                                dom_id: `tool-${String(callId).replace(/[^A-Za-z0-9_-]/g, '_')}`,
+                                session_id: sessionId,
+                                timestamp: message?.timestamp || null,
+                                sort_key: `${sortKey}:tool:${String(toolIndex).padStart(4, '0')}`,
+                                parent_node_id: messageId,
+                                call_id: callId,
+                                label: tool.name || 'tool',
+                                payload: {},
+                            },
+                            sortKey: `${sortKey}:tool:${String(toolIndex).padStart(4, '0')}`,
+                            timestamp: message?.timestamp || null,
+                            sourceMessage: message || null,
+                            sequence: toolIndex,
+                        });
+                        reduceAssistantTraceEvent(assistantState, {
+                            type: 'tool_call',
+                            ...tool,
+                            call_id: callId,
+                            node: toolNode,
+                            sortKey: `${sortKey}:tool:${String(toolIndex).padStart(4, '0')}`,
+                            timestamp: message?.timestamp || null,
+                            sourceMessage: message || null,
+                            sequence: toolIndex,
+                        }, { unmatchedToDiagnostic: false });
+                        if (callId) {
+                            pendingAssistantByTool.set(callId, assistantState);
+                            if (toolNode.dom_id) {
+                                toolTargets.set(callId, toolNode.dom_id);
+                            }
+                        }
+                    });
+                    syncAssistantTraceDerivedFields(assistantState);
+                    nodes.push(stepNode);
+                    messages.push({
+                        ...message,
+                        ...assistantState,
                         role: 'assistant',
-                        content: m.content || '',
-                        tools,
-                        events,
+                        traceNode: stepNode,
+                        trace: assistantState.trace,
                     });
                     return;
                 }
-                if (m.role === 'tool') {
-                    const callId = m.tool_call_id || '';
+
+                if (message.role === 'tool') {
+                    const callId = message.tool_call_id || '';
                     const pending = callId ? pendingAssistantByTool.get(callId) : null;
                     if (pending) {
-                        pending.tool.output = m.content || '';
+                        reduceAssistantTraceEvent(pending, {
+                            type: 'tool_output',
+                            call_id: callId,
+                            name: message.tool_name || '',
+                            output: message.content || '',
+                            toolRow: message,
+                            timestamp: message.timestamp || null,
+                            sortKey: `${sortKey}:output`,
+                        });
                         pendingAssistantByTool.delete(callId);
                     } else {
-                        mergedMessages.push({
-                            ...m,
-                            role: 'assistant',
-                            content: '',
-                            tools: [{ call_id: callId, name: m.tool_name || 'tool', output: m.content || '' }],
-                            events: [{ type: 'tool_output', tool: { call_id: callId, name: m.tool_name || 'tool', output: m.content || '' } }],
+                        const orphanTool = {
+                            call_id: callId,
+                            name: message.tool_name || 'tool',
+                            arguments: '',
+                            output: message.content || '',
+                            progress: [],
+                        };
+                        const orphanNode = buildAssistantTraceDiagnosticNode(createAssistantTraceState({ sessionId }), {
+                            node: {
+                                kind: 'diagnostic_artifact',
+                                node_id: makeExecutionNodeId('orphan', sessionId, callId || `tool_${messageIndex}`, messageIndex),
+                                dom_id: `orphan-tool-${message.id != null ? String(message.id) : messageIndex}`,
+                                session_id: sessionId,
+                                timestamp: message.timestamp || null,
+                                sort_key: `${sortKey}:orphan`,
+                                parent_node_id: null,
+                                call_id: callId || null,
+                                label: `Unmatched ${orphanTool.name} output`,
+                                payload: {},
+                            },
+                            tool: orphanTool,
+                            message,
+                            timestamp: message.timestamp || null,
+                            sortKey: `${sortKey}:orphan`,
+                            label: `Unmatched ${orphanTool.name} output`,
+                            reason: 'unmatched_tool_output',
+                            sequence: messageIndex,
                         });
+                        nodes.push(orphanNode);
+                        if (callId) toolTargets.set(callId, orphanNode.dom_id);
                     }
                     return;
                 }
-                if (m.role === 'user') {
-                    mergedMessages.push({ role: 'user', content: m.content || '' });
-                }
+
+                const messageNode = {
+                    kind: message.role === 'user' ? 'user_message' : 'diagnostic_artifact',
+                    node_id: makeExecutionNodeId('message', sessionId, message.id ?? `${message.role || 'message'}_${messageIndex}`, messageIndex),
+                    dom_id: `message-${message.id != null ? String(message.id) : `${message.role || 'message'}-${messageIndex}`}`,
+                    session_id: sessionId,
+                    timestamp: message.timestamp || null,
+                    sort_key: sortKey,
+                    parent_node_id: null,
+                    call_id: null,
+                    label: message.role || 'message',
+                    payload: { message },
+                };
+                nodes.push(messageNode);
+                messages.push({ ...message, traceNode: messageNode });
             });
-            return mergedMessages;
+
+            const childNodes = (Array.isArray(data?.children) ? data.children : []).map((child, index) => ({
+                kind: 'child_session',
+                node_id: makeExecutionNodeId('child', sessionId, child.id || `child_${index}`, index),
+                dom_id: `child-session-${String(child.id || index).replace(/[^A-Za-z0-9_-]/g, '_')}`,
+                session_id: sessionId,
+                timestamp: child.started_at || null,
+                sort_key: `${child.started_at || 'zzzz'}:child:${String(index).padStart(4, '0')}`,
+                parent_node_id: null,
+                call_id: null,
+                label: child.title || child.id || 'Child session',
+                payload: { child },
+            }));
+
+            const artifactNodes = (Array.isArray(data?.related_artifacts) ? data.related_artifacts : []).map((artifact, index) => ({
+                kind: 'diagnostic_artifact',
+                node_id: makeExecutionNodeId('artifact', sessionId, artifact.slug || `artifact_${index}`, index),
+                dom_id: `artifact-${sessionId.replace(/[^A-Za-z0-9_-]/g, '_')}-${String(artifact.slug || index).replace(/[^A-Za-z0-9_-]/g, '_')}`,
+                session_id: sessionId,
+                timestamp: artifact.timestamp || null,
+                sort_key: `${artifact.timestamp || 'zzzz'}:artifact:${String(index).padStart(4, '0')}`,
+                parent_node_id: null,
+                call_id: null,
+                label: artifact.reason || artifact.file_name || 'Diagnostic artifact',
+                payload: { artifact },
+            }));
+
+            return {
+                sessionId,
+                messages,
+                nodes: [...nodes, ...childNodes, ...artifactNodes]
+                    .sort((a, b) => String(a.sort_key || '').localeCompare(String(b.sort_key || ''))),
+                targetDomIds: {
+                    tool: toolTargets,
+                    child: new Map(childNodes.map(node => [node.payload.child?.id, node.dom_id]).filter(([key]) => key)),
+                    artifact: new Map(artifactNodes.map(node => [node.payload.artifact?.slug, node.dom_id]).filter(([key]) => key)),
+                },
+            };
+        }
+
+        function buildConversationFromSessionData(data) {
+            return buildHistoricalExecutionTrace(data).messages.map(message => {
+                if (message.role !== 'assistant') {
+                    return message.role === 'user'
+                        ? { role: 'user', content: message.content || '', traceNode: message.traceNode }
+                        : message;
+                }
+                return normalizeAssistantMessage(message);
+            });
+        }
+
+        function buildAssistantMessageFromTraceNode(traceNode) {
+            return normalizeAssistantMessage({
+                ...traceNode?.payload?.message,
+                traceNode,
+                trace: {
+                    sessionId: traceNode?.session_id || null,
+                    stepNode: traceNode,
+                    contentNode: traceNode?.payload?.contentNode || null,
+                    toolNodes: Array.isArray(traceNode?.payload?.toolNodes) ? traceNode.payload.toolNodes : [],
+                    orphanNodes: Array.isArray(traceNode?.payload?.orphanNodes) ? traceNode.payload.orphanNodes : [],
+                    items: Array.isArray(traceNode?.payload?.items) ? traceNode.payload.items : [],
+                    toolIndexByCallId: traceNode?.payload?.toolIndexByCallId || {},
+                    pendingDelegateChildren: {},
+                },
+            });
+        }
+
+        function buildSessionTraceContext(data, options = {}) {
+            const trace = buildHistoricalExecutionTrace(data);
+            trace.data = data;
+            trace.domScope = options.domScope || '';
+            const backgroundReviews = Array.isArray(data?.background_reviews) ? data.background_reviews : [];
+            backgroundReviews.forEach((review) => {
+                (review?.events || []).forEach((event, index) => {
+                    if (!event?.call_id) return;
+                    const domId = `child-tool-${String(event.call_id).replace(/[^A-Za-z0-9_-]/g, '_')}`;
+                    if (!trace.targetDomIds.tool.has(event.call_id)) {
+                        trace.targetDomIds.tool.set(event.call_id, domId);
+                    }
+                });
+            });
+            return trace;
+        }
+
+        function scopedExecutionDomId(domId, traceContext = null) {
+            const raw = String(domId || '').trim();
+            if (!raw) return '';
+            const scope = String(traceContext?.domScope || '').trim();
+            return scope ? `${scope}-${raw}` : raw;
+        }
+
+        function executionTargetDomId(target, traceContext = currentSessionTraceContext) {
+            const normalized = normalizeExecutionTarget(target);
+            if (!normalized || !traceContext?.targetDomIds) return null;
+            const bucket = traceContext.targetDomIds[normalized.kind];
+            if (!(bucket instanceof Map)) return null;
+            const direct = bucket.get(normalized.id) || null;
+            return direct ? scopedExecutionDomId(direct, traceContext) : null;
+        }
+
+        function expandExecutionAncestors(element) {
+            let current = element?.parentElement || null;
+            while (current) {
+                if (current.tagName === 'DETAILS') current.open = true;
+                current = current.parentElement;
+            }
+        }
+
+        function scrollToExecutionNode(target, traceContext = currentSessionTraceContext) {
+            const domId = executionTargetDomId(target, traceContext);
+            if (!domId) return false;
+            const element = document.getElementById(domId);
+            if (!element) return false;
+            expandExecutionAncestors(element);
+            element.classList.remove('execution-pulse');
+            void element.offsetWidth;
+            element.classList.add('execution-pulse');
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+        }
+
+        function renderExecutionTargetLink(sessionId, target, label) {
+            const route = routeForExecutionTarget(sessionId, target);
+            if (!route) return '';
+            return `<a class="execution-target-link" href="#${escapeHtml(route)}">${escapeHtml(label)}</a>`;
+        }
+
+        function renderInlineChildStage(node, traceContext = currentSessionTraceContext) {
+            const child = node?.payload?.child || {};
+            const review = (traceContext?.data?.background_reviews || []).find(item => item?.session_id === child.id) || null;
+            const summary = review?.summary || child.summary || '';
+            const reviewEvents = Array.isArray(review?.events) ? review.events : [];
+            return `
+                <details class="inline-child-stage execution-node" id="${escapeHtml(scopedExecutionDomId(node.dom_id, traceContext))}" data-session-child="${escapeHtml(child.id || '')}">
+                    <summary>
+                        <div class="inline-stage-title">
+                            <span>${escapeHtml(child.title || child.id || 'Child session')}</span>
+                            <span class="meta-pill">inline stage</span>
+                        </div>
+                        <div class="inline-stage-meta">${escapeHtml(formatSessionDate(child.started_at) || 'Unknown start')} ${child.id ? `· ${escapeHtml(String(child.id).slice(0, 8))}` : ''}</div>
+                        ${summary ? `<div class="inline-stage-summary">${escapeHtml(summary)}</div>` : ''}
+                    </summary>
+                    <div class="inline-child-stage-body">
+                        <div class="inline-stage-links">
+                            <button class="btn" onclick="event.stopPropagation();navigateTo('sessions/detail/${encodeURIComponent(child.id || '')}')">Open child session</button>
+                            ${renderExecutionTargetLink(traceContext?.sessionId, { kind: 'child', id: child.id }, 'Jump here')}
+                        </div>
+                        ${reviewEvents.length ? `<div class="activity-block">${reviewEvents.slice(0, 6).map((event, index) => {
+                            const eventId = scopedExecutionDomId(event.call_id ? `child-tool-${String(event.call_id).replace(/[^A-Za-z0-9_-]/g, '_')}` : `child-tool-${String(child.id || 'child').replace(/[^A-Za-z0-9_-]/g, '_')}-${index}`, traceContext);
+                            return `<div id="${escapeHtml(eventId)}" class="execution-node" style="margin-top:0.45rem;"><strong>${escapeHtml(event.name || 'tool')}</strong>${event.call_id ? ` <span class="meta-pill">call ${escapeHtml(String(event.call_id).slice(-8))}</span>` : ''}${renderActivityData(event.output)}</div>`;
+                        }).join('')}</div>` : '<div style="color:var(--text-dim);margin-top:0.65rem;">No inline review events were synthesized for this child session.</div>'}
+                    </div>
+                </details>
+            `;
+        }
+
+        function renderDiagnosticArtifactNode(node, traceContext = currentSessionTraceContext) {
+            const artifact = node?.payload?.artifact || {};
+            const meta = [artifact.reason, artifact.model, artifact.url].filter(Boolean).join(' · ');
+            const errorMeta = [artifact.error_type, artifact.error_response_status ? `status ${artifact.error_response_status}` : ''].filter(Boolean).join(' · ');
+            return `
+                <details class="diagnostic-artifact execution-node" id="${escapeHtml(scopedExecutionDomId(node.dom_id, traceContext))}">
+                    <summary>
+                        <div class="inline-stage-title">
+                            <span>${escapeHtml(artifact.file_name || artifact.slug || 'Diagnostic artifact')}</span>
+                            <span class="meta-pill">artifact</span>
+                        </div>
+                        <div class="inline-stage-meta">${escapeHtml(formatSessionDate(artifact.timestamp) || 'Unknown time')}</div>
+                        ${meta ? `<div class="inline-stage-summary">${escapeHtml(meta)}</div>` : ''}
+                    </summary>
+                    <div class="diagnostic-artifact-body">
+                        ${artifact.error_message ? `<div class="activity-block"><strong>Error</strong><pre>${escapeHtml(artifact.error_message)}</pre></div>` : ''}
+                        ${errorMeta ? `<div class="activity-block"><strong>Failure Details</strong><pre>${escapeHtml(errorMeta)}</pre></div>` : ''}
+                        <div class="activity-block"><strong>Path</strong><pre>${escapeHtml(artifact.path || '')}</pre></div>
+                    </div>
+                </details>
+            `;
+        }
+
+        function renderOrphanDiagnosticNode(node, traceContext = currentSessionTraceContext) {
+            const tool = node?.payload?.tool || {};
+            return `
+                <div class="orphan-tool-block execution-node" id="${escapeHtml(scopedExecutionDomId(node.dom_id, traceContext))}">
+                    <span class="orphan-tool-label">${escapeHtml(node?.label || 'Unmatched tool output')}</span>
+                    ${renderToolBlock(tool, 0, { node, traceContext })}
+                </div>
+            `;
+        }
+
+        function renderSessionTranscript(traceContext) {
+            return (traceContext?.nodes || []).map(node => {
+                if (node.kind === 'assistant_step') {
+                    const message = { ...buildAssistantMessageFromTraceNode(node), renderTraceContext: traceContext };
+                    return renderSessionMessage(message);
+                }
+                if (node.kind === 'user_message') {
+                    return renderSessionMessage({ ...node.payload.message, traceNode: node });
+                }
+                if (node.kind === 'child_session') {
+                    return renderInlineChildStage(node, traceContext);
+                }
+                if (node.kind === 'diagnostic_artifact' && node.payload?.artifact) {
+                    return renderDiagnosticArtifactNode(node, traceContext);
+                }
+                if (node.kind === 'diagnostic_artifact' && node.payload?.orphan) {
+                    return renderOrphanDiagnosticNode(node, traceContext);
+                }
+                return '';
+            }).join('');
+        }
+
+        function renderFloatingSessionTranscript(traceContext) {
+            return (traceContext?.nodes || []).map(node => {
+                if (node.kind === 'assistant_step') {
+                    const message = { ...buildAssistantMessageFromTraceNode(node), renderTraceContext: traceContext };
+                    return `<div class="fp-msg" style="border-left-color:#06b6d4"><div class="fp-msg-role" style="color:#06b6d4">assistant</div>${renderAssistantMessage(message)}</div>`;
+                }
+                if (node.kind === 'user_message') {
+                    const message = node.payload.message || {};
+                    return `<div class="fp-msg" style="border-left-color:#a855f7"><div class="fp-msg-role" style="color:#a855f7">user</div><div style="font-size:0.8rem;line-height:1.4">${escapeHtml(message.content || '').replace(/\n/g, '<br>')}</div></div>`;
+                }
+                if (node.kind === 'child_session') {
+                    return `<div class="fp-msg" style="border-left-color:#a855f7">${renderInlineChildStage(node, traceContext)}</div>`;
+                }
+                if (node.kind === 'diagnostic_artifact' && node.payload?.artifact) {
+                    return `<div class="fp-msg" style="border-left-color:#f97316">${renderDiagnosticArtifactNode(node, traceContext)}</div>`;
+                }
+                if (node.kind === 'diagnostic_artifact' && node.payload?.orphan) {
+                    return `<div class="fp-msg" style="border-left-color:#f97316">${renderOrphanDiagnosticNode(node, traceContext)}</div>`;
+                }
+                return '';
+            }).join('');
         }
 
         async function hydrateChatFromSession(sessionId) {
@@ -3449,20 +4778,60 @@
         
         function normalizeAssistantMessage(message) {
             if (typeof message === 'string') {
-                return { role: 'assistant', content: message, tools: [], events: [{ type: 'content', text: message }], usage: null, last_prompt_tokens: 0, prompt_breakdown: [] };
+                return syncAssistantTraceDerivedFields(reduceAssistantTraceEvent(createAssistantTraceState(), { type: 'content', text: message, replace: true }));
             }
-            return {
-                role: 'assistant',
-                content: message.content || '',
-                tools: Array.isArray(message.tools) ? message.tools.map(tool => ({
-                    ...tool,
-                    progress: normalizeToolProgressEntries(tool.progress),
-                })) : [],
-                events: Array.isArray(message.events) ? message.events : [],
-                usage: message.usage || null,
-                last_prompt_tokens: message.last_prompt_tokens || 0,
-                prompt_breakdown: Array.isArray(message.prompt_breakdown) ? message.prompt_breakdown : [],
-            };
+            const state = createAssistantTraceState({
+                usage: message?.usage || null,
+                last_prompt_tokens: message?.last_prompt_tokens || 0,
+                prompt_breakdown: Array.isArray(message?.prompt_breakdown) ? message.prompt_breakdown : [],
+                traceNode: message?.traceNode || null,
+                sessionId: message?.trace?.sessionId || message?.traceNode?.session_id || null,
+                trace: message?.trace || null,
+            });
+            if (message?.trace?.contentNode || message?.trace?.toolNodes || message?.trace?.orphanNodes || message?.trace?.items) {
+                state.content = message.content || collectAssistantTraceContentText(message.trace, message.trace?.contentNode?.payload?.text || '');
+                state.trace.contentNode = message.trace?.contentNode || state.trace.contentNode;
+                state.trace.toolNodes = Array.isArray(message.trace?.toolNodes) ? message.trace.toolNodes : state.trace.toolNodes;
+                state.trace.orphanNodes = Array.isArray(message.trace?.orphanNodes) ? message.trace.orphanNodes : state.trace.orphanNodes;
+                state.trace.items = Array.isArray(message.trace?.items) ? message.trace.items : state.trace.items;
+                state.trace.toolIndexByCallId = message.trace?.toolIndexByCallId && typeof message.trace.toolIndexByCallId === 'object'
+                    ? { ...message.trace.toolIndexByCallId }
+                    : state.trace.toolIndexByCallId;
+                syncAssistantTraceDerivedFields(state);
+            } else if (message?.traceNode?.kind === 'assistant_step') {
+                state.content = message.content || collectAssistantTraceContentText(message.traceNode?.payload, message.traceNode?.payload?.contentNode?.payload?.text || '');
+                state.trace.stepNode = message.traceNode;
+                state.trace.contentNode = message.traceNode?.payload?.contentNode || null;
+                state.trace.toolNodes = Array.isArray(message.traceNode?.payload?.toolNodes) ? message.traceNode.payload.toolNodes : [];
+                state.trace.orphanNodes = Array.isArray(message.traceNode?.payload?.orphanNodes) ? message.traceNode.payload.orphanNodes : [];
+                state.trace.items = Array.isArray(message.traceNode?.payload?.items) ? message.traceNode.payload.items : [];
+                state.trace.toolIndexByCallId = message.traceNode?.payload?.toolIndexByCallId && typeof message.traceNode.payload.toolIndexByCallId === 'object'
+                    ? { ...message.traceNode.payload.toolIndexByCallId }
+                    : state.trace.toolIndexByCallId;
+                syncAssistantTraceDerivedFields(state);
+            } else {
+                reduceAssistantTraceEvent(state, { type: 'content', text: message?.content || '', replace: true });
+                const replayEvents = Array.isArray(message?.events) ? message.events : [];
+                if (replayEvents.length) {
+                    replayEvents.forEach((event) => {
+                        if (!event || event.type === 'parallel_group') return;
+                        reduceAssistantTraceEvent(state, event);
+                    });
+                } else if (Array.isArray(message?.tools)) {
+                    message.tools.forEach((tool) => {
+                        const normalizedTool = {
+                            ...tool,
+                            call_id: tool?.call_id || tool?.id || '',
+                        };
+                        reduceAssistantTraceEvent(state, {
+                            type: normalizedTool.output ? 'tool_output' : 'tool_call',
+                            ...normalizedTool,
+                        });
+                    });
+                }
+            }
+            state.renderTraceContext = message?.renderTraceContext || null;
+            return syncAssistantTraceDerivedFields(state);
         }
 
         function parseToolPayload(value) {
@@ -3816,6 +5185,16 @@
             return sections ? `<div class="tool-section"><label>Subagent Stream</label>${sections}</div>` : '';
         }
 
+        function ensureAssistantTracePendingDelegateChildren(state) {
+            if (!state?.trace || typeof state.trace !== 'object') {
+                state.trace = { toolNodes: [], orphanNodes: [], pendingDelegateChildren: {}, toolSequence: 0, orphanSequence: 0 };
+            }
+            if (!state.trace.pendingDelegateChildren || typeof state.trace.pendingDelegateChildren !== 'object') {
+                state.trace.pendingDelegateChildren = {};
+            }
+            return state.trace.pendingDelegateChildren;
+        }
+
         function captureOpenToolState(container) {
             const openKeys = new Set();
             if (!container) return openKeys;
@@ -3896,11 +5275,11 @@
             }
             target.innerHTML = items.map(item => `
                 <div class="activity-item">
-                    <div class="activity-title">Review ${escapeHtml((item.session_id || '').slice(0, 8))}</div>
+                    <div class="activity-title">${normalizeActivityTarget(item) ? renderExecutionTargetLink(currentSessionTraceContext?.sessionId, normalizeActivityTarget(item), `Review ${(item.session_id || '').slice(0, 8)}`) : `Review ${escapeHtml((item.session_id || '').slice(0, 8))}`}</div>
                     <div class="activity-meta">${escapeHtml(formatTimestamp(item.timestamp) || 'Unknown time')}</div>
                     ${item.summary ? `<div>${escapeHtml(item.summary)}</div>` : ''}
                     ${Array.isArray(item.events) && item.events.length ? `<div class="activity-block">${item.events.map(event => `
-                        <div style="margin-bottom:0.4rem;"><strong>${escapeHtml(event.name || 'tool')}</strong>${renderActivityData(event.output)}</div>
+                        <div style="margin-bottom:0.4rem;"><strong>${escapeHtml(event.name || 'tool')}</strong>${event.call_id ? ` ${renderExecutionTargetLink(currentSessionTraceContext?.sessionId, { kind: 'tool', id: event.call_id }, 'open call')}` : ''}${renderActivityData(event.output)}</div>
                     `).join('')}</div>` : ''}
                 </div>
             `).join('');
@@ -3914,8 +5293,9 @@
             }
             target.innerHTML = items.map(item => `
                 <div class="activity-item">
-                    <div class="activity-title">${escapeHtml(titleBuilder(item))}</div>
+                    <div class="activity-title">${normalizeActivityTarget(item) ? renderExecutionTargetLink(currentSessionTraceContext?.sessionId, normalizeActivityTarget(item), titleBuilder(item)) : escapeHtml(titleBuilder(item))}</div>
                     <div class="activity-meta">${escapeHtml(formatTimestamp(item.timestamp) || 'Unknown time')}</div>
+                    ${normalizeActivityTarget(item) ? `<div class="transcript-anchor-list"><span class="meta-pill">linked to transcript</span></div>` : ''}
                     <div class="activity-block"><strong>Request</strong>${renderActivityData(item.request)}</div>
                     <div class="activity-block"><strong>Result</strong>${renderActivityData(item.result)}</div>
                 </div>
@@ -4066,10 +5446,13 @@
             }
         }
 
-        function renderToolBlock(tool, idx) {
+        function renderToolBlock(tool, idx, options = {}) {
             const toolName = tool.name || `tool_${idx + 1}`;
             const safeName = escapeHtml(toolName);
             const toolKey = escapeHtml(tool.call_id || `${toolName}_${idx}`);
+            const domIdValue = options?.node?.dom_id ? scopedExecutionDomId(options.node.dom_id, options?.traceContext || null) : '';
+            const domId = domIdValue ? ` id="${escapeHtml(domIdValue)}"` : '';
+            const executionClass = options?.node?.dom_id ? ' execution-node' : '';
             const parsedArgs = parseToolPayload(tool.arguments);
             const parsedOutput = parseToolPayload(tool.output);
             const progress = Array.isArray(tool.progress) ? tool.progress : [];
@@ -4093,7 +5476,7 @@
                 ? (typeof latestProgress === 'object' ? latestProgress.label : latestProgress) : '';
 
             return `
-                <details class="tool-call-block" data-tool-key="tool:${toolKey}">
+                <details class="tool-call-block${executionClass}" data-tool-key="tool:${toolKey}"${domId}>
                     <summary class="tool-call-header">
                         <span class="tool-icon">${getToolIcon(toolName)}</span>
                         <span class="tool-name">${safeName}</span>
@@ -4134,9 +5517,26 @@
                 ? normalized.events
                 : [{ type: 'content', text: normalized.content || '' }];
             return events.map((event, idx) => {
-                if (event.type === 'tool_call' || event.type === 'tool_output') {
-                    return renderToolBlock(event.tool || event, idx);
+                if (event.type === 'parallel_group') {
+                    const toolNodes = Array.isArray(event.node?.payload?.toolNodes) ? event.node.payload.toolNodes : [];
+                    const label = event.node?.payload?.label || summarizeParallelGroupLabel(toolNodes.map(node => node.payload.tool));
+                    return `
+                        <details class="parallel-group" open>
+                            <summary>
+                                <div>
+                                    <div class="parallel-group-title">${escapeHtml(label)}</div>
+                                    <div class="parallel-group-meta">${escapeHtml(`${toolNodes.length} calls grouped under one assistant step`)}</div>
+                                </div>
+                                <span class="meta-pill">parallel</span>
+                            </summary>
+                            <div class="parallel-group-body">${toolNodes.map((node, toolIdx) => renderToolBlock(node.payload.tool, toolIdx, { node, traceContext: normalized.renderTraceContext || null })).join('')}</div>
+                        </details>
+                    `;
                 }
+                if (event.type === 'tool_call' || event.type === 'tool_output') {
+                    return renderToolBlock(event.tool || event, idx, { node: event.node || null, traceContext: normalized.renderTraceContext || null });
+                }
+                if (event.type === 'diagnostic' && event.node?.payload?.orphan) return renderOrphanDiagnosticNode(event.node, normalized.renderTraceContext || null);
                 if (event.type === 'content') {
                     return event.text ? `<div>${formatMessageContent(event.text)}</div>` : '';
                 }
@@ -4172,6 +5572,9 @@
             const normalized = mergeLegacyMarkersIntoEvents(normalizeAssistantMessage(message));
             const bodyHtml = renderAssistantEvents(normalized);
             const usage = normalized.usage || {};
+            const wrapperIdValue = message?.traceNode?.dom_id ? scopedExecutionDomId(message.traceNode.dom_id, normalized.renderTraceContext || null) : '';
+            const wrapperId = wrapperIdValue ? ` id="${escapeHtml(wrapperIdValue)}"` : '';
+            const wrapperClass = message?.traceNode?.dom_id ? ' assistant-step-block execution-node' : '';
             const metaHtml = [
                 renderMetaPill('Prompt', usage.prompt_tokens),
                 renderMetaPill('Completion', usage.completion_tokens),
@@ -4179,11 +5582,13 @@
                 renderMetaPill('Context window', normalized.last_prompt_tokens),
             ].filter(Boolean).join('');
             return `
-                <div class="message-header">
-                    <div class="message-title">Hermes</div>
+                <div class="${wrapperClass.trim()}"${wrapperId}>
+                    <div class="message-header">
+                        <div class="message-title">Hermes</div>
+                    </div>
+                    <div class="assistant-tools">${bodyHtml}</div>
+                    ${metaHtml ? `<div class="message-meta">${metaHtml}</div>` : ''}
                 </div>
-                <div class="assistant-tools">${bodyHtml}</div>
-                ${metaHtml ? `<div class="message-meta">${metaHtml}</div>` : ''}
             `;
         }
 
@@ -4192,7 +5597,7 @@
             return toolCalls.map((tool, idx) => {
                 if (tool && tool.function) {
                     return {
-                        call_id: tool.id || `tool_${idx + 1}`,
+                        call_id: tool.call_id || tool.id || `tool_${idx + 1}`,
                         name: tool.function.name || `tool_${idx + 1}`,
                         arguments: tool.function.arguments || '',
                         output: tool.output || '',
@@ -4207,49 +5612,6 @@
                     progress: normalizeToolProgressEntries(tool.progress),
                 };
             });
-        }
-
-        function findToolEntry(state, toolEvent) {
-            const events = ensureAssistantEventTimeline(state);
-            if (toolEvent.call_id) {
-                const byCallId = events.find(event => (event.type === 'tool_call' || event.type === 'tool_output') && event.tool?.call_id === toolEvent.call_id) || null;
-                if (byCallId) return byCallId;
-            }
-            if (toolEvent.name === 'delegate_task') {
-                for (let i = events.length - 1; i >= 0; i--) {
-                    const event = events[i];
-                    if ((event.type === 'tool_call' || event.type === 'tool_output') && event.tool?.name === 'delegate_task') {
-                        return event;
-                    }
-                }
-            }
-            if (toolEvent.name) {
-                for (let i = events.length - 1; i >= 0; i--) {
-                    const event = events[i];
-                    if ((event.type === 'tool_call' || event.type === 'tool_output') && event.tool?.name === toolEvent.name && !event.tool?.output) {
-                        return event;
-                    }
-                }
-                for (let i = events.length - 1; i >= 0; i--) {
-                    const event = events[i];
-                    if ((event.type === 'tool_call' || event.type === 'tool_output') && event.tool?.name === toolEvent.name) {
-                        return event;
-                    }
-                }
-            }
-            return null;
-        }
-
-        function ensureAssistantEventTimeline(state) {
-            if (!Array.isArray(state.events)) state.events = [];
-            return state.events;
-        }
-
-        function ensurePendingDelegateChildren(state) {
-            if (!state.pendingDelegateChildren || typeof state.pendingDelegateChildren !== 'object') {
-                state.pendingDelegateChildren = {};
-            }
-            return state.pendingDelegateChildren;
         }
 
         function getDelegateChildBucket(delegateTool, taskIndex = null) {
@@ -4267,10 +5629,10 @@
         function appendDelegateChildEvent(state, parsed) {
             const delegateCallId = parsed?.arguments?.delegate_call_id || parsed?.arguments?.call_id || '';
             if (!delegateCallId) return false;
-            const delegateEntry = findToolEntry(state, { call_id: delegateCallId, name: 'delegate_task' });
-            const delegateTool = delegateEntry?.tool || state.tools.find(item => item.call_id === delegateCallId && item.name === 'delegate_task');
+            const delegateNode = findAssistantToolNode(state, delegateCallId);
+            const delegateTool = delegateNode?.payload?.tool || null;
             if (!delegateTool) {
-                const pending = ensurePendingDelegateChildren(state);
+                const pending = ensureAssistantTracePendingDelegateChildren(state);
                 if (!Array.isArray(pending[delegateCallId])) pending[delegateCallId] = [];
                 pending[delegateCallId].push(parsed);
                 if (pending[delegateCallId].length > 100) pending[delegateCallId] = pending[delegateCallId].slice(-100);
@@ -4371,7 +5733,7 @@
 
         function flushPendingDelegateChildEvents(state, delegateTool) {
             if (!delegateTool?.call_id) return;
-            const pending = ensurePendingDelegateChildren(state);
+            const pending = ensureAssistantTracePendingDelegateChildren(state);
             const queued = pending[delegateTool.call_id];
             if (!Array.isArray(queued) || !queued.length) return;
             delete pending[delegateTool.call_id];
@@ -4379,74 +5741,44 @@
         }
 
         function appendContentEvent(state, text) {
-            const events = ensureAssistantEventTimeline(state);
-            const last = events[events.length - 1];
-            if (last && last.type === 'content') {
-                last.text = (last.text || '') + text;
-            } else {
-                events.push({ type: 'content', text });
-            }
-            state.content = (state.content || '') + text;
+            reduceAssistantTraceEvent(state, { type: 'content', text });
         }
 
         function upsertToolEvent(state, toolEvent) {
-            const events = ensureAssistantEventTimeline(state);
-            let entry = findToolEntry(state, toolEvent);
-            if (!entry) {
-                entry = {
-                    type: 'tool_call',
-                    tool: {
-                        call_id: toolEvent.call_id || `tool_${events.length + 1}`,
-                        name: toolEvent.name || 'tool',
-                        arguments: toolEvent.arguments || '',
-                        output: '',
-                        progress: [],
-                    },
-                };
-                events.push(entry);
-            }
-            if (toolEvent.name) entry.tool.name = toolEvent.name;
-            if (toolEvent.arguments) entry.tool.arguments = toolEvent.arguments;
-            if (toolEvent.output) {
-                entry.tool.output = toolEvent.output;
-                entry.type = 'tool_output';
-            }
-
-            const existingTool = state.tools.find(item => item.call_id === entry.tool.call_id);
-            if (existingTool) {
-                Object.assign(existingTool, entry.tool);
-                entry.tool = existingTool;
-                if (existingTool.name === 'delegate_task') flushPendingDelegateChildEvents(state, existingTool);
-            } else {
-                state.tools.push(entry.tool);
-                if (entry.tool.name === 'delegate_task') flushPendingDelegateChildEvents(state, entry.tool);
-            }
-            return entry.tool;
+            const eventType = Object.prototype.hasOwnProperty.call(toolEvent, 'output')
+                ? 'tool_output'
+                : 'tool_call';
+            reduceAssistantTraceEvent(state, {
+                ...toolEvent,
+                type: eventType,
+            });
+            const tool = findAssistantToolNode(state, toolEvent.call_id)?.payload?.tool
+                || findAssistantDiagnosticNode(state, node => node?.payload?.tool?.call_id === toolEvent.call_id)?.payload?.tool
+                || null;
+            if (tool?.name === 'delegate_task') flushPendingDelegateChildEvents(state, tool);
+            return tool || {
+                call_id: toolEvent.call_id || '',
+                name: toolEvent.name || 'tool',
+                arguments: toolEvent.arguments || '',
+                output: toolEvent.output || '',
+                progress: normalizeToolProgressEntries(toolEvent.progress),
+            };
         }
 
         function appendToolProgress(state, toolEvent) {
-            const tool = upsertToolEvent(state, toolEvent);
-            const progressEntry = {
-                label: typeof toolEvent.progress === 'string'
-                    ? toolEvent.progress
-                    : summarizeValue(toolEvent.progress || toolEvent.arguments || '', 160),
-                task_index: Number.isInteger(toolEvent?.arguments?.task_index) ? toolEvent.arguments.task_index : null,
-                task_count: Number.isInteger(toolEvent?.arguments?.task_count) ? toolEvent.arguments.task_count : null,
-            };
-            if (!progressEntry.label) return tool;
-            if (!Array.isArray(tool.progress)) tool.progress = [];
-            const last = tool.progress[tool.progress.length - 1];
-            if (!last || last.label !== progressEntry.label || last.task_index !== progressEntry.task_index) {
-                tool.progress.push(progressEntry);
-            }
-            if (tool.progress.length > 30) {
-                tool.progress = tool.progress.slice(-30);
-            }
-            const existingTool = state.tools.find(item => item.call_id === tool.call_id);
-            if (existingTool) {
-                existingTool.progress = tool.progress.map(item => ({ ...item }));
-            }
-            return tool;
+            reduceAssistantTraceEvent(state, {
+                ...toolEvent,
+                type: 'tool_progress',
+            });
+            return findAssistantToolNode(state, toolEvent.call_id)?.payload?.tool
+                || findAssistantDiagnosticNode(state, node => node?.payload?.tool?.call_id === toolEvent.call_id)?.payload?.tool
+                || {
+                    call_id: toolEvent.call_id || '',
+                    name: toolEvent.name || 'tool',
+                    arguments: toolEvent.arguments || '',
+                    output: '',
+                    progress: normalizeToolProgressEntries(toolEvent.progress),
+                };
         }
 
         function shouldStickToBottom(container, threshold = 80) {
@@ -4638,6 +5970,9 @@
 
             // Handle sub-routes like sessions/detail/{id}
             if (panel === 'sessions' && parts[1] === 'detail' && parts[2]) {
+                pendingSessionExecutionTarget = parts[3] && parts[4]
+                    ? { kind: decodeURIComponent(parts[3]), id: decodeURIComponent(parts[4]) }
+                    : null;
                 viewSession(parts[2]);
             }
         }
@@ -5261,7 +6596,8 @@
             
             // Update hash if not already matching (avoid re-triggering hashchange)
             const expectedHash = 'sessions/detail/' + id;
-            if (location.hash.slice(1) !== expectedHash) {
+            const currentHash = location.hash.slice(1);
+            if (!(currentHash === expectedHash || currentHash.startsWith(expectedHash + '/'))) {
                 location.hash = expectedHash;
                 return;
             }
@@ -5281,49 +6617,10 @@
                 `;
             }
 
-            const mergedMessages = [];
-            const pendingAssistantByTool = new Map();
-            data.messages.forEach(m => {
-                if (m.role === 'assistant') {
-                    const tools = normalizeToolCallEntries(m.tool_calls);
-                    const events = [];
-                    if (m.content) events.push({ type: 'content', text: m.content });
-                    tools.forEach(tool => {
-                        events.push({ type: 'tool_call', tool });
-                        if (tool.call_id) pendingAssistantByTool.set(tool.call_id, { tool, events });
-                    });
-                    mergedMessages.push({
-                        ...m,
-                        role: 'assistant',
-                        content: m.content || '',
-                        tools,
-                        events,
-                    });
-                    return;
-                }
-                if (m.role === 'tool') {
-                    const callId = m.tool_call_id || '';
-                    const pending = callId ? pendingAssistantByTool.get(callId) : null;
-                    if (pending) {
-                        pending.tool.output = m.content || '';
-                        pendingAssistantByTool.delete(callId);
-                    } else {
-                        mergedMessages.push({
-                            ...m,
-                            role: 'assistant',
-                            content: '',
-                            tools: [{ call_id: callId, name: m.tool_name || 'tool', output: m.content || '' }],
-                            events: [{ type: 'tool_output', tool: { call_id: callId, name: m.tool_name || 'tool', output: m.content || '' } }],
-                        });
-                    }
-                    return;
-                }
-                mergedMessages.push(m);
-            });
-            
+            currentSessionTraceContext = buildSessionTraceContext(data);
             const summaryHtml = data.summary ? `<div class="summary-block"><span class="label">Session Summary</span>${escapeHtml(data.summary)}</div>` : '';
             const overviewHtml = renderSessionOverview(data);
-            messages.innerHTML = overviewHtml + summaryHtml + mergedMessages.map(renderSessionMessage).join('');
+            messages.innerHTML = overviewHtml + summaryHtml + renderSessionTranscript(currentSessionTraceContext);
 
             renderBackgroundReviews(data.background_reviews || []);
             renderRequestResultActivity(
@@ -5350,6 +6647,11 @@
             await loadSessionFiles(id);
             
             detail.classList.add('active');
+            if (pendingSessionExecutionTarget) {
+                requestAnimationFrame(() => {
+                    scrollToExecutionNode(pendingSessionExecutionTarget, currentSessionTraceContext);
+                });
+            }
         }
 
         async function loadSessionFiles(id) {
@@ -5371,6 +6673,7 @@
                 usage: assistantState.usage || null,
                 last_prompt_tokens: assistantState.last_prompt_tokens || 0,
                 prompt_breakdown: Array.isArray(assistantState.prompt_breakdown) ? assistantState.prompt_breakdown : [],
+                trace: assistantState.trace || null,
             };
             saveActiveRun();
         }
@@ -5390,6 +6693,7 @@
                     usage: assistantState.usage,
                     last_prompt_tokens: assistantState.last_prompt_tokens || (assistantState.usage && assistantState.usage.prompt_tokens) || 0,
                     prompt_breakdown: assistantState.prompt_breakdown,
+                    trace: assistantState.trace || null,
                 });
                 saveConversation();
             }
@@ -5417,7 +6721,7 @@
             const decoder = new TextDecoder();
             const assistantState = assistantSeed
                 ? normalizeAssistantMessage(assistantSeed)
-                : { role: 'assistant', content: '', tools: [], events: [], usage: null, last_prompt_tokens: 0, prompt_breakdown: [] };
+                : createAssistantTraceState({ sessionId });
             let assistantDiv = null;
             let chunkCount = 0;
             let streamBuffer = '';
@@ -5510,9 +6814,6 @@
                                 saveActiveRun();
                                 continue;
                             }
-                            if (parsed.name === 'delegate_task' && assistantState.tools.some(item => item.name === 'delegate_task')) {
-                                parsed.call_id = assistantState.tools.find(item => item.name === 'delegate_task')?.call_id || parsed.call_id;
-                            }
                             const tool = upsertToolEvent(assistantState, parsed);
                             startToolTimer(tool.call_id);
                             startToolTimerUpdates();
@@ -5543,9 +6844,7 @@
                             renderDirty = true;
                             log('tool', describeToolLog(tool.name, 'progress', parsed.progress || parsed.arguments || ''), false, { result: parsed.progress || parsed.arguments || '' });
                         } else if (parsed.type === 'meta') {
-                            if (parsed.usage) assistantState.usage = parsed.usage;
-                            if (parsed.last_prompt_tokens) assistantState.last_prompt_tokens = parsed.last_prompt_tokens;
-                            if (Array.isArray(parsed.prompt_breakdown)) assistantState.prompt_breakdown = parsed.prompt_breakdown;
+                            reduceAssistantTraceEvent(assistantState, parsed);
                             renderDirty = true;
                             updateContextDisplay(assistantState);
                             log('inf', 'Meta: ' + (parsed.usage ? parsed.usage.total_tokens + ' tokens' : 'prompt update'), false, { result: parsed });
@@ -5650,7 +6949,7 @@
                 ['Child Sessions', data.child_count ?? 0],
             ];
             const children = Array.isArray(data.children) && data.children.length
-                ? `<div class="config-help" style="margin-top:0.75rem;">Child sessions: ${data.children.map(child => escapeHtml(child.title || child.id)).join(' | ')}</div>`
+                ? `<div class="config-help" style="margin-top:0.75rem;">Child sessions: ${data.children.map(child => renderExecutionTargetLink(data.id, { kind: 'child', id: child.id }, child.title || child.id)).join(' | ')}</div>`
                 : '';
             const debugJson = {
                 model_config: data.model_config,
@@ -5692,6 +6991,10 @@
             if (message.token_count != null) meta.push(`tokens=${message.token_count}`);
             if (message.id != null) meta.push(`id=${message.id}`);
             const metaHtml = meta.length ? `<div class="session-message-meta">${meta.map(escapeHtml).join(' · ')}</div>` : '';
+            const traceContext = message?.renderTraceContext || null;
+            const traceDomId = message?.traceNode?.dom_id ? scopedExecutionDomId(message.traceNode.dom_id, traceContext) : '';
+            const traceId = traceDomId ? ` id="${escapeHtml(traceDomId)}"` : '';
+            const traceClass = message?.traceNode?.dom_id ? ' execution-node' : '';
 
             if (message.role === 'assistant') {
                 const debugSections = [];
@@ -5705,53 +7008,14 @@
                     debugSections.push(`<details><summary>Codex Reasoning Items</summary><pre>${escapeHtml(JSON.stringify(message.codex_reasoning_items, null, 2))}</pre></details>`);
                 }
                 const debugHtml = debugSections.length ? `<div class="session-debug-block">${debugSections.join('')}</div>` : '';
-                return `<div class="message assistant">${metaHtml}${renderAssistantMessage({ content: message.content || '', tools: message.tools || [], events: message.events || [] })}${debugHtml}</div>`;
+                return `<div class="message assistant${traceClass}"${traceId}>${metaHtml}${renderAssistantMessage({ ...message, traceNode: null, content: message.content || '', tools: message.tools || [], events: message.events || [], renderTraceContext: traceContext })}${debugHtml}</div>`;
             }
 
-            return `<div class="message ${message.role}">${metaHtml}${formatMessageContent(message.content || '')}</div>`;
+            return `<div class="message ${message.role}${traceClass}"${traceId}>${metaHtml}${formatMessageContent(message.content || '')}</div>`;
         }
 
         function mergeSessionMessages(data) {
-            const mergedMessages = [];
-            const pendingAssistantByTool = new Map();
-            (data.messages || []).forEach(m => {
-                if (m.role === 'assistant') {
-                    const tools = normalizeToolCallEntries(m.tool_calls);
-                    const events = [];
-                    if (m.content) events.push({ type: 'content', text: m.content });
-                    tools.forEach(tool => {
-                        events.push({ type: 'tool_call', tool });
-                        if (tool.call_id) pendingAssistantByTool.set(tool.call_id, { tool, events });
-                    });
-                    mergedMessages.push({
-                        ...m,
-                        role: 'assistant',
-                        content: m.content || '',
-                        tools,
-                        events,
-                    });
-                    return;
-                }
-                if (m.role === 'tool') {
-                    const callId = m.tool_call_id || '';
-                    const pending = callId ? pendingAssistantByTool.get(callId) : null;
-                    if (pending) {
-                        pending.tool.output = m.content || '';
-                        pendingAssistantByTool.delete(callId);
-                    } else {
-                        mergedMessages.push({
-                            ...m,
-                            role: 'assistant',
-                            content: '',
-                            tools: [{ call_id: callId, name: m.tool_name || 'tool', output: m.content || '' }],
-                            events: [{ type: 'tool_output', tool: { call_id: callId, name: m.tool_name || 'tool', output: m.content || '' } }],
-                        });
-                    }
-                    return;
-                }
-                mergedMessages.push(m);
-            });
-            return mergedMessages;
+            return buildConversationFromSessionData(data);
         }
 
         async function previewSessionFile(path, previewable = true) {
@@ -6870,22 +8134,8 @@
               body.innerHTML = summaryHtml || '<div style="color:var(--text-dim);padding:1rem">No messages in this session</div>';
               return;
             }
-            const mergedMessages = mergeSessionMessages(data);
-            const html = mergedMessages.map(m => {
-              if (m.role === 'assistant') {
-                return `<div class="fp-msg" style="border-left-color:#06b6d4">
-                  <div class="fp-msg-role" style="color:#06b6d4">assistant</div>
-                  ${renderAssistantMessage({ content: m.content || '', tools: m.tools || [], events: m.events || [] })}
-                </div>`;
-              }
-              const role = m.role || 'unknown';
-              const roleColor = role === 'user' ? '#a855f7' : '#f97316';
-              const content = escapeHtml(m.content || '').replace(/\n/g, '<br>');
-              return `<div class="fp-msg" style="border-left-color:${roleColor}">
-                <div class="fp-msg-role" style="color:${roleColor}">${escapeHtml(role)}</div>
-                <div style="font-size:0.8rem;line-height:1.4">${content}</div>
-              </div>`;
-            }).join('');
+            const traceContext = buildSessionTraceContext(data, { domScope: `floating-${String(sessionId).replace(/[^A-Za-z0-9_-]/g, '_')}` });
+            const html = renderFloatingSessionTranscript(traceContext);
 
             body.innerHTML = `${summaryHtml}<div style="max-height:60vh;overflow-y:auto">${html}</div>`;
             if (meta) meta.innerHTML = `<span>Messages: <span class="val">${data.messages.length}</span></span>${data.summary ? `<span>Summary: <span class="val">yes</span></span>` : ''}`;

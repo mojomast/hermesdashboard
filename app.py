@@ -324,6 +324,11 @@ def _normalize_sse_payload(parsed: dict) -> list[dict]:
     usage = parsed.get("usage")
     if isinstance(hermes, dict):
         payload = dict(hermes)
+        call_id = str(
+            payload.get("call_id") or payload.get("tool_call_id") or ""
+        ).strip()
+        if call_id and not payload.get("call_id"):
+            payload["call_id"] = call_id
         if payload.get("type") == "meta" and usage:
             payload["usage"] = usage
         payloads.append(payload)
@@ -411,6 +416,56 @@ def _child_session_ids(conn: sqlite3.Connection, session_id: str) -> list[str]:
     return [row[0] for row in cursor.fetchall()]
 
 
+def _related_session_artifacts(session_ids: list[str]) -> list[dict]:
+    sessions_dir = HERMES_HOME / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+
+    artifacts: list[dict] = []
+    seen_paths: set[str] = set()
+    for session_id in session_ids:
+        for path in sorted(sessions_dir.glob(f"request_dump_{session_id}_*.json")):
+            resolved = str(path.resolve())
+            if resolved in seen_paths:
+                continue
+            seen_paths.add(resolved)
+
+            item = {
+                "kind": "request_dump",
+                "session_id": session_id,
+                "slug": path.stem,
+                "file_name": path.name,
+                "path": resolved,
+            }
+            try:
+                payload = json.loads(path.read_text())
+            except Exception:
+                payload = {}
+            if isinstance(payload, dict):
+                item["timestamp"] = payload.get("timestamp")
+                item["reason"] = payload.get("reason")
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    item["error_type"] = error.get("type")
+                    item["error_message"] = error.get("message")
+                    item["error_response_status"] = error.get("response_status")
+                request = payload.get("request")
+                if isinstance(request, dict):
+                    item["url"] = request.get("url")
+                    body = request.get("body")
+                    if isinstance(body, dict):
+                        item["model"] = body.get("model")
+            artifacts.append(item)
+
+    return sorted(
+        artifacts,
+        key=lambda artifact: (
+            str(artifact.get("timestamp") or ""),
+            str(artifact.get("file_name") or ""),
+        ),
+    )
+
+
 def _session_activity_payload(conn: sqlite3.Connection, session_id: str) -> dict:
     session_ids = [session_id] + _child_session_ids(conn, session_id)
     placeholders = ",".join("?" for _ in session_ids)
@@ -438,8 +493,10 @@ def _session_activity_payload(conn: sqlite3.Connection, session_id: str) -> dict
             except Exception:
                 calls = []
             for tc in calls if isinstance(calls, list) else []:
+                call_id = tc.get("id") or tc.get("call_id") or ""
                 func = tc.get("function", {}) if isinstance(tc, dict) else {}
-                assistant_tool_calls[tc.get("id", "")] = {
+                assistant_tool_calls[call_id] = {
+                    "call_id": call_id,
                     "name": func.get("name", ""),
                     "arguments": func.get("arguments", ""),
                     "session_id": session_label,
@@ -447,30 +504,42 @@ def _session_activity_payload(conn: sqlite3.Connection, session_id: str) -> dict
                 }
         elif item.get("role") == "tool":
             call = assistant_tool_calls.get(item.get("tool_call_id", ""), {})
+            call_id = call.get("call_id") or item.get("tool_call_id") or ""
             tool_name = call.get("name") or item.get("tool_name") or "tool"
             output = _safe_json_loads(item.get("content"))
+            target = None
+            if session_label != session_id:
+                target = {"kind": "child", "id": session_label}
+            elif call_id:
+                target = {"kind": "tool", "id": call_id}
             if tool_name == "skill_manage":
-                skill_events.append(
-                    {
-                        "session_id": session_label,
-                        "timestamp": item.get("timestamp"),
-                        "request": _safe_json_loads(call.get("arguments", ""))
-                        or call.get("arguments")
-                        or "",
-                        "result": output or item.get("content") or "",
-                    }
-                )
+                event = {
+                    "session_id": session_label,
+                    "timestamp": item.get("timestamp"),
+                    "request": _safe_json_loads(call.get("arguments", ""))
+                    or call.get("arguments")
+                    or "",
+                    "result": output or item.get("content") or "",
+                    "tool_call_id": call_id,
+                    "tool_name": tool_name,
+                }
+                if target:
+                    event["target"] = target
+                skill_events.append(event)
             elif tool_name == "session_search":
-                session_search_events.append(
-                    {
-                        "session_id": session_label,
-                        "timestamp": item.get("timestamp"),
-                        "request": _safe_json_loads(call.get("arguments", ""))
-                        or call.get("arguments")
-                        or "",
-                        "result": output or item.get("content") or "",
-                    }
-                )
+                event = {
+                    "session_id": session_label,
+                    "timestamp": item.get("timestamp"),
+                    "request": _safe_json_loads(call.get("arguments", ""))
+                    or call.get("arguments")
+                    or "",
+                    "result": output or item.get("content") or "",
+                    "tool_call_id": call_id,
+                    "tool_name": tool_name,
+                }
+                if target:
+                    event["target"] = target
+                session_search_events.append(event)
 
     for child_id in session_ids[1:]:
         child_messages = conn.execute(
@@ -493,8 +562,10 @@ def _session_activity_payload(conn: sqlite3.Connection, session_id: str) -> dict
                 except Exception:
                     calls = []
                 for tc in calls if isinstance(calls, list) else []:
+                    call_id = tc.get("id") or tc.get("call_id") or ""
                     func = tc.get("function", {}) if isinstance(tc, dict) else {}
-                    assistant_calls[tc.get("id", "")] = {
+                    assistant_calls[call_id] = {
+                        "call_id": call_id,
                         "name": func.get("name", ""),
                         "arguments": _safe_json_loads(func.get("arguments", ""))
                         or func.get("arguments")
@@ -509,6 +580,9 @@ def _session_activity_payload(conn: sqlite3.Connection, session_id: str) -> dict
                 )
                 tool_events.append(
                     {
+                        "call_id": call.get("call_id")
+                        or item.get("tool_call_id")
+                        or "",
                         "name": call.get("name") or item.get("tool_name") or "tool",
                         "arguments": call.get("arguments") or "",
                         "output": payload,
@@ -525,6 +599,7 @@ def _session_activity_payload(conn: sqlite3.Connection, session_id: str) -> dict
                 "timestamp": child_messages[0]["timestamp"] if child_messages else None,
                 "summary": " | ".join(summary[:5]),
                 "events": tool_events,
+                "target": {"kind": "child", "id": child_id},
             }
         )
 
@@ -796,15 +871,31 @@ def _refresh_local_session_metadata(
         generated_summary is not None and generated_summary != existing_summary
     )
     if changed:
-        conn.execute(
-            "UPDATE sessions SET title = COALESCE(?, title), summary = COALESCE(?, summary) WHERE id = ?"
-            if not force
-            else "UPDATE sessions SET title = ?, summary = ? WHERE id = ?",
-            (generated_title, generated_summary, session_id)
-            if not force
-            else (title_to_store, summary_to_store, session_id),
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                "UPDATE sessions SET title = COALESCE(?, title), summary = COALESCE(?, summary) WHERE id = ?"
+                if not force
+                else "UPDATE sessions SET title = ?, summary = ? WHERE id = ?",
+                (generated_title, generated_summary, session_id)
+                if not force
+                else (title_to_store, summary_to_store, session_id),
+            )
+            conn.commit()
+        except (sqlite3.IntegrityError, sqlite3.OperationalError):
+            # Some installs enforce unique session titles, and list-time metadata refresh can
+            # race with other SQLite writers. Keep the existing title and avoid breaking the
+            # sessions list if the opportunistic backfill cannot be persisted right now.
+            conn.rollback()
+            if generated_summary is not None and generated_summary != existing_summary:
+                try:
+                    conn.execute(
+                        "UPDATE sessions SET summary = ? WHERE id = ?",
+                        (generated_summary, session_id),
+                    )
+                    conn.commit()
+                except sqlite3.Error:
+                    conn.rollback()
+            title_to_store = existing_title
     return {"title": title_to_store, "summary": summary_to_store, "changed": changed}
 
 
@@ -1517,10 +1608,19 @@ async def get_session(request):
         messages.append(item)
     activity = _session_activity_payload(conn, session_id)
     overview = _session_overview_payload(conn, session_id)
+    related_artifacts = _related_session_artifacts(
+        [session_id] + [child.get("id", "") for child in overview.get("children", [])]
+    )
     conn.close()
 
     return JSONResponse(
-        {**session_payload, "messages": messages, **activity, **overview}
+        {
+            **session_payload,
+            "messages": messages,
+            **activity,
+            **overview,
+            "related_artifacts": related_artifacts,
+        }
     )
 
 

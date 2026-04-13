@@ -189,6 +189,13 @@ The dashboard session experience is designed to be more scannable and more debug
 - graph display settings persist in the browser for label density, font sizing, node scale, spacing, edge visibility, edge types, motion mode, and panel sizing
 - session detail now includes stored metadata such as model, timing, lineage, tokens, and cost
 - assistant messages can show persisted reasoning/debug fields when Hermes recorded them
+- session detail and live chat now share the same assistant-step trace reduction model for content, tool runs, and orphan diagnostics
+- session detail now normalizes assistant steps, tool runs, child sessions, and request-dump diagnostics into one execution-style transcript view
+- multi-tool assistant turns render as grouped parallel batches instead of detached flat tool rows
+- unmatched live or historical tool outputs stay explicit as diagnostics instead of being guessed onto another tool by name
+- background review, skill-change, and session-search activity can deep-link back into the owning transcript location when linkage exists
+- child sessions and related request-dump artifacts render inline in the parent session detail flow while remaining inspectable separately
+- floating session panels now scope transcript DOM ids so deep-link targets stay aligned with the main session detail view instead of colliding with graph popouts
 - the Sessions panel can attach Chat to an existing session via `Use in Chat`, loading the persisted session transcript into Chat
 - summary regeneration refreshes both title and summary through dashboard-local metadata recomputation
 

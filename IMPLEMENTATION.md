@@ -98,6 +98,7 @@ The dashboard also assumes newer Hermes runtime behavior for sessions:
 - larger persistent memory defaults (`memory.memory_char_limit=22000`, `memory.user_char_limit=13750`)
 - transcript-based local title generation aligned with session summaries
 - local session maintenance endpoints backfill both missing titles and missing summaries for older rows in `state.db`
+- opportunistic title/summary backfill during session list and session detail reads must never make those read endpoints fail; if a local SQLite write collides on a unique title constraint or the database is temporarily locked, the dashboard should fall back to read-only behavior and keep rendering the existing session rows
 - richer session detail fields in `GET /api/sessions/{id}` including timing, token, cost, lineage, and reasoning/debug metadata
 - `POST /api/sessions/{id}/summary` now refreshes both title and summary from persisted transcript data without depending on the Hermes runtime summarizer
 - graph session panels merge assistant content, tool calls, and tool outputs into transcript order before rendering
