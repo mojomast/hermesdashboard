@@ -333,7 +333,7 @@
         .chat-context summary {
             list-style: none;
             cursor: pointer;
-            padding: 0.9rem 1rem;
+            padding: 0.55rem 0.75rem;
         }
 
         .chat-context summary::-webkit-details-marker {
@@ -341,7 +341,7 @@
         }
 
         .chat-context-body {
-            padding: 0 1rem 1rem 1rem;
+            padding: 0 0.75rem 0.6rem 0.75rem;
         }
 
         .section-toggle {
@@ -374,7 +374,7 @@
         }
 
         .context-breakdown-item summary {
-            padding: 0.55rem 0.75rem;
+            padding: 0.38rem 0.6rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -519,8 +519,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            min-height: 30px;
-            padding: 6px 10px;
+            min-height: 22px;
+            padding: 4px 8px;
             text-align: left;
             cursor: pointer;
             font-size: 0.77rem;
@@ -553,12 +553,13 @@
 
         .tool-call-name {
             min-width: 0;
-            max-width: 12rem;
+            max-width: 10rem;
             font-weight: 600;
             color: var(--text);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            font-size: 0.75rem;
         }
 
         .tool-call-action-badge,
@@ -630,7 +631,7 @@
         }
 
         .tool-call-expand-inner {
-            padding: 0.7rem 0.85rem 0.8rem;
+            padding: 0.4rem 0.65rem 0.5rem;
             display: flex;
             flex-direction: column;
             gap: 0.65rem;
@@ -723,7 +724,7 @@
         }
 
         .tool-call-panel-body {
-            max-height: 200px;
+            max-height: 160px;
             overflow: auto;
             padding: 0.65rem;
         }
@@ -746,7 +747,7 @@
         .tool-call-nested-list {
             display: flex;
             flex-direction: column;
-            gap: 0.35rem;
+            gap: 0.2rem;
         }
 
         .tool-call-parallel-block {
@@ -765,8 +766,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            min-height: 30px;
-            padding: 6px 10px;
+            min-height: 22px;
+            padding: 4px 8px;
             cursor: pointer;
             text-align: left;
             font-size: 0.77rem;
@@ -1672,7 +1673,7 @@
         .file-preview {
             background: var(--bg-card);
             border-radius: 12px;
-            padding: 1rem;
+            padding: 0.65rem;
             overflow-y: auto;
         }
 
@@ -1695,15 +1696,19 @@
         .session-activity-panel {
             background: var(--bg-card);
             border-radius: 12px;
-            padding: 1rem;
+            padding: 0.65rem;
             overflow-y: auto;
+        }
+
+        .session-activity-panel h3 {
+            font-size: 0.85rem;
         }
 
         .activity-item {
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px;
-            padding: 0.7rem 0.8rem;
-            margin-bottom: 0.6rem;
+            padding: 0.5rem 0.65rem;
+            margin-bottom: 0.4rem;
             background: rgba(255,255,255,0.03);
         }
 
@@ -1732,11 +1737,44 @@
             word-break: break-word;
         }
 
-        .file-item {
-            padding: 0.75rem;
+        .session-search-result {
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px;
-            margin-bottom: 0.6rem;
+            margin-bottom: 0.4rem;
+            background: rgba(255,255,255,0.03);
+            overflow: hidden;
+        }
+
+        .session-search-result summary {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 0.6rem;
+            font-size: 0.78rem;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .session-search-result summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .session-search-result-body {
+            font-size: 0.78rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.45;
+            padding: 0.5rem 0.6rem;
+            max-height: 220px;
+            overflow-y: auto;
+            border-top: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .file-item {
+            padding: 0.5rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            margin-bottom: 0.4rem;
             cursor: pointer;
             transition: background 0.2s, border-color 0.2s;
         }
@@ -1896,7 +1934,7 @@
 
         .session-overview {
             margin-bottom: 1rem;
-            padding: 0.9rem 1rem;
+            padding: 0.6rem 0.75rem;
             border-radius: 10px;
             background: rgba(255,255,255,0.04);
             border: 1px solid rgba(255,255,255,0.08);
@@ -1905,7 +1943,7 @@
         .session-overview-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-            gap: 0.75rem;
+            gap: 0.5rem;
             margin-top: 0.75rem;
         }
 
@@ -1913,7 +1951,7 @@
             background: rgba(255,255,255,0.03);
             border: 1px solid rgba(255,255,255,0.06);
             border-radius: 8px;
-            padding: 0.65rem 0.75rem;
+            padding: 0.45rem 0.55rem;
         }
 
         .session-overview-item .label {
@@ -2018,7 +2056,7 @@
             justify-content: space-between;
             align-items: center;
             gap: 0.75rem;
-            padding: 0.7rem 0.85rem;
+            padding: 0.45rem 0.65rem;
             font-size: 0.82rem;
             color: var(--text);
         }
@@ -2028,7 +2066,7 @@
         }
 
         .parallel-group-body {
-            padding: 0 0.75rem 0.75rem;
+            padding: 0 0.5rem 0.5rem;
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
@@ -5713,6 +5751,38 @@
             `).join('');
         }
 
+        function renderSessionSearchActivity(targetId, items, emptyMessage) {
+            const MAX_SNIPPET_PREVIEW_LENGTH = 120;
+            const target = document.getElementById(targetId);
+            if (!Array.isArray(items) || !items.length) {
+                target.innerHTML = `<div style="color:var(--text-dim);">${escapeHtml(emptyMessage)}</div>`;
+                return;
+            }
+            target.innerHTML = items.map(item => {
+                const req = item.request || {};
+                const result = item.result || {};
+                const query = req.query || '(recent sessions)';
+                const ts = formatTimestamp(item.timestamp) || 'Unknown time';
+                const results = Array.isArray(result.results) ? result.results : [];
+                const score = result.score ?? result.relevance ?? null;
+                const scoreBadge = score !== null ? `<span class="tool-call-chip">${escapeHtml(String(score))}</span>` : '';
+                const snippet = result.message || result.summary || result.preview || result.content || (results.length ? JSON.stringify(results[0]) : '');
+                const snippetPreview = snippet ? (snippet.length > MAX_SNIPPET_PREVIEW_LENGTH ? escapeHtml(snippet.slice(0, MAX_SNIPPET_PREVIEW_LENGTH)) + '…' : escapeHtml(snippet)) : '';
+                const fullContent = snippet || (Object.keys(result).length ? JSON.stringify(result, null, 2) : '');
+                return `
+                <details class="session-search-result">
+                    <summary>
+                        <span style="font-weight:600;flex-shrink:0;">${escapeHtml(query)}</span>
+                        ${scoreBadge}
+                        <span style="color:var(--text-dim);flex-shrink:0;">${escapeHtml(ts)}</span>
+                        ${snippetPreview ? `<span style="color:var(--text-dim);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${snippetPreview}</span>` : ''}
+                    </summary>
+                    ${fullContent ? `<div class="session-search-result-body">${escapeHtml(fullContent)}</div>` : ''}
+                </details>
+                `;
+            }).join('');
+        }
+
         function renderMetaPill(label, value) {
             if (value === null || value === undefined || value === '') return '';
             return `<span class="meta-pill">${escapeHtml(label)}: ${escapeHtml(String(value))}</span>`;
@@ -7393,14 +7463,10 @@
                     return `${action} ${name}`;
                 }
             );
-            renderRequestResultActivity(
+            renderSessionSearchActivity(
                 'session-search-events',
                 data.session_search_events || [],
-                'No session recall activity yet.',
-                item => {
-                    const req = item.request || {};
-                    return `query: ${req.query || '(recent sessions)'}`;
-                }
+                'No session recall activity yet.'
             );
 
             await loadSessionFiles(id);
