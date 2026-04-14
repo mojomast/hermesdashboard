@@ -104,6 +104,13 @@ ss -ltnp | grep 8642
 - hard refresh the browser
 - make sure both services are running the latest code
 
+### I refreshed while Hermes was still responding
+
+- look for the chat banner that says Hermes still has an in-flight or resumable run
+- use `Reattach Session` to load the persisted session transcript back into Chat if a session id was already assigned
+- use `Resume Stream` to reconnect the saved live stream from the last cached event offset
+- if the banner appears but the run is clearly stale, use `Clear Chat` to drop the saved local run state
+
 ### Session summary regeneration fails
 
 - verify the dashboard can read the target `HERMES_HOME/state.db`

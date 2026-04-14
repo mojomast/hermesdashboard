@@ -239,7 +239,8 @@ Important behavior:
 - prompt breakdown rows are individually expandable
 - assistant messages render as an ordered event timeline
 - tool events should appear chronologically, not appended after all content
-- tool blocks should show both call payload and output
+- tool blocks should collapse to compact single-line rows first and only reveal payload/output details on demand
+- chat reloads during an active stream should surface the saved run clearly and let the user explicitly reattach the session or resume the stream
 
 Session detail specifically now renders:
 
@@ -256,6 +257,7 @@ Current limitations:
 - persisted history still relies on runtime `tool_call_id` quality; missing canonical ids can still produce orphan tool diagnostics
 - child-session placement is inline and linked, but not yet tied to a first-class persisted subagent/tool-run record
 - request-dump artifacts are attached as diagnostics, not as full event-log replay data
+- active-run recovery is browser-local and depends on localStorage; it does not yet query backend run state independently after refresh
 
 ## Config Surface
 

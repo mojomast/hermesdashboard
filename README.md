@@ -119,6 +119,9 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 ## What You Get
 
 - streaming Hermes chat UI
+- compact single-line tool activity rows with on-demand drill-down panels
+- load-time chat banner that shows when Hermes still has an in-flight run after refresh
+- explicit `Reattach Session` and `Resume Stream` actions for persisted in-progress chat runs
 - sessions browser and session detail viewer
 - memory, skills, secrets, and config panels
 - expanded config editor with sectioned settings and advanced JSON editors
@@ -197,6 +200,9 @@ The dashboard session experience is designed to be more scannable and more debug
 - child sessions and related request-dump artifacts render inline in the parent session detail flow while remaining inspectable separately
 - floating session panels now scope transcript DOM ids so deep-link targets stay aligned with the main session detail view instead of colliding with graph popouts
 - the Sessions panel can attach Chat to an existing session via `Use in Chat`, loading the persisted session transcript into Chat
+- when the dashboard reloads during an active streamed response, Chat now surfaces the saved run state in a banner instead of silently resuming in the background
+- the active-run banner can reattach the saved session transcript into Chat without discarding the in-flight run metadata
+- the active-run banner can also explicitly resume the saved live stream from the last cached event offset
 - summary regeneration refreshes both title and summary through dashboard-local metadata recomputation
 
 ## Secrets Tab

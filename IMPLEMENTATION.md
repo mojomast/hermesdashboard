@@ -112,10 +112,28 @@ Current behavior:
 - historical session detail, floating session views, and live chat assistant rendering now share one reducer-style assistant trace model
 - persisted rows replay through the same assistant-step reduction path used by live SSE events instead of maintaining a separate historical event builder
 - multi-tool assistant turns render as explicit grouped batches so parallel waves stay visually coherent
+- live chat tool calls render as compact single-line rows with lazy `Input`, `Output`, `Metrics`, and `Raw` drill-down panels
 - unmatched persisted and live tool rows render as orphan diagnostics instead of fake assistant messages or name-matched fallback attachments
 - child sessions and related request-dump artifacts are attached inline in the parent session detail view
 - side-panel activity items can deep-link into the normalized transcript when the backend can derive a target
 - floating session transcript renderers scope DOM ids to avoid collisions with the main session-detail transcript
+
+## Active Run Recovery
+
+The chat frontend persists in-progress streaming runs in browser localStorage.
+
+Current behavior:
+
+- `ACTIVE_RUN_KEY` stores `runId`, `eventOffset`, `startedAt`, `sessionId`, and a reduced assistant state snapshot
+- on reload, the dashboard now shows a visible chat banner when an in-flight run is still present instead of silently resuming immediately
+- the banner summarizes the latest known tool/content activity and exposes `Reattach Session` plus `Resume Stream`
+- `Reattach Session` hydrates the persisted transcript for the saved `sessionId` into Chat while preserving the active run record
+- `Resume Stream` reconnects `/chat` with `resume=true` and the stored `eventOffset`
+
+Why it works this way:
+
+- silent auto-resume after refresh made it hard to tell whether Hermes was still working
+- explicit resume avoids clobbering chat DOM state while the user is trying to inspect or reattach the saved session transcript
 
 Current backend additions in `app.py`:
 
