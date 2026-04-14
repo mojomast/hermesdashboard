@@ -32,6 +32,12 @@ Typical local workflow:
 6. Commit with a clear message that explains the change.
 7. Open a pull request with a short summary, why it is needed, and how it was tested.
 
+For execution-trace changes specifically:
+
+- preserve parity between live chat rendering and historical session hydration
+- prefer additive reducer/normalization updates over parallel ad hoc derivation paths
+- keep orphan tool output explicit instead of hiding mismatches with name-based fallback attachment
+
 ## What to Include in a Pull Request
 
 - what changed

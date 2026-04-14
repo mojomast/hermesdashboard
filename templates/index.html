@@ -423,18 +423,19 @@
         .assistant-tools {
             display: flex;
             flex-direction: column;
-            gap: 0.6rem;
+            gap: 0.85rem;
             margin-top: 0.85rem;
         }
 
-        .tool-call-block summary {
-            list-style: none;
+        .tool-card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 280px));
+            justify-content: start;
+            align-items: start;
+            gap: 0.75rem;
+            width: 100%;
         }
 
-        .tool-call-block summary::-webkit-details-marker {
-            display: none;
-        }
-        
         .message pre {
             background: rgba(0, 0, 0, 0.4);
             padding: 0.5rem;
@@ -456,51 +457,132 @@
         
         /* Tool call display in messages */
         .tool-call-block {
-            background: rgba(168, 85, 247, 0.1);
+            background: linear-gradient(180deg, rgba(168, 85, 247, 0.16) 0%, rgba(168, 85, 247, 0.08) 100%);
             border: 1px solid rgba(168, 85, 247, 0.3);
-            border-radius: 6px;
-            margin: 0.5rem 0;
+            border-radius: 12px;
             overflow: hidden;
+            align-self: start;
+            transition: border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+        }
+
+        .tool-call-block.active {
+            border-color: rgba(168, 85, 247, 0.5);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+            background: linear-gradient(180deg, rgba(168, 85, 247, 0.2) 0%, rgba(168, 85, 247, 0.1) 100%);
         }
         
         .tool-call-header {
+            appearance: none;
+            border: none;
+            width: 100%;
             display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.5rem 0.75rem;
-            background: rgba(168, 85, 247, 0.15);
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.7rem;
+            padding: 0.85rem 0.9rem 0.8rem;
+            background: rgba(168, 85, 247, 0.1);
             cursor: pointer;
             font-size: 0.85rem;
-            min-height: 2.2rem;
+            min-height: 11rem;
+            color: inherit;
+            text-align: left;
         }
         
-        .tool-call-header:hover { background: rgba(168, 85, 247, 0.25); }
-        
-        .tool-call-header .tool-icon { color: var(--purple); }
+        .tool-call-header:hover { background: rgba(168, 85, 247, 0.18); }
+
+        .tool-call-block.active .tool-call-header {
+            background: rgba(168, 85, 247, 0.2);
+        }
+
+        .tool-call-topline,
+        .tool-call-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+        }
+
+        .tool-call-topline {
+            min-height: 1.3rem;
+        }
+
+        .tool-call-header .tool-icon {
+            color: var(--purple);
+            font-size: 1rem;
+        }
         
         .tool-call-header .tool-name {
             font-weight: 600;
             color: var(--purple);
+            line-height: 1.3;
+            word-break: break-word;
+            font-size: 0.94rem;
         }
-        
+
+        .tool-call-summary {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.35rem;
+            min-width: 0;
+            flex: 1;
+        }
+
         .tool-call-header .expand-icon {
-            margin-left: auto;
             color: var(--text-dim);
-            transition: transform 0.2s;
+            transition: transform 0.22s ease, color 0.22s ease;
+            flex-shrink: 0;
         }
-        
-        .tool-call-block.expanded .expand-icon { transform: rotate(90deg); }
-        
+
+        .tool-call-block.active .expand-icon {
+            transform: rotate(90deg);
+            color: var(--text);
+        }
+
+        .tool-card-expander {
+            grid-column: 1 / -1;
+            overflow: hidden;
+            border: 1px solid rgba(168, 85, 247, 0.28);
+            border-radius: 12px;
+            background: rgba(168, 85, 247, 0.08);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+        }
+
+        .tool-card-expander-summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.8rem 0.95rem 0;
+            color: var(--text-dim);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .tool-card-expander-close {
+            border: none;
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-dim);
+            border-radius: 999px;
+            width: 1.9rem;
+            height: 1.9rem;
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .tool-card-expander-close:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: var(--text);
+        }
+
         .tool-call-body {
-            display: none;
-            padding: 0.5rem 0.75rem;
+            min-height: 0;
+            padding: 0.8rem 0.95rem 0.95rem;
             font-size: 0.8rem;
-            border-top: 1px solid rgba(168, 85, 247, 0.2);
+            border-top: 1px solid rgba(168, 85, 247, 0.18);
         }
-
-        .tool-call-block.expanded .tool-call-body { display: block; }
-
-        .tool-call-block[open] .tool-call-body { display: block; }
         
         .tool-call-args, .tool-call-result {
             margin: 0.25rem 0;
@@ -558,21 +640,15 @@
             font-family: monospace;
         }
 
-        .tool-call-summary {
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            min-width: 0;
-        }
-
         .tool-call-preview {
             color: var(--text-dim);
             font-size: 0.75rem;
-            white-space: nowrap;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
             overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 24rem;
+            word-break: break-word;
         }
 
         .tool-section {
@@ -695,30 +771,45 @@
         }
 
         @media (max-width: 720px) {
+            .tool-card-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
             .tool-call-preview {
-                max-width: 10rem;
+                -webkit-line-clamp: 3;
+            }
+
+            .tool-call-header {
+                min-height: 9.5rem;
             }
         }
 
         .tool-header-detail {
             color: var(--text-dim);
-            font-size: 0.8rem;
-            white-space: nowrap;
+            font-size: 0.76rem;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
             overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 30rem;
+            word-break: break-word;
             font-family: monospace;
         }
 
         .tool-result-brief {
             font-size: 0.75rem;
-            white-space: nowrap;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-word;
         }
 
         .tool-delegation-progress {
             font-size: 0.75rem;
             color: var(--info);
-            white-space: nowrap;
+            line-height: 1.35;
         }
 
         .tool-output-json {
@@ -1741,8 +1832,9 @@
 
         .parallel-group-body {
             padding: 0 0.75rem 0.75rem;
-            display: grid;
-            gap: 0.65rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
         }
 
         .parallel-group-title {
@@ -5178,7 +5270,7 @@
                 return `
                     <details class="delegate-task-raw" data-tool-key="delegate-child:${sectionKey}" ${shouldOpen ? 'open' : ''}>
                         <summary>${escapeHtml(title)}</summary>
-                        <div class="assistant-tools">${events.map((event, idx) => renderToolBlock(event.tool || event, idx)).join('')}</div>
+                        <div class="assistant-tools">${renderToolCardGrid(events.map((event, idx) => makeToolCardEntry(event.tool || event, idx)))}</div>
                     </details>
                 `;
             }).filter(Boolean).join('');
@@ -5195,22 +5287,17 @@
             return state.trace.pendingDelegateChildren;
         }
 
+        let activeToolCardKey = null;
+        const toolCardData = new Map();
+
         function captureOpenToolState(container) {
-            const openKeys = new Set();
-            if (!container) return openKeys;
-            container.querySelectorAll('details[data-tool-key]').forEach((details) => {
-                const key = details.getAttribute('data-tool-key');
-                if (key && details.open) openKeys.add(key);
-            });
-            return openKeys;
+            if (!container) return null;
+            return activeToolCardKey;
         }
 
-        function restoreOpenToolState(container, openKeys) {
-            if (!container || !(openKeys instanceof Set)) return;
-            container.querySelectorAll('details[data-tool-key]').forEach((details) => {
-                const key = details.getAttribute('data-tool-key');
-                if (key && openKeys.has(key)) details.open = true;
-            });
+        function restoreOpenToolState(container, openKey) {
+            if (!container) return;
+            setActiveToolCard(openKey, container);
         }
 
         function renderToolProgress(tool) {
@@ -5449,7 +5536,7 @@
         function renderToolBlock(tool, idx, options = {}) {
             const toolName = tool.name || `tool_${idx + 1}`;
             const safeName = escapeHtml(toolName);
-            const toolKey = escapeHtml(tool.call_id || `${toolName}_${idx}`);
+            const rawToolKey = tool.call_id || `${toolName}_${idx}`;
             const domIdValue = options?.node?.dom_id ? scopedExecutionDomId(options.node.dom_id, options?.traceContext || null) : '';
             const domId = domIdValue ? ` id="${escapeHtml(domIdValue)}"` : '';
             const executionClass = options?.node?.dom_id ? ' execution-node' : '';
@@ -5474,31 +5561,173 @@
             const latestProgress = progress[progress.length - 1];
             const progressLabel = latestProgress
                 ? (typeof latestProgress === 'object' ? latestProgress.label : latestProgress) : '';
+            const dataToolKey = `tool:${rawToolKey}`;
+            const isOpen = activeToolCardKey === dataToolKey;
+            const activeClass = isOpen ? ' active' : '';
+
+            toolCardData.set(dataToolKey, { tool, idx });
 
             return `
-                <details class="tool-call-block${executionClass}" data-tool-key="tool:${toolKey}"${domId}>
-                    <summary class="tool-call-header">
-                        <span class="tool-icon">${getToolIcon(toolName)}</span>
-                        <span class="tool-name">${safeName}</span>
-                        ${headerDetail ? `<span class="tool-header-detail">${escapeHtml(headerDetail)}</span>` : ''}
+                <div class="tool-call-block${activeClass}${executionClass}" data-tool-key="${escapeHtml(dataToolKey)}"${domId}>
+                    <button type="button" class="tool-call-header" data-tool-toggle="${escapeHtml(dataToolKey)}">
                         <span class="tool-call-summary">
+                            <span class="tool-call-topline">
+                                <span class="tool-icon">${getToolIcon(toolName)}</span>
+                                <span class="tool-status ${statusClass}">${statusText}</span>
+                            </span>
+                            <span class="tool-name">${safeName}</span>
+                            ${headerDetail ? `<span class="tool-header-detail">${escapeHtml(headerDetail)}</span>` : ''}
                             ${delegationProgress ? `<span class="tool-delegation-progress">${escapeHtml(delegationProgress)}</span>` : ''}
                             ${!delegationProgress && progressLabel ? `<span class="tool-call-preview">${escapeHtml(progressLabel)}</span>` : ''}
                             ${resultSummary ? `<span class="tool-result-brief">${resultSummary}</span>` : ''}
-                            ${!tool.output && tool.call_id ? `<span class="tool-timer" data-call-id="${escapeHtml(tool.call_id)}">${getToolElapsed(tool.call_id)}</span>` : ''}
-                            ${tool.output && toolCallCompletionTimes.has(tool.call_id) ? `<span class="tool-timer-done">${toolCallCompletionTimes.get(tool.call_id)}</span>` : ''}
-                            <span class="tool-status ${statusClass}">${statusText}</span>
+                            <span class="tool-call-footer">
+                                ${!tool.output && tool.call_id ? `<span class="tool-timer" data-call-id="${escapeHtml(tool.call_id)}">${getToolElapsed(tool.call_id)}</span>` : ''}
+                                ${tool.output && toolCallCompletionTimes.has(tool.call_id) ? `<span class="tool-timer-done">${toolCallCompletionTimes.get(tool.call_id)}</span>` : ''}
+                                <span class="expand-icon">▶</span>
+                            </span>
                         </span>
-                        <span class="expand-icon">▶</span>
-                    </summary>
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderToolCardExpander(tool, idx, options = {}) {
+            if (!tool) return '';
+            const toolName = tool.name || `tool_${idx + 1}`;
+            const parsedArgs = parseToolPayload(tool.arguments);
+            const parsedOutput = parseToolPayload(tool.output);
+            const progress = Array.isArray(tool.progress) ? tool.progress : [];
+            const showOutputSection = Boolean(tool.output) || progress.length === 0;
+            const key = escapeHtml(options.key || `tool:${tool.call_id || `${toolName}_${idx}`}`);
+            return `
+                <div class="tool-card-expander" data-tool-expander="${key}">
+                    <div class="tool-card-expander-summary">
+                        <span>${escapeHtml(toolName)} details</span>
+                        <button type="button" class="tool-card-expander-close" data-tool-close="${key}" aria-label="Collapse tool details">×</button>
+                    </div>
                     <div class="tool-call-body">
                         ${renderToolRequest(parsedArgs.parsed, parsedArgs.raw)}
                         ${renderToolProgress(tool)}
                         ${toolName === 'delegate_task' ? renderDelegateChildStreams(tool) : ''}
                         ${showOutputSection ? renderToolOutput(toolName, parsedOutput.parsed, parsedOutput.raw) : ''}
                     </div>
-                </details>
+                </div>
             `;
+        }
+
+        function renderToolCardGrid(entries = []) {
+            if (!Array.isArray(entries) || !entries.length) return '';
+            return `<div class="tool-card-grid">${entries.map((entry) => entry.html || '').join('')}</div>`;
+        }
+
+        function makeToolCardEntry(tool, idx, options = {}) {
+            const toolName = tool?.name || `tool_${idx + 1}`;
+            const key = `tool:${tool?.call_id || `${toolName}_${idx}`}`;
+            return {
+                key,
+                tool,
+                idx,
+                html: renderToolBlock(tool, idx, options),
+            };
+        }
+
+        function getToolRowEndIndex(grid, startIndex) {
+            const cards = Array.from(grid.querySelectorAll(':scope > .tool-call-block[data-tool-key]'));
+            if (!cards.length || startIndex < 0 || startIndex >= cards.length) return -1;
+            const rowTop = cards[startIndex].offsetTop;
+            let endIndex = startIndex;
+            for (let i = startIndex + 1; i < cards.length; i += 1) {
+                if (cards[i].offsetTop !== rowTop) break;
+                endIndex = i;
+            }
+            return endIndex;
+        }
+
+        function syncToolGridExpanders(root = document) {
+            if (!root) return;
+            root.querySelectorAll('.tool-card-grid').forEach((grid) => {
+                const existing = grid.querySelector(':scope > .tool-card-expander');
+                if (existing) existing.remove();
+                if (!activeToolCardKey) return;
+                const cards = Array.from(grid.querySelectorAll(':scope > .tool-call-block[data-tool-key]'));
+                if (!cards.length) return;
+                const activeIndex = cards.findIndex((card) => card.getAttribute('data-tool-key') === activeToolCardKey);
+                if (activeIndex < 0) return;
+                const activeData = toolCardData.get(activeToolCardKey);
+                if (!activeData) return;
+                const rowEnd = getToolRowEndIndex(grid, activeIndex);
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = renderToolCardExpander(activeData.tool, activeData.idx, { key: activeToolCardKey });
+                const panel = wrapper.firstElementChild;
+                if (!panel) return;
+                const insertAfter = rowEnd >= 0 ? cards[rowEnd] : cards[activeIndex];
+                if (insertAfter?.nextSibling) {
+                    grid.insertBefore(panel, insertAfter.nextSibling);
+                } else {
+                    grid.appendChild(panel);
+                }
+            });
+        }
+
+        function setActiveToolCard(nextKey, root = document) {
+            activeToolCardKey = nextKey || null;
+            if (!root) return;
+            root.querySelectorAll('.tool-call-block[data-tool-key]').forEach((card) => {
+                const isActive = activeToolCardKey && card.getAttribute('data-tool-key') === activeToolCardKey;
+                card.classList.toggle('active', Boolean(isActive));
+            });
+            syncToolGridExpanders(root);
+        }
+
+        function groupSequentialToolCards(events = [], traceContext = null) {
+            if (!Array.isArray(events) || !events.length) return [];
+            const rendered = [];
+            let pendingTools = [];
+            const flushPendingTools = () => {
+                if (!pendingTools.length) return;
+                rendered.push(renderToolCardGrid(pendingTools));
+                pendingTools = [];
+            };
+
+            events.forEach((event, idx) => {
+                if (event.type === 'tool_collection') {
+                    flushPendingTools();
+                    rendered.push(renderToolCardGrid(event.tools || []));
+                    return;
+                }
+                if (event.type === 'tool_call' || event.type === 'tool_output') {
+                    pendingTools.push(makeToolCardEntry(event.tool || event, idx, { node: event.node || null, traceContext }));
+                    return;
+                }
+                flushPendingTools();
+                if (event.type === 'parallel_group') {
+                    const toolNodes = Array.isArray(event.node?.payload?.toolNodes) ? event.node.payload.toolNodes : [];
+                    const label = event.node?.payload?.label || summarizeParallelGroupLabel(toolNodes.map(node => node.payload.tool));
+                    rendered.push(`
+                        <details class="parallel-group" open>
+                            <summary>
+                                <div>
+                                    <div class="parallel-group-title">${escapeHtml(label)}</div>
+                                    <div class="parallel-group-meta">${escapeHtml(`${toolNodes.length} calls grouped under one assistant step`)}</div>
+                                </div>
+                                <span class="meta-pill">parallel</span>
+                            </summary>
+                            <div class="parallel-group-body">${renderToolCardGrid(toolNodes.map((node, toolIdx) => makeToolCardEntry(node.payload.tool, toolIdx, { node, traceContext })))}</div>
+                        </details>
+                    `);
+                    return;
+                }
+                if (event.type === 'diagnostic' && event.node?.payload?.orphan) {
+                    rendered.push(renderOrphanDiagnosticNode(event.node, traceContext));
+                    return;
+                }
+                if (event.type === 'content') {
+                    rendered.push(event.text ? `<div>${formatMessageContent(event.text)}</div>` : '');
+                }
+            });
+
+            flushPendingTools();
+            return rendered;
         }
 
         function mergeLegacyMarkersIntoEvents(normalized) {
@@ -5506,7 +5735,12 @@
             if (!normalized.events.length) {
                 const events = [];
                 if (extracted.content) events.push({ type: 'content', text: extracted.content });
-                extracted.tools.forEach(tool => events.push({ type: 'tool_call', tool }));
+                if (extracted.tools.length) {
+                    events.push({
+                        type: 'tool_collection',
+                        tools: extracted.tools.map((tool, idx) => makeToolCardEntry(tool, idx)),
+                    });
+                }
                 return { ...normalized, events };
             }
             return normalized;
@@ -5516,32 +5750,7 @@
             const events = normalized.events.length
                 ? normalized.events
                 : [{ type: 'content', text: normalized.content || '' }];
-            return events.map((event, idx) => {
-                if (event.type === 'parallel_group') {
-                    const toolNodes = Array.isArray(event.node?.payload?.toolNodes) ? event.node.payload.toolNodes : [];
-                    const label = event.node?.payload?.label || summarizeParallelGroupLabel(toolNodes.map(node => node.payload.tool));
-                    return `
-                        <details class="parallel-group" open>
-                            <summary>
-                                <div>
-                                    <div class="parallel-group-title">${escapeHtml(label)}</div>
-                                    <div class="parallel-group-meta">${escapeHtml(`${toolNodes.length} calls grouped under one assistant step`)}</div>
-                                </div>
-                                <span class="meta-pill">parallel</span>
-                            </summary>
-                            <div class="parallel-group-body">${toolNodes.map((node, toolIdx) => renderToolBlock(node.payload.tool, toolIdx, { node, traceContext: normalized.renderTraceContext || null })).join('')}</div>
-                        </details>
-                    `;
-                }
-                if (event.type === 'tool_call' || event.type === 'tool_output') {
-                    return renderToolBlock(event.tool || event, idx, { node: event.node || null, traceContext: normalized.renderTraceContext || null });
-                }
-                if (event.type === 'diagnostic' && event.node?.payload?.orphan) return renderOrphanDiagnosticNode(event.node, normalized.renderTraceContext || null);
-                if (event.type === 'content') {
-                    return event.text ? `<div>${formatMessageContent(event.text)}</div>` : '';
-                }
-                return '';
-            }).join('');
+            return groupSequentialToolCards(events, normalized.renderTraceContext || null).join('');
         }
 
         function extractLegacyToolMarkers(content) {
@@ -5797,6 +6006,7 @@
             div.className = `message ${role}`;
             if (role === 'assistant') {
                 div.innerHTML = renderAssistantMessage(message);
+                bindToolCardInteractions(div);
             } else {
                 const content = typeof message === 'string' ? message : message.content;
                 div.innerHTML = formatMessageContent(content || '');
@@ -5804,6 +6014,25 @@
             chat.appendChild(div);
             scrollChatToBottom(true);
             return div;
+        }
+
+        function bindToolCardInteractions(root = document) {
+            if (!root || root.dataset.toolCardBound === 'true') return;
+            root.dataset.toolCardBound = 'true';
+            root.addEventListener('click', (event) => {
+                const closeButton = event.target.closest('[data-tool-close]');
+                if (closeButton) {
+                    const key = closeButton.getAttribute('data-tool-close');
+                    if (key && key === activeToolCardKey) setActiveToolCard(null, root);
+                    return;
+                }
+                const toggleButton = event.target.closest('[data-tool-toggle]');
+                if (!toggleButton) return;
+                const key = toggleButton.getAttribute('data-tool-toggle');
+                if (!key) return;
+                setActiveToolCard(activeToolCardKey === key ? null : key, root);
+            });
+            window.addEventListener('resize', () => syncToolGridExpanders(root));
         }
         
         // Debug logging with expandable tool calls
@@ -6729,6 +6958,7 @@
 
             if (assistantState.content || assistantState.tools.length || assistantState.events.length) {
                 assistantDiv = addMessage('assistant', assistantState, false);
+                bindToolCardInteractions(assistantDiv);
             }
 
             // Render batching system for streaming performance
@@ -6742,8 +6972,10 @@
                 const stickToBottom = shouldStickToBottom(chat);
                 if (!assistantDiv) {
                     assistantDiv = addMessage('assistant', assistantState, false);
+                    bindToolCardInteractions(assistantDiv);
                 } else {
                     const openToolState = captureOpenToolState(assistantDiv);
+                    activeToolCardKey = openToolState;
                     assistantDiv.innerHTML = renderAssistantMessage(assistantState);
                     restoreOpenToolState(assistantDiv, openToolState);
                 }
