@@ -333,7 +333,7 @@
         .chat-context summary {
             list-style: none;
             cursor: pointer;
-            padding: 0.9rem 1rem;
+            padding: 0.55rem 0.75rem;
         }
 
         .chat-context summary::-webkit-details-marker {
@@ -341,7 +341,7 @@
         }
 
         .chat-context-body {
-            padding: 0 1rem 1rem 1rem;
+            padding: 0 0.75rem 0.6rem 0.75rem;
         }
 
         .section-toggle {
@@ -374,7 +374,7 @@
         }
 
         .context-breakdown-item summary {
-            padding: 0.55rem 0.75rem;
+            padding: 0.38rem 0.6rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -493,7 +493,7 @@
         .tool-call-list {
             display: flex;
             flex-direction: column;
-            gap: 0.35rem;
+            gap: 0.2rem;
             width: 100%;
         }
 
@@ -519,8 +519,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            min-height: 30px;
-            padding: 6px 10px;
+            min-height: 22px;
+            padding: 4px 8px;
             text-align: left;
             cursor: pointer;
             font-size: 0.77rem;
@@ -553,9 +553,10 @@
 
         .tool-call-name {
             min-width: 0;
-            max-width: 12rem;
+            max-width: 9rem;
             font-weight: 600;
             color: var(--text);
+            font-size: 0.72rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -630,7 +631,7 @@
         }
 
         .tool-call-expand-inner {
-            padding: 0.7rem 0.85rem 0.8rem;
+            padding: 0.4rem 0.65rem 0.5rem;
             display: flex;
             flex-direction: column;
             gap: 0.65rem;
@@ -723,7 +724,7 @@
         }
 
         .tool-call-panel-body {
-            max-height: 200px;
+            max-height: 160px;
             overflow: auto;
             padding: 0.65rem;
         }
@@ -746,7 +747,7 @@
         .tool-call-nested-list {
             display: flex;
             flex-direction: column;
-            gap: 0.35rem;
+            gap: 0.2rem;
         }
 
         .tool-call-parallel-block {
@@ -765,8 +766,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            min-height: 30px;
-            padding: 6px 10px;
+            min-height: 22px;
+            padding: 4px 8px;
             cursor: pointer;
             text-align: left;
             font-size: 0.77rem;
@@ -990,10 +991,59 @@
             margin-top: 0.5rem;
         }
 
+        .subagent-activity-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin: 0.5rem 0;
+            align-items: center;
+        }
+
+        .subagent-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            background: var(--primary-dim);
+            color: var(--primary);
+            border: 1px solid var(--primary-border);
+        }
+
+        .subagent-badge.active {
+            background: rgba(96, 165, 250, 0.15);
+            color: var(--info);
+            border-color: rgba(96, 165, 250, 0.3);
+            animation: pulse 2s infinite;
+        }
+
+        .subagent-badge.complete {
+            background: rgba(74, 222, 128, 0.15);
+            color: var(--success);
+            border-color: rgba(74, 222, 128, 0.3);
+        }
+
+        .subagent-tools {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .event-count {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-left: 0.3rem;
+        }
+
         @media (max-width: 720px) {
             .tool-call-pill,
             .tool-call-parallel-pill {
-                padding: 6px 8px;
+                padding: 4px 8px;
             }
 
             .tool-call-action-badge {
@@ -1672,7 +1722,7 @@
         .file-preview {
             background: var(--bg-card);
             border-radius: 12px;
-            padding: 1rem;
+            padding: 0.65rem;
             overflow-y: auto;
         }
 
@@ -1695,15 +1745,19 @@
         .session-activity-panel {
             background: var(--bg-card);
             border-radius: 12px;
-            padding: 1rem;
+            padding: 0.65rem;
             overflow-y: auto;
+        }
+
+        .session-activity-panel h3 {
+            font-size: 0.85rem;
         }
 
         .activity-item {
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px;
-            padding: 0.7rem 0.8rem;
-            margin-bottom: 0.6rem;
+            padding: 0.5rem 0.65rem;
+            margin-bottom: 0.4rem;
             background: rgba(255,255,255,0.03);
         }
 
@@ -1733,10 +1787,10 @@
         }
 
         .file-item {
-            padding: 0.75rem;
+            padding: 0.5rem;
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px;
-            margin-bottom: 0.6rem;
+            margin-bottom: 0.4rem;
             cursor: pointer;
             transition: background 0.2s, border-color 0.2s;
         }
@@ -1874,6 +1928,166 @@
             color: var(--text);
             font-size: 0.9rem;
         }
+
+        /* ── Cron Panel ── */
+        .cron-toolbar {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 0.5rem;
+        }
+        .cron-toolbar .search-box {
+            flex: 1;
+            min-width: 200px;
+            margin-bottom: 0;
+        }
+        .cron-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .cron-actions select {
+            padding: 0.5rem 0.75rem;
+            background: var(--input-bg);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.85rem;
+        }
+        .cron-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1rem;
+            overflow-y: auto;
+            padding: 1rem 0;
+        }
+        .cron-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: border-color 0.2s;
+        }
+        .cron-card:hover {
+            border-color: var(--primary-border);
+        }
+        .cron-card.paused {
+            opacity: 0.6;
+        }
+        .cron-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .cron-card-header h4 {
+            font-size: 1rem;
+            margin: 0;
+            word-break: break-word;
+        }
+        .cron-status {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .cron-status.scheduled {
+            background: rgba(74, 222, 128, 0.15);
+            color: var(--success);
+        }
+        .cron-status.paused {
+            background: rgba(251, 191, 36, 0.15);
+            color: var(--warning);
+        }
+        .cron-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+        .cron-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        .cron-prompt-preview {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            line-height: 1.4;
+            max-height: 3.2em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+        .cron-actions-row {
+            display: flex;
+            gap: 0.4rem;
+            margin-top: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .cron-actions-row button {
+            padding: 0.35rem 0.7rem;
+            font-size: 0.75rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-subtle);
+            background: var(--input-bg);
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .cron-actions-row button:hover {
+            background: var(--hover-bg);
+            border-color: var(--primary-border);
+        }
+        .cron-actions-row button.primary {
+            background: var(--primary-dim);
+            border-color: var(--primary-border);
+            color: var(--primary);
+        }
+        .cron-actions-row button.danger {
+            color: var(--error);
+            border-color: rgba(248, 113, 113, 0.3);
+        }
+        .cron-actions-row button.danger:hover {
+            background: rgba(248, 113, 113, 0.1);
+        }
+        .cron-form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .cron-form label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+        .cron-form label span {
+            font-weight: 500;
+        }
+        .cron-form input,
+        .cron-form textarea,
+        .cron-form select {
+            padding: 0.5rem 0.75rem;
+            background: var(--input-bg);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+        .cron-form textarea {
+            resize: vertical;
+        }
         
         .search-box input:focus { outline: none; border-color: var(--primary); }
 
@@ -1894,9 +2108,24 @@
             margin-bottom: 0.35rem;
         }
 
+        .session-warning {
+            margin-top: 0.75rem;
+            padding: 0.85rem 1rem;
+            border-radius: 10px;
+            background: rgba(248,113,113,0.08);
+            border: 1px solid rgba(248,113,113,0.22);
+            color: #fecaca;
+            font-size: 0.82rem;
+            line-height: 1.45;
+        }
+
+        .session-warning strong {
+            color: #fca5a5;
+        }
+
         .session-overview {
             margin-bottom: 1rem;
-            padding: 0.9rem 1rem;
+            padding: 0.6rem 0.75rem;
             border-radius: 10px;
             background: rgba(255,255,255,0.04);
             border: 1px solid rgba(255,255,255,0.08);
@@ -1905,7 +2134,7 @@
         .session-overview-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-            gap: 0.75rem;
+            gap: 0.5rem;
             margin-top: 0.75rem;
         }
 
@@ -1913,7 +2142,7 @@
             background: rgba(255,255,255,0.03);
             border: 1px solid rgba(255,255,255,0.06);
             border-radius: 8px;
-            padding: 0.65rem 0.75rem;
+            padding: 0.45rem 0.55rem;
         }
 
         .session-overview-item .label {
@@ -2018,7 +2247,7 @@
             justify-content: space-between;
             align-items: center;
             gap: 0.75rem;
-            padding: 0.7rem 0.85rem;
+            padding: 0.45rem 0.65rem;
             font-size: 0.82rem;
             color: var(--text);
         }
@@ -2028,10 +2257,58 @@
         }
 
         .parallel-group-body {
-            padding: 0 0.75rem 0.75rem;
+            padding: 0 0.5rem 0.5rem;
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
+        }
+
+        .session-search-result {
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.03);
+            margin-bottom: 0.4rem;
+            overflow: hidden;
+        }
+
+        .session-search-result:last-child {
+            margin-bottom: 0;
+        }
+
+        .session-search-result summary {
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 0.6rem;
+            font-size: 0.78rem;
+            cursor: pointer;
+        }
+
+        .session-search-result summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .session-search-result-body {
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding: 0.5rem 0.6rem;
+            max-height: 220px;
+            overflow-y: auto;
+            font-size: 0.78rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.45;
+            color: var(--text-dim);
+        }
+
+        .long-message-shell details {
+            margin-top: 0.4rem;
+        }
+
+        .long-message-shell summary {
+            cursor: pointer;
+            color: var(--text-dim);
+            font-size: 0.78rem;
         }
 
         .parallel-group-title {
@@ -3193,6 +3470,7 @@
         <button class="tab" data-panel="sessions">Sessions</button>
         <button class="tab" data-panel="memory">Memory</button>
         <button class="tab" data-panel="skills">Skills</button>
+        <button class="tab" data-panel="cron">Cron</button>
         <button class="tab" data-panel="graph">Graph</button>
     </div>
     
@@ -3206,6 +3484,7 @@
         <button class="mobile-tab" data-panel="sessions" onclick="navigateTo('sessions')">Sessions</button>
         <button class="mobile-tab" data-panel="memory" onclick="navigateTo('memory')">Memory</button>
         <button class="mobile-tab" data-panel="skills" onclick="navigateTo('skills')">Skills</button>
+        <button class="mobile-tab" data-panel="cron" onclick="navigateTo('cron')">Cron</button>
         <button class="mobile-tab" data-panel="graph" onclick="navigateTo('graph')">Graph</button>
     </div>
 
@@ -3371,6 +3650,71 @@
                 </div>
                 <pre id="skill-modal-content" style="white-space:pre-wrap;font-size:0.85rem;background:var(--input-bg);padding:1rem;border-radius:8px;max-height:60vh;overflow:auto;"></pre>
                 <div id="skill-modal-files" style="margin-top:0.75rem;font-size:0.8rem;color:var(--text-dim);"></div>
+            </div>
+        </div>
+
+        <!-- Cron Panel -->
+        <div class="panel" id="cron-panel">
+            <div class="cron-toolbar">
+                <div class="search-box">
+                    <input type="text" id="cron-search" placeholder="Search jobs..." oninput="filterCronJobs()">
+                </div>
+                <div class="cron-actions">
+                    <select id="cron-filter" onchange="filterCronJobs()">
+                        <option value="">All Jobs</option>
+                        <option value="enabled">Enabled</option>
+                        <option value="paused">Paused</option>
+                    </select>
+                    <button class="btn primary" onclick="openCronModal()">+ New Job</button>
+                </div>
+            </div>
+            <div class="stats" id="cron-stats"></div>
+            <div class="cron-list" id="cron-list"></div>
+        </div>
+
+        <!-- Cron Job Modal -->
+        <div id="cron-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeCronModal()">
+            <div class="modal" style="max-width:600px;max-height:85vh;overflow:auto;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <h3 id="cron-modal-title">New Cron Job</h3>
+                    <button onclick="closeCronModal()" style="background:transparent;border:none;color:var(--text);font-size:1.2rem;cursor:pointer;">&times;</button>
+                </div>
+                <div class="cron-form">
+                    <input type="hidden" id="cron-job-id">
+                    <label>
+                        <span>Name</span>
+                        <input type="text" id="cron-name" placeholder="job-name" maxlength="200">
+                    </label>
+                    <label>
+                        <span>Schedule</span>
+                        <input type="text" id="cron-schedule" placeholder="every 60m or 0 * * * *">
+                    </label>
+                    <label>
+                        <span>Prompt</span>
+                        <textarea id="cron-prompt" placeholder="Enter the agent prompt..." rows="6" maxlength="5000"></textarea>
+                    </label>
+                    <label>
+                        <span>Deliver</span>
+                        <select id="cron-deliver">
+                            <option value="local">local</option>
+                            <option value="telegram">telegram</option>
+                            <option value="discord">discord</option>
+                            <option value="slack">slack</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>Skills (comma-separated)</span>
+                        <input type="text" id="cron-skills" placeholder="skill1, skill2">
+                    </label>
+                    <label>
+                        <span>Repeat Count (optional)</span>
+                        <input type="number" id="cron-repeat" placeholder="unlimited" min="1">
+                    </label>
+                    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
+                        <button class="btn" onclick="closeCronModal()">Cancel</button>
+                        <button class="btn primary" onclick="saveCronJob()">Save</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -3714,7 +4058,7 @@
         }
 
         // Lazy loading: track which tabs have been loaded
-        const tabLoaded = { chat: true, config: false, secrets: false, sessions: false, memory: false, skills: false, graph: false };
+        const tabLoaded = { chat: true, config: false, secrets: false, sessions: false, memory: false, skills: false, cron: false, graph: false };
 
         // Sessions pagination state
         let sessionsPage = 0;
@@ -3741,6 +4085,8 @@
         let currentSessionFiles = [];
         let currentSessionTraceContext = null;
         let pendingSessionExecutionTarget = null;
+        let activeSessionDetailRequestId = 0;
+        let activeSessionDetailId = null;
         let activeRun = null;
         let activeChatSessionId = null;
         let streamResumeInFlight = false;
@@ -3937,7 +4283,17 @@
         function renderConversation() {
             chat.innerHTML = '';
             conversation.forEach(msg => {
-                if (msg.role === 'user' || msg.role === 'assistant') {
+                const hasRenderableAssistantState = msg.role === 'assistant' && (
+                    (typeof msg.content === 'string' && msg.content.length > 0)
+                    || (Array.isArray(msg.events) && msg.events.length > 0)
+                    || (Array.isArray(msg.tools) && msg.tools.length > 0)
+                    || (msg.trace && (
+                        (Array.isArray(msg.trace.toolNodes) && msg.trace.toolNodes.length > 0)
+                        || (Array.isArray(msg.trace.items) && msg.trace.items.length > 0)
+                        || msg.trace.contentNode
+                    ))
+                );
+                if (msg.role === 'user' || hasRenderableAssistantState) {
                     addMessage(msg.role, msg, false);
                 }
             });
@@ -4961,12 +5317,21 @@
 
         function buildConversationFromSessionData(data) {
             return buildHistoricalExecutionTrace(data).messages.map(message => {
-                if (message.role !== 'assistant') {
-                    return message.role === 'user'
-                        ? { role: 'user', content: message.content || '', traceNode: message.traceNode }
-                        : message;
+                if (message.role === 'assistant') {
+                    return {
+                        ...message,
+                        role: 'assistant',
+                        content: message.content || '',
+                        tools: Array.isArray(message.tools) ? message.tools : [],
+                        events: Array.isArray(message.events) ? message.events : [],
+                        trace: message.trace || null,
+                        traceNode: message.traceNode || null,
+                    };
                 }
-                return normalizeAssistantMessage(message);
+                if (message.role === 'user') {
+                    return { role: 'user', content: message.content || '', traceNode: message.traceNode || null };
+                }
+                return message;
             });
         }
 
@@ -5566,20 +5931,45 @@
             if (!tool || !tool.child_events || typeof tool.child_events !== 'object') return '';
             const keys = Object.keys(tool.child_events);
             if (!keys.length) return '';
+            
+            // Build a live activity summary for the top level
+            let liveSummary = '';
+            const allEvents = keys.flatMap(key => {
+                const events = Array.isArray(tool.child_events[key]) ? tool.child_events[key] : [];
+                return events.map(e => ({ ...e, taskKey: key }));
+            });
+            
+            if (allEvents.length > 0) {
+                const activeCount = allEvents.filter(e => e.type === 'tool_call' && !e.tool?.output).length;
+                const completedCount = allEvents.filter(e => e.type === 'tool_output').length;
+                const toolNames = [...new Set(allEvents.map(e => e.tool?.name).filter(Boolean))];
+                
+                if (activeCount > 0 || completedCount > 0) {
+                    liveSummary = `<div class="subagent-activity-summary">
+                        <span class="subagent-badge">${allEvents.length} tools</span>
+                        ${activeCount > 0 ? `<span class="subagent-badge active">${activeCount} running</span>` : ''}
+                        ${completedCount > 0 ? `<span class="subagent-badge complete">${completedCount} done</span>` : ''}
+                        ${toolNames.length > 0 ? `<span class="subagent-tools">${escapeHtml(toolNames.slice(0, 5).join(', '))}${toolNames.length > 5 ? '...' : ''}</span>` : ''}
+                    </div>`;
+                }
+            }
+            
             const sections = keys.map((key) => {
                 const events = Array.isArray(tool.child_events[key]) ? tool.child_events[key] : [];
                 if (!events.length) return '';
                 const title = key === 'default' ? 'Live Subagent Activity' : `Task ${Number(key) + 1} Activity`;
                 const sectionKey = escapeHtml(`${tool.call_id || tool.name || 'delegate'}:${key}`);
-                const shouldOpen = !tool.output;
+                // Always keep open to show subagent activity prominently
                 return `
-                    <details class="delegate-task-raw" data-tool-key="delegate-child:${sectionKey}" ${shouldOpen ? 'open' : ''}>
-                        <summary>${escapeHtml(title)}</summary>
+                    <details class="delegate-task-raw" data-tool-key="delegate-child:${sectionKey}" open>
+                        <summary>${escapeHtml(title)} <span class="event-count">(${events.length})</span></summary>
                         <div class="assistant-tools">${renderToolCallList(events.map((event, idx) => makeToolCardEntry(event.tool || event, idx)))}</div>
                     </details>
                 `;
             }).filter(Boolean).join('');
-            return sections ? `<div class="tool-section"><label>Subagent Stream</label>${sections}</div>` : '';
+            
+            if (!sections) return '';
+            return `<div class="tool-section"><label>Subagent Activity</label>${liveSummary}${sections}</div>`;
         }
 
         function ensureAssistantTracePendingDelegateChildren(state) {
@@ -5711,6 +6101,39 @@
                     <div class="activity-block"><strong>Result</strong>${renderActivityData(item.result)}</div>
                 </div>
             `).join('');
+        }
+
+        function renderSessionSearchEvents(items) {
+            const target = document.getElementById('session-search-events');
+            if (!target) return;
+            if (!Array.isArray(items) || !items.length) {
+                target.innerHTML = '<div style="color:var(--text-dim);">No session recall activity yet.</div>';
+                return;
+            }
+            target.innerHTML = items.map((item) => {
+                const req = item?.request || {};
+                const result = item?.result || {};
+                const sessionId = result.session_id || result.id || item.session_id || req.session_id || '';
+                const shortSessionId = sessionId ? String(sessionId).slice(0, 8) : 'unknown';
+                const score = result.score ?? result.relevance ?? result.similarity ?? item.score;
+                const dateLabel = formatTimestamp(result.timestamp || item.timestamp) || 'Unknown time';
+                const snippetSource = result.snippet || result.preview || result.content || result.text || req.query || '';
+                const snippet = summarizeValue(typeof snippetSource === 'string' ? snippetSource : JSON.stringify(snippetSource), 120).replace(/\s+/g, ' ').trim();
+                const fullBody = typeof result.content === 'string'
+                    ? result.content
+                    : JSON.stringify(result, null, 2);
+                return `
+                    <details class="session-search-result">
+                        <summary>
+                            <span class="tool-call-chip">session ${escapeHtml(shortSessionId)}</span>
+                            ${score !== null && score !== undefined && score !== '' ? `<span class="tool-call-chip">score ${escapeHtml(String(score))}</span>` : ''}
+                            <span class="meta-pill">${escapeHtml(dateLabel)}</span>
+                            <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim);">${escapeHtml(snippet || '(no preview)')}</span>
+                        </summary>
+                        <div class="session-search-result-body">${escapeHtml(fullBody)}</div>
+                    </details>
+                `;
+            }).join('');
         }
 
         function renderMetaPill(label, value) {
@@ -6689,6 +7112,7 @@
                     case 'sessions': loadSessions(); loadSessionSources(); break;
                     case 'memory': loadMemory(); break;
                     case 'skills': loadSkills(); break;
+                    case 'cron': loadCronJobs(); break;
                     case 'graph': loadGraph(); break;
                 }
             } else if (panel === 'sessions') {
@@ -6719,7 +7143,7 @@
             const parts = hash.split('/');
             const panel = parts[0];
 
-            const validPanels = ['chat','config','secrets','sessions','memory','skills','graph'];
+            const validPanels = ['chat','config','secrets','sessions','memory','skills','cron','graph'];
             if (!validPanels.includes(panel)) {
                 switchToPanel('chat');
                 return;
@@ -6740,7 +7164,7 @@
             const bc = document.getElementById('breadcrumbs');
             if (!bc) return;
 
-            const names = { chat:'Chat', config:'Config', secrets:'Secrets', sessions:'Sessions', memory:'Memory', skills:'Skills', graph:'Graph' };
+            const names = { chat:'Chat', config:'Config', secrets:'Secrets', sessions:'Sessions', memory:'Memory', skills:'Skills', cron:'Cron', graph:'Graph' };
 
             if (detail) {
                 bc.className = 'breadcrumbs visible';
@@ -7348,9 +7772,15 @@
         document.getElementById('session-search').addEventListener('input', debounce(() => { sessionsPage = 0; loadSessions(); }, 300));
         
         async function viewSession(id) {
+            const requestId = ++activeSessionDetailRequestId;
+            activeSessionDetailId = id;
             log('req', `GET /api/sessions/${id}`);
             const resp = await fetch(`/api/sessions/${id}`);
             const data = await resp.json();
+            if (requestId !== activeSessionDetailRequestId || activeSessionDetailId !== id) {
+                log('inf', `Ignoring stale session detail response for ${id}`);
+                return;
+            }
             log('res', `Loaded ${data.messages.length} messages`);
             
             // Update hash if not already matching (avoid re-triggering hashchange)
@@ -7378,8 +7808,9 @@
 
             currentSessionTraceContext = buildSessionTraceContext(data);
             const summaryHtml = data.summary ? `<div class="summary-block"><span class="label">Session Summary</span>${escapeHtml(data.summary)}</div>` : '';
+            const warningHtml = renderSessionTranscriptWarning(data);
             const overviewHtml = renderSessionOverview(data);
-            messages.innerHTML = overviewHtml + summaryHtml + renderSessionTranscript(currentSessionTraceContext);
+            messages.innerHTML = overviewHtml + summaryHtml + warningHtml + renderSessionTranscript(currentSessionTraceContext);
 
             renderBackgroundReviews(data.background_reviews || []);
             renderRequestResultActivity(
@@ -7393,15 +7824,7 @@
                     return `${action} ${name}`;
                 }
             );
-            renderRequestResultActivity(
-                'session-search-events',
-                data.session_search_events || [],
-                'No session recall activity yet.',
-                item => {
-                    const req = item.request || {};
-                    return `query: ${req.query || '(recent sessions)'}`;
-                }
-            );
+            renderSessionSearchEvents(data.session_search_events || []);
 
             await loadSessionFiles(id);
             
@@ -7414,9 +7837,14 @@
         }
 
         async function loadSessionFiles(id) {
+            const requestId = activeSessionDetailRequestId;
             log('req', `GET /api/sessions/${id}/files`);
             const resp = await fetch(`/api/sessions/${id}/files`);
             const data = await resp.json();
+            if (requestId !== activeSessionDetailRequestId || activeSessionDetailId !== id) {
+                log('inf', `Ignoring stale session files response for ${id}`);
+                return;
+            }
             currentSessionFiles = data.files || [];
             log('res', `Loaded ${currentSessionFiles.length} touched files`);
             renderSessionFiles();
@@ -7573,6 +8001,7 @@
                             if (parsed.arguments?.subagent && appendDelegateChildEvent(assistantState, parsed)) {
                                 startToolTimer(parsed.call_id || parsed.name, true);
                                 renderDirty = true;
+                                log('tool', `[subagent] ${parsed.name || 'tool'} started`, false, { args: parsed.arguments?.child_args || parsed.arguments });
                                 saveActiveRun();
                                 continue;
                             }
@@ -7589,6 +8018,7 @@
                             if (parsed.arguments?.subagent && appendDelegateChildEvent(assistantState, parsed)) {
                                 stopToolTimer(parsed.call_id || parsed.name, true);
                                 renderDirty = true;
+                                log('tool', `[subagent] ${parsed.name || 'tool'} completed`, false, { result: parsed.output });
                                 saveActiveRun();
                                 continue;
                             }
@@ -7599,6 +8029,7 @@
                         } else if (parsed.type === 'tool_progress') {
                             if ((parsed.arguments?.delegate_call_id || parsed.arguments?.call_id) && appendDelegateChildEvent(assistantState, parsed)) {
                                 renderDirty = true;
+                                log('tool', `[subagent] ${parsed.name || 'progress'}: ${summarizeValue(parsed.progress || parsed.arguments || '', 100)}`, false, { result: parsed.progress || parsed.arguments || '' });
                                 saveActiveRun();
                                 continue;
                             }
@@ -7746,6 +8177,20 @@
             `;
         }
 
+        function renderSessionTranscriptWarning(data) {
+            const messageCount = Array.isArray(data?.messages) ? data.messages.length : 0;
+            const artifacts = Array.isArray(data?.related_artifacts) ? data.related_artifacts : [];
+            const requestDump = artifacts.find((artifact) => artifact?.kind === 'request_dump');
+            if (messageCount > 1 || !requestDump) return '';
+            const reason = [requestDump.error_type, requestDump.error_response_status ? `status ${requestDump.error_response_status}` : '', requestDump.model].filter(Boolean).join(' · ');
+            return `
+                <div class="session-warning">
+                    <strong>Partial session transcript.</strong>
+                    Only ${messageCount} persisted message${messageCount === 1 ? '' : 's'} are available for this session. Hermes also recorded a request dump for a failed upstream call${reason ? ` (${escapeHtml(reason)})` : ''}, so the detailed transcript you expect may never have been written to session storage.
+                </div>
+            `;
+        }
+
         function renderSessionMessage(message) {
             const meta = [];
             if (message.timestamp) meta.push(formatSessionDate(message.timestamp));
@@ -7770,10 +8215,10 @@
                     debugSections.push(`<details><summary>Codex Reasoning Items</summary><pre>${escapeHtml(JSON.stringify(message.codex_reasoning_items, null, 2))}</pre></details>`);
                 }
                 const debugHtml = debugSections.length ? `<div class="session-debug-block">${debugSections.join('')}</div>` : '';
-                return `<div class="message assistant${traceClass}"${traceId}>${metaHtml}${renderAssistantMessage({ ...message, traceNode: null, content: message.content || '', tools: message.tools || [], events: message.events || [], renderTraceContext: traceContext })}${debugHtml}</div>`;
+                return `<div class="message assistant${traceClass}"${traceId}>${metaHtml}${renderAssistantMessage({ ...message, content: message.content || '', tools: message.tools || [], events: message.events || [], renderTraceContext: traceContext })}${debugHtml}</div>`;
             }
 
-            return `<div class="message ${message.role}${traceClass}"${traceId}>${metaHtml}${formatMessageContent(message.content || '')}</div>`;
+            return `<div class="message ${message.role}${traceClass}"${traceId}>${metaHtml}${formatSessionTranscriptContent(message.content || '')}</div>`;
         }
 
         function mergeSessionMessages(data) {
@@ -8016,7 +8461,248 @@
                 log('err', `Skill update failed: ${e.message}`, true);
             }
         }
-        
+
+        // ── Cron Jobs ──
+        let allCronJobs = [];
+
+        async function loadCronJobs() {
+            log('req', 'GET /api/cron');
+            try {
+                const data = await cachedFetch('/api/cron', 30000);
+                allCronJobs = data.jobs || [];
+                log('res', `Loaded ${allCronJobs.length} cron jobs`);
+                filterCronJobs();
+            } catch (e) {
+                log('err', 'Failed to load cron jobs: ' + e.message, true);
+                document.getElementById('cron-list').innerHTML =
+                    '<div style="text-align:center;color:var(--text-dim);padding:2rem;">Failed to load jobs</div>';
+            }
+        }
+
+        function filterCronJobs() {
+            const search = (document.getElementById('cron-search')?.value || '').toLowerCase();
+            const filter = document.getElementById('cron-filter')?.value || '';
+
+            let filtered = allCronJobs;
+            if (search) {
+                filtered = filtered.filter(j =>
+                    (j.name || '').toLowerCase().includes(search) ||
+                    (j.prompt || '').toLowerCase().includes(search) ||
+                    (j.id || '').toLowerCase().includes(search)
+                );
+            }
+            if (filter === 'enabled') {
+                filtered = filtered.filter(j => j.enabled !== false);
+            } else if (filter === 'paused') {
+                filtered = filtered.filter(j => j.enabled === false || j.state === 'paused');
+            }
+
+            const stats = document.getElementById('cron-stats');
+            if (stats) stats.textContent = `${filtered.length} of ${allCronJobs.length} jobs`;
+
+            const list = document.getElementById('cron-list');
+            if (!filtered.length) {
+                list.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:2rem;">No jobs match</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(j => {
+                const isPaused = j.enabled === false || j.state === 'paused';
+                const statusClass = isPaused ? 'paused' : 'scheduled';
+                const statusText = isPaused ? 'Paused' : 'Scheduled';
+                const schedule = j.schedule_display || (j.schedule ? j.schedule.display : '');
+                const completed = j.repeat?.completed ?? 0;
+                const nextRun = j.next_run_at ? formatRelativeTime(new Date(j.next_run_at)) : '—';
+                const lastRun = j.last_run_at ? formatRelativeTime(new Date(j.last_run_at)) : 'never';
+                const promptPreview = (j.prompt || '').substring(0, 120);
+
+                return `
+                    <div class="cron-card ${isPaused ? 'paused' : ''}">
+                        <div class="cron-card-header">
+                            <h4>${escapeHtml(j.name || j.id)}</h4>
+                            <span class="cron-status ${statusClass}">${statusText}</span>
+                        </div>
+                        <div class="cron-meta">
+                            <span>⏱ ${escapeHtml(schedule || '—')}</span>
+                            <span>✓ ${completed} runs</span>
+                            <span>→ ${escapeHtml(nextRun)}</span>
+                            <span>← ${escapeHtml(lastRun)}</span>
+                        </div>
+                        <div class="cron-prompt-preview">${escapeHtml(promptPreview)}${(j.prompt || '').length > 120 ? '…' : ''}</div>
+                        <div class="cron-actions-row">
+                            ${isPaused
+                                ? `<button class="primary" onclick="resumeCronJob('${escapeHtml(j.id)}')">Resume</button>`
+                                : `<button onclick="pauseCronJob('${escapeHtml(j.id)}')">Pause</button>`}
+                            <button onclick="runCronJob('${escapeHtml(j.id)}')">Run Now</button>
+                            <button onclick="editCronJob('${escapeHtml(j.id)}')">Edit</button>
+                            <button class="danger" onclick="deleteCronJob('${escapeHtml(j.id)}')">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function pauseCronJob(jobId) {
+            try {
+                log('req', `POST /api/cron/${jobId}/pause`);
+                await fetchJsonOrThrow(`/api/cron/${encodeURIComponent(jobId)}/pause`, { method: 'POST' });
+                log('res', `Job ${jobId} paused`);
+                showToast('Job paused');
+                invalidateCache('/api/cron');
+                loadCronJobs();
+            } catch (e) {
+                showToast(`Pause failed: ${e.message}`, true);
+                log('err', `Pause failed: ${e.message}`, true);
+            }
+        }
+
+        async function resumeCronJob(jobId) {
+            try {
+                log('req', `POST /api/cron/${jobId}/resume`);
+                await fetchJsonOrThrow(`/api/cron/${encodeURIComponent(jobId)}/resume`, { method: 'POST' });
+                log('res', `Job ${jobId} resumed`);
+                showToast('Job resumed');
+                invalidateCache('/api/cron');
+                loadCronJobs();
+            } catch (e) {
+                showToast(`Resume failed: ${e.message}`, true);
+                log('err', `Resume failed: ${e.message}`, true);
+            }
+        }
+
+        async function runCronJob(jobId) {
+            try {
+                log('req', `POST /api/cron/${jobId}/run`);
+                await fetchJsonOrThrow(`/api/cron/${encodeURIComponent(jobId)}/run`, { method: 'POST' });
+                log('res', `Job ${jobId} triggered`);
+                showToast('Job triggered');
+                invalidateCache('/api/cron');
+                loadCronJobs();
+            } catch (e) {
+                showToast(`Run failed: ${e.message}`, true);
+                log('err', `Run failed: ${e.message}`, true);
+            }
+        }
+
+        async function deleteCronJob(jobId) {
+            if (!confirm(`Delete job "${jobId}"? This cannot be undone.`)) return;
+            try {
+                log('req', `DELETE /api/cron/${jobId}`);
+                await fetchJsonOrThrow(`/api/cron/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+                log('res', `Job ${jobId} deleted`);
+                showToast('Job deleted');
+                invalidateCache('/api/cron');
+                loadCronJobs();
+            } catch (e) {
+                showToast(`Delete failed: ${e.message}`, true);
+                log('err', `Delete failed: ${e.message}`, true);
+            }
+        }
+
+        function openCronModal(jobId) {
+            const modal = document.getElementById('cron-modal');
+            const title = document.getElementById('cron-modal-title');
+            if (jobId) {
+                const job = allCronJobs.find(j => j.id === jobId);
+                if (!job) return;
+                title.textContent = 'Edit Cron Job';
+                document.getElementById('cron-job-id').value = job.id;
+                document.getElementById('cron-name').value = job.name || '';
+                document.getElementById('cron-schedule').value = job.schedule_display || '';
+                document.getElementById('cron-prompt').value = job.prompt || '';
+                document.getElementById('cron-deliver').value = job.deliver || 'local';
+                document.getElementById('cron-skills').value = (job.skills || []).join(', ');
+                document.getElementById('cron-repeat').value = job.repeat?.times || '';
+            } else {
+                title.textContent = 'New Cron Job';
+                document.getElementById('cron-job-id').value = '';
+                document.getElementById('cron-name').value = '';
+                document.getElementById('cron-schedule').value = '';
+                document.getElementById('cron-prompt').value = '';
+                document.getElementById('cron-deliver').value = 'local';
+                document.getElementById('cron-skills').value = '';
+                document.getElementById('cron-repeat').value = '';
+            }
+            modal.style.display = 'flex';
+        }
+
+        function closeCronModal() {
+            document.getElementById('cron-modal').style.display = 'none';
+        }
+
+        function editCronJob(jobId) {
+            openCronModal(jobId);
+        }
+
+        async function saveCronJob() {
+            const jobId = document.getElementById('cron-job-id').value;
+            const name = document.getElementById('cron-name').value.trim();
+            const schedule = document.getElementById('cron-schedule').value.trim();
+            const prompt = document.getElementById('cron-prompt').value;
+            const deliver = document.getElementById('cron-deliver').value;
+            const skillsRaw = document.getElementById('cron-skills').value;
+            const skills = skillsRaw ? skillsRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+            const repeatVal = document.getElementById('cron-repeat').value;
+            const repeat = repeatVal ? parseInt(repeatVal, 10) : undefined;
+
+            if (!name) {
+                showToast('Name is required', true);
+                return;
+            }
+            if (!schedule) {
+                showToast('Schedule is required', true);
+                return;
+            }
+
+            try {
+                if (jobId) {
+                    log('req', `PATCH /api/cron/${jobId}`);
+                    const payload = { name, schedule, prompt, deliver };
+                    if (skills) payload.skills = skills;
+                    if (repeat !== undefined) payload.repeat = repeat;
+                    await fetchJsonOrThrow(`/api/cron/${encodeURIComponent(jobId)}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    log('res', `Job ${jobId} updated`);
+                    showToast('Job updated');
+                } else {
+                    log('req', 'POST /api/cron');
+                    const payload = { name, schedule, prompt, deliver };
+                    if (skills) payload.skills = skills;
+                    if (repeat !== undefined) payload.repeat = repeat;
+                    await fetchJsonOrThrow('/api/cron', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    log('res', 'Job created');
+                    showToast('Job created');
+                }
+                closeCronModal();
+                invalidateCache('/api/cron');
+                loadCronJobs();
+            } catch (e) {
+                showToast(`Save failed: ${e.message}`, true);
+                log('err', `Save failed: ${e.message}`, true);
+            }
+        }
+
+        function formatRelativeTime(date) {
+            const now = new Date();
+            const diffMs = date - now;
+            const diffSec = Math.round(diffMs / 1000);
+            const absSec = Math.abs(diffSec);
+            if (absSec < 60) return diffSec < 0 ? 'just now' : 'in moments';
+            const absMin = Math.round(absSec / 60);
+            if (absMin < 60) return diffSec < 0 ? `${absMin}m ago` : `in ${absMin}m`;
+            const absHr = Math.round(absMin / 60);
+            if (absHr < 24) return diffSec < 0 ? `${absHr}h ago` : `in ${absHr}h`;
+            const absDay = Math.round(absHr / 24);
+            return diffSec < 0 ? `${absDay}d ago` : `in ${absDay}d`;
+        }
+
         // Save functions
         async function saveModel() {
             const model = getElementValue('model-select', '');
@@ -8299,6 +8985,23 @@
             formatted = formatted.replace(/\n/g, '<br>');
             
             return formatted;
+        }
+
+        function formatSessionTranscriptContent(text) {
+            const raw = typeof text === 'string' ? text : '';
+            if (raw.length < 5000 && raw.split('\n').length < 120) {
+                return formatMessageContent(raw);
+            }
+            const preview = summarizeValue(raw.replace(/\s+/g, ' ').trim(), 420);
+            return `
+                <div class="long-message-shell">
+                    <div>${formatMessageContent(preview)}</div>
+                    <details>
+                        <summary>Show full message</summary>
+                        <div style="margin-top:0.5rem;">${formatMessageContent(raw)}</div>
+                    </details>
+                </div>
+            `;
         }
         
         // Parse base64 images from content

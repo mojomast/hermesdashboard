@@ -660,12 +660,22 @@ def _clean_transcript_seed_text(text: str) -> str:
         return ""
     lowered = cleaned.lower()
     if cleaned.startswith("[SYSTEM:"):
+        # Extract skill name from system prompts like "[SYSTEM: The user has invoked the \"tournament-build\" skill...]"
+        import re
+        skill_match = re.search(r'"([^"]+)"\s+skill', lowered)
+        if skill_match:
+            return f"Skill: {skill_match.group(1)}"
         return ""
     if cleaned.startswith("--- name:"):
         return ""
     if "skill content is loaded below" in lowered:
         return ""
     if lowered.startswith("the user has invoked the"):
+        # Extract skill name from plain text
+        import re
+        skill_match = re.search(r'"([^"]+)"', lowered)
+        if skill_match:
+            return f"Skill: {skill_match.group(1)}"
         return ""
     return cleaned
 
@@ -779,14 +789,34 @@ def _extract_title_from_messages(
     for msg in messages:
         content = str(msg.get("content") or "").strip()
         role = str(msg.get("role") or "")
-        if role == "user" and content:
-            title = _condense_title(content.replace("\n", " "))
+        cleaned_content = _clean_transcript_seed_text(content)
+        
+        if role == "user" and cleaned_content:
+            title = _condense_title(cleaned_content.replace("\n", " "))
             if title:
                 return title
-        if role == "assistant" and content:
-            title = _condense_title(content.replace("\n", " "))
+        if role == "assistant" and cleaned_content:
+            title = _condense_title(cleaned_content.replace("\n", " "))
             if title:
                 return title
+        # If assistant has tool_calls but empty content, extract tool names
+        if role == "assistant" and not cleaned_content:
+            tool_calls = msg.get("tool_calls")
+            if isinstance(tool_calls, list) and tool_calls:
+                tc_names = []
+                for tool_call in tool_calls:
+                    func = (
+                        tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+                    )
+                    name = str(func.get("name") or tool_call.get("name") or "").strip()
+                    if name:
+                        tc_names.append(name)
+                if tc_names:
+                    tool_text = ", ".join(tc_names[:3])
+                    title = _condense_title(f"Running {tool_text}")
+                    if title:
+                        return title
+        
         tool_name = str(msg.get("tool_name") or "").strip()
         if tool_name:
             tool_names.append(tool_name)
@@ -881,21 +911,44 @@ def _refresh_local_session_metadata(
                 else (title_to_store, summary_to_store, session_id),
             )
             conn.commit()
-        except (sqlite3.IntegrityError, sqlite3.OperationalError):
-            # Some installs enforce unique session titles, and list-time metadata refresh can
-            # race with other SQLite writers. Keep the existing title and avoid breaking the
-            # sessions list if the opportunistic backfill cannot be persisted right now.
+        except (sqlite3.IntegrityError, sqlite3.OperationalError) as e:
+            # Some installs enforce unique session titles. Retry with a unique suffix.
             conn.rollback()
-            if generated_summary is not None and generated_summary != existing_summary:
+            if "unique" in str(e).lower() and generated_title:
+                # Retry with session ID suffix to make title unique
+                suffix = f" ({session_id[-6:]})"
+                truncated = generated_title[:77-len(suffix)].rstrip()
+                unique_title = truncated + suffix
                 try:
                     conn.execute(
-                        "UPDATE sessions SET summary = ? WHERE id = ?",
-                        (generated_summary, session_id),
+                        "UPDATE sessions SET title = ?, summary = COALESCE(?, summary) WHERE id = ?",
+                        (unique_title, generated_summary, session_id),
                     )
                     conn.commit()
+                    title_to_store = unique_title
                 except sqlite3.Error:
                     conn.rollback()
-            title_to_store = existing_title
+                    if generated_summary is not None and generated_summary != existing_summary:
+                        try:
+                            conn.execute(
+                                "UPDATE sessions SET summary = ? WHERE id = ?",
+                                (generated_summary, session_id),
+                            )
+                            conn.commit()
+                        except sqlite3.Error:
+                            conn.rollback()
+                    title_to_store = existing_title
+            else:
+                if generated_summary is not None and generated_summary != existing_summary:
+                    try:
+                        conn.execute(
+                            "UPDATE sessions SET summary = ? WHERE id = ?",
+                            (generated_summary, session_id),
+                        )
+                        conn.commit()
+                    except sqlite3.Error:
+                        conn.rollback()
+                title_to_store = existing_title
     return {"title": title_to_store, "summary": summary_to_store, "changed": changed}
 
 
@@ -1715,13 +1768,18 @@ def _run_startup_session_metadata_backfill() -> None:
         _ensure_sessions_summary_column(conn)
         try:
             rows = conn.execute(
-                "SELECT id FROM sessions WHERE summary IS NULL OR trim(summary) = '' OR title IS NULL OR trim(title) = '' ORDER BY started_at DESC LIMIT 200"
+                "SELECT id FROM sessions WHERE summary IS NULL OR trim(summary) = '' OR title IS NULL OR trim(title) = '' ORDER BY started_at DESC LIMIT 1000"
             ).fetchall()
+            print(f"[dashboard] Starting session metadata backfill for {len(rows)} sessions...")
+            processed = 0
             for row in rows:
                 try:
                     _refresh_local_session_metadata(conn, row["id"])
-                except Exception:
+                    processed += 1
+                except Exception as e:
+                    print(f"[dashboard] Backfill error for {row['id']}: {e}")
                     continue
+            print(f"[dashboard] Session metadata backfill complete: {processed}/{len(rows)} sessions processed")
         finally:
             conn.close()
 
@@ -2131,6 +2189,87 @@ async def get_cron_jobs(request):
             return JSONResponse({"jobs": [], "error": str(e)})
 
 
+async def create_cron_job(request):
+    body = await request.body()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.post(
+                f"{HERMES_API}/api/jobs",
+                headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                content=body,
+            )
+            return JSONResponse(resp.json(), status_code=resp.status_code)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+
+async def update_cron_job(request):
+    job_id = request.path_params["job_id"]
+    body = await request.body()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.patch(
+                f"{HERMES_API}/api/jobs/{job_id}",
+                headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                content=body,
+            )
+            return JSONResponse(resp.json(), status_code=resp.status_code)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+
+async def delete_cron_job(request):
+    job_id = request.path_params["job_id"]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.delete(
+                f"{HERMES_API}/api/jobs/{job_id}",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+            )
+            return JSONResponse(resp.json(), status_code=resp.status_code)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+
+async def pause_cron_job(request):
+    job_id = request.path_params["job_id"]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.post(
+                f"{HERMES_API}/api/jobs/{job_id}/pause",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+            )
+            return JSONResponse(resp.json(), status_code=resp.status_code)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+
+async def resume_cron_job(request):
+    job_id = request.path_params["job_id"]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.post(
+                f"{HERMES_API}/api/jobs/{job_id}/resume",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+            )
+            return JSONResponse(resp.json(), status_code=resp.status_code)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+
+async def run_cron_job(request):
+    job_id = request.path_params["job_id"]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.post(
+                f"{HERMES_API}/api/jobs/{job_id}/run",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+            )
+            return JSONResponse(resp.json(), status_code=resp.status_code)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+
 async def get_secrets(request):
     return JSONResponse({"secrets": _build_secrets_payload(get_env())})
 
@@ -2282,6 +2421,63 @@ def _session_label(title, summary, session_id: str) -> str:
     return session_id[:8]
 
 
+def _get_messages_from_session_files(since_ts: Optional[float] = None) -> list[dict]:
+    """Read session JSON files to get messages that aren't in the SQLite DB."""
+    import os
+    messages = []
+    sessions_dir = HERMES_HOME / "sessions"
+    if not sessions_dir.exists():
+        return messages
+    
+    # Use scandir for better performance
+    files_processed = 0
+    max_files = 500  # Limit to prevent timeouts
+    
+    with os.scandir(sessions_dir) as it:
+        for entry in it:
+            if not entry.name.startswith("session_") or not entry.name.endswith(".json"):
+                continue
+            if files_processed >= max_files:
+                break
+                
+            try:
+                # Quick mtime check without full stat
+                mtime = entry.stat().st_mtime
+                if since_ts is not None and mtime < since_ts:
+                    continue
+                
+                with open(entry.path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                session_id = data.get("id")
+                if not session_id:
+                    # Strip "session_" prefix from filename stem
+                    stem = entry.name[:-5]  # Remove .json
+                    if stem.startswith("session_"):
+                        session_id = stem[8:]  # Remove "session_" prefix
+                    else:
+                        session_id = stem
+                
+                for msg in data.get("messages", []):
+                    msg["session_id"] = session_id
+                    # Convert timestamp to float if it's a string
+                    ts = msg.get("timestamp")
+                    if isinstance(ts, str):
+                        try:
+                            msg["timestamp"] = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                        except:
+                            msg["timestamp"] = mtime
+                    elif ts is None:
+                        msg["timestamp"] = mtime
+                    messages.append(msg)
+                
+                files_processed += 1
+            except Exception:
+                continue
+    
+    return messages
+
+
 async def get_graph_data(request):
     """
     Return nodes and edges for a relationship graph visualization.
@@ -2424,7 +2620,7 @@ async def get_graph_data(request):
                 msgs = conn.execute(
                     """SELECT session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, id
                        FROM messages
-                       WHERE session_id IN (SELECT id FROM sessions WHERE started_at >= ?)
+                       WHERE timestamp >= ?
                        ORDER BY timestamp, id""",
                     (since_ts,),
                 ).fetchall()
@@ -2434,6 +2630,23 @@ async def get_graph_data(request):
                        FROM messages
                        ORDER BY timestamp, id"""
                 ).fetchall()
+            
+            # Also get messages from session JSON files (not yet flushed to DB)
+            session_file_msgs = _get_messages_from_session_files(since_ts)
+            import sys
+            print(f"[graph-debug] Loaded {len(session_file_msgs)} messages from session files", file=sys.stderr)
+            # Convert session file msgs to same format as DB rows
+            for msg in session_file_msgs:
+                msgs.append({
+                    "session_id": msg.get("session_id", ""),
+                    "role": msg.get("role", ""),
+                    "content": msg.get("content", ""),
+                    "tool_call_id": msg.get("tool_call_id", ""),
+                    "tool_calls": json.dumps(msg.get("tool_calls")) if msg.get("tool_calls") else None,
+                    "tool_name": msg.get("tool_name", ""),
+                    "timestamp": msg.get("timestamp", 0),
+                    "id": msg.get("id", ""),
+                })
 
             for msg in msgs:
                 session_id = msg["session_id"]
@@ -2492,10 +2705,31 @@ async def get_graph_data(request):
                             ] = skill_ids
 
                 if str(msg["role"] or "") == "tool":
+                    # Extract file paths from tool result content
+                    parsed_result = _safe_json_loads(msg["content"] or "")
+                    if parsed_result:
+                        result_paths = _collect_paths_from_payload(parsed_result)
+                        for fp in result_paths:
+                            file_id = f"file:{fp}"
+                            _add_node(
+                                file_id,
+                                Path(fp).name,
+                                "file",
+                                path=fp,
+                                basename=Path(fp).name,
+                                category=_infer_file_category(fp),
+                            )
+                            edges.append(
+                                {
+                                    "source": sid,
+                                    "target": file_id,
+                                    "type": "accessed",
+                                }
+                            )
+
                     key = (session_id, str(msg["tool_call_id"] or ""))
                     skill_ids = pending_skill_calls.get(key)
                     if skill_ids is not None:
-                        parsed_result = _safe_json_loads(msg["content"] or "")
                         for skill_id in _extract_skill_ids_from_payload(parsed_result):
                             skill_ids.add(skill_id)
                         for skill_id in skill_ids:
@@ -2510,7 +2744,7 @@ async def get_graph_data(request):
                     name=tool_name,
                     usage_count=count,
                 )
-
+            
         conn.close()
 
         # --- 3. Skill nodes + relates_to edges (full depth only) ---
@@ -2638,6 +2872,12 @@ routes = [
     Route("/api/skills/toggle", toggle_skill, methods=["POST"]),
     Route("/api/skills/{skill_id}/content", get_skill_content),
     Route("/api/cron", get_cron_jobs),
+    Route("/api/cron", create_cron_job, methods=["POST"]),
+    Route("/api/cron/{job_id}", update_cron_job, methods=["PATCH"]),
+    Route("/api/cron/{job_id}", delete_cron_job, methods=["DELETE"]),
+    Route("/api/cron/{job_id}/pause", pause_cron_job, methods=["POST"]),
+    Route("/api/cron/{job_id}/resume", resume_cron_job, methods=["POST"]),
+    Route("/api/cron/{job_id}/run", run_cron_job, methods=["POST"]),
     Route("/api/secrets", get_secrets),
     Route("/api/secrets", set_secret, methods=["POST"]),
     Route("/api/secrets/{key}", delete_secret, methods=["DELETE"]),
