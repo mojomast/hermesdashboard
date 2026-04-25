@@ -117,6 +117,7 @@ Current behavior:
 - child sessions and related request-dump artifacts are attached inline in the parent session detail view
 - side-panel activity items can deep-link into the normalized transcript when the backend can derive a target
 - floating session transcript renderers scope DOM ids to avoid collisions with the main session-detail transcript
+- **live subagent drawer**: child sessions discovered via SSE `child_session_started` events get a "Live view" button on their parent `delegate_task` block; clicking it opens a fixed-position drawer that streams child activity via SSE and survives chat re-renders
 
 ## Active Run Recovery
 
@@ -147,7 +148,41 @@ Current runtime additions in `../hermes-agent`:
 - delegated child summaries now include `delegate_call_id`, `child_session_id`, and per-tool `call_id` in `tool_trace`
 - Responses API output extraction now prefers canonical tool-call ids over composite `call|fc` ids
 
-Important limitation:
+## Live Subagent Drawer
+
+The live subagent drawer lets users inspect child agent sessions in real time without leaving the parent chat context.
+
+**Event flow:**
+
+1. `delegate_tool.py` emits `child_session_started` via `parent_agent.tool_progress_callback(name, preview, args)`
+   - `args` includes: `child_session_id`, `parent_session_id`, `delegate_call_id`, `label`
+   - The callback signature is `(name, preview, args)` — no keyword arguments
+2. The gateway's `_on_tool_progress` in `api_server.py` forwards this as SSE with `type: "tool_progress"`, `name: "child_session_started"`, and `arguments: {...}`
+3. The dashboard frontend receives this in `streamChatRun` and stores it in `liveChildSessionMap` keyed by `delegate_call_id`
+4. When rendering a `delegate_task` tool block, `renderToolBlock` checks `liveChildSessionMap.get(tool.call_id)` and adds a "Live view" button if entries exist
+5. Clicking the button calls `openChildSessionDrawer(childSessionId, anchorEl, label)` which:
+   - creates a fixed-position drawer appended to `document.body`
+   - fetches the child session detail via `/api/sessions/{id}`
+   - renders the historical trace with `buildHistoricalExecutionTrace` + `renderSessionTranscript`
+   - opens an SSE stream via `/api/sessions/{id}/stream` for live updates
+   - badges the drawer as LIVE, DONE, or ERROR based on stream events
+6. The drawer survives chat re-renders because it uses `position: fixed` and is outside the chat DOM subtree
+7. `closeChildSessionDrawer` cleans up the drawer and its EventSource
+
+**Backend endpoint:**
+
+- `GET /api/sessions/{session_id}/stream` — returns an SSE stream
+  - If the session is in `ACTIVE_RUNS`, it proxies the active run's event queue
+  - Otherwise, it returns a single `run_state` completion event followed by `[DONE]`
+
+**Important limitation:**
+
+- child sessions spawned by the agent backend do not appear in `ACTIVE_RUNS` (only dashboard-initiated runs are tracked)
+- this means the SSE stream falls back to immediate completion for most child sessions
+- the drawer still shows historical data correctly, but true live streaming only works if the child session happens to be actively running when the drawer opens
+- future work could add a polling fallback or a backend session-event endpoint for true live child session tracking
+
+## Important limitation:
 
 - this is still mostly a Phase 1 frontend-first model with a small additive Phase 2 persistence slice
 - exact historical reconstruction still depends on persisted `tool_call_id` quality and does not yet have a first-class event log

@@ -128,7 +128,49 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - graph visualization for sessions, files, tools, models, and skills
 - persisted graph display settings for labels, spacing, edges, motion, and panel sizing
 - delegated task streaming inside expanded `delegate_task` blocks
+- **live subagent drawer** — click "Live view" on any `delegate_task` block to open a real-time floating panel showing the child session's activity
 - session summaries in sessions, graph, and session detail
+- **token & cost accounting** — per-session token usage badge and step-by-step cost breakdown
+- **session search & filter** — full-text search across sessions with status, date range, and real-time filtering
+- **cron schedule viewer** — dedicated Schedule tab showing cron jobs with run history, next-run countdowns, and session links
+- **interrupt/pause live runs** — pause button for in-flight chat runs, queues an interrupt before the next tool call
+- **Cmd+K command palette** — keyboard-driven command palette for quick navigation and recent session access
+- **threaded Message Board** — forum-style threads with persistent posts, per-thread replies, and Hermes responses scoped to each thread's own context
+- hardened dashboard-to-Hermes streaming bridge for long tool-heavy runs, including tool progress forwarding, heartbeats, clean disconnect handling, and sanitized chat history
+
+## Message Board
+
+The Message Board tab provides forum-style threads for working with Hermes outside the main chat transcript.
+
+Each thread behaves like its own conversation window:
+
+- create a thread with a title and first post
+- Hermes replies inside that thread
+- reply again with `Post only` or `Post + ask Hermes`
+- Hermes receives the ordered messages from that thread as context, not unrelated dashboard chat history
+- threads and replies persist in `~/.hermes/dashboard_message_board.sqlite3`
+
+This makes it useful for durable work queues, design discussions, self-improvement notes, and future subagent collaboration. The storage model already separates author and role so additional contributors can be added later without changing the thread concept.
+
+Relevant endpoints:
+
+- `GET /api/message-board` — list threads
+- `POST /api/message-board` — create a thread and request the first Hermes reply
+- `GET /api/message-board/{post_id}` — fetch one thread with messages
+- `POST /api/message-board/{post_id}/messages` — add a thread reply, optionally asking Hermes to respond
+
+## Streaming Reliability
+
+The dashboard chat bridge is designed to preserve the entire Hermes run stream instead of dropping after the first tool event.
+
+Current behavior:
+
+- forwards Hermes `hermes.tool.progress` SSE events into dashboard `tool_progress` events
+- forwards streamed content and usage metadata incrementally
+- sends heartbeats while long tools are quiet so browsers and proxies keep the stream open
+- cleans stale dashboard transport errors and UI-only trace metadata before sending history back to Hermes
+- uses a synchronous upstream SSE reader in a worker thread to avoid premature async stream closure seen with long tool-heavy runs
+- stores resumable run state so refreshes can reattach or resume explicitly
 
 ## Upstream Compatibility
 
@@ -204,6 +246,32 @@ The dashboard session experience is designed to be more scannable and more debug
 - the active-run banner can reattach the saved session transcript into Chat without discarding the in-flight run metadata
 - the active-run banner can also explicitly resume the saved live stream from the last cached event offset
 - summary regeneration refreshes both title and summary through dashboard-local metadata recomputation
+
+## Live Subagent Drawer
+
+When Hermes spawns a child session via `delegate_task`, the dashboard shows a **"Live view"** button on the tool block.
+
+Clicking it opens a floating drawer that:
+
+- shows the child session's live transcript in real time
+- streams new child activity via SSE as the subagent works
+- badges the child status as LIVE, DONE, or ERROR
+- stays open across chat re-renders (uses `position: fixed`)
+- can be closed with the × button
+
+**How it works:**
+
+1. The agent emits a `child_session_started` event via `tool_progress_callback` when a subagent is spawned
+2. The dashboard frontend captures this over SSE and stores the child session mapping
+3. The "Live view" button appears on the `delegate_task` block
+4. Clicking it fetches the child session detail and opens an SSE stream for live updates
+5. The drawer renders the same execution trace as the main session view
+
+**Backend requirements:**
+
+- The agent must emit `child_session_started` events (supported in recent Hermes versions)
+- Child sessions must have a valid `session_id` and `delegate_call_id`
+- The dashboard `/api/sessions/{id}/stream` endpoint provides the SSE feed
 
 ## Secrets Tab
 

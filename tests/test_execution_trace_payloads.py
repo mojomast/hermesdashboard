@@ -110,15 +110,21 @@ def _run_dashboard_trace_js(expression: str):
         + "process.stdout.write(JSON.stringify(__result));\n"
     )
     env = os.environ.copy()
-    result = subprocess.run(
-        ["node", "-e", script],
-        cwd=Path(__file__).resolve().parent.parent,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return json.loads(result.stdout)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as f:
+        f.write(script)
+        tmp_path = f.name
+    try:
+        result = subprocess.run(
+            ["node", tmp_path],
+            cwd=Path(__file__).resolve().parent.parent,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+    finally:
+        os.unlink(tmp_path)
 
 
 def _create_state_db(root: Path) -> Path:

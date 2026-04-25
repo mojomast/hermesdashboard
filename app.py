@@ -1,6 +1,8 @@
 import asyncio
+import datetime
 import json
 import os
+import re
 import sys
 import sqlite3
 import threading
@@ -221,6 +223,15 @@ API_KEY = os.getenv(
     "API_SERVER_KEY", "hermes-dashboard-secret-9e4349ef052042545dd435d3330a2287"
 )
 DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "8081"))
+HERMES_READ_TIMEOUT_RAW = os.getenv("DASHBOARD_HERMES_READ_TIMEOUT", "0").strip()
+HERMES_READ_TIMEOUT = (
+    None
+    if HERMES_READ_TIMEOUT_RAW.lower() in {"", "0", "none", "null", "off"}
+    else float(HERMES_READ_TIMEOUT_RAW)
+)
+HERMES_USEFUL_EVENT_TIMEOUT = float(
+    os.getenv("DASHBOARD_HERMES_USEFUL_EVENT_TIMEOUT", "120")
+)
 
 templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "templates")
@@ -230,6 +241,19 @@ templates = Jinja2Templates(
 ACTIVE_RUN_TTL_SECONDS = 1800
 ACTIVE_RUNS: dict[str, dict] = {}
 _STARTUP_METADATA_BACKFILL_STARTED = False
+
+# Track D: Interrupt control for live runs.
+# NOTE: The actual agent (run_agent.py) must check check_interrupt_flag()
+# before each tool call. This endpoint only sets the flag.
+INTERRUPT_FLAGS: dict[str, bool] = {}
+
+
+def set_interrupt_flag(session_id: str, value: bool) -> None:
+    INTERRUPT_FLAGS[session_id] = value
+
+
+def check_interrupt_flag(session_id: str) -> bool:
+    return INTERRUPT_FLAGS.get(session_id, False)
 
 BUILT_IN_PERSONALITIES = [
     "helpful",
@@ -303,6 +327,11 @@ RESUME_DISPLAY_MODES = ["full", "minimal"]
 APPROVAL_MODES = ["manual", "smart", "off"]
 REASONING_EFFORTS = ["", "none", "minimal", "low", "medium", "high", "xhigh"]
 
+# Configurable model cost rates ($ per 1M tokens).
+MODEL_COST_TABLE = {
+    "default": {"input": 3.00, "output": 15.00},
+}
+
 
 def _cleanup_active_runs() -> None:
     now = time.time()
@@ -320,6 +349,16 @@ def _cleanup_active_runs() -> None:
 
 def _normalize_sse_payload(parsed: dict) -> list[dict]:
     payloads: list[dict] = []
+    if parsed.get("tool") and not parsed.get("choices"):
+        payloads.append(
+            {
+                "type": "tool_progress",
+                "name": parsed.get("tool"),
+                "progress": parsed.get("label") or parsed.get("message") or "running",
+                "arguments": parsed,
+            }
+        )
+        return payloads
     hermes = parsed.get("hermes")
     usage = parsed.get("usage")
     if isinstance(hermes, dict):
@@ -345,21 +384,50 @@ def _normalize_sse_payload(parsed: dict) -> list[dict]:
     return payloads
 
 
-async def _run_chat_stream(
-    run_id: str, messages: list, session_id: Optional[str]
-) -> None:
+def _sanitize_chat_messages(messages: list) -> list:
+    sanitized = []
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        content = str(msg.get("content") or "")
+        if role not in {"system", "user", "assistant", "tool"}:
+            continue
+        if role == "assistant" and content.startswith("Error: Hermes gateway"):
+            continue
+        if not content and role != "assistant":
+            continue
+        sanitized.append({"role": role, "content": content})
+    return sanitized
+
+
+def _log_stream(run_id: str, message: str) -> None:
+    print(f"[dashboard:/chat:{run_id}] {message}", file=sys.stderr, flush=True)
+
+
+def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]) -> None:
     state = ACTIVE_RUNS[run_id]
+    event_count = 0
+    content_events = 0
+    tool_events = 0
+    raw_line_count = 0
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
     }
     if session_id:
         headers["X-Hermes-Session-Id"] = session_id
+    _log_stream(run_id, f"sync start messages={len(messages)} session_id={session_id or '-'}")
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=30.0, read=None, write=300.0, pool=30.0)
+        with httpx.Client(
+            timeout=httpx.Timeout(
+                connect=30.0,
+                read=HERMES_READ_TIMEOUT,
+                write=300.0,
+                pool=30.0,
+            )
         ) as client:
-            async with client.stream(
+            with client.stream(
                 "POST",
                 f"{HERMES_API}/v1/chat/completions",
                 headers=headers,
@@ -370,11 +438,36 @@ async def _run_chat_stream(
                 },
             ) as response:
                 response.raise_for_status()
+                _log_stream(run_id, f"sync upstream status={response.status_code}")
                 if not state.get("session_id"):
                     sid = response.headers.get("X-Hermes-Session-Id", "").strip()
                     if sid:
                         state["session_id"] = sid
-                async for line in response.aiter_lines():
+                        state["events"].append(
+                            {
+                                "data": json.dumps(
+                                    {
+                                        "type": "run_state",
+                                        "run_id": run_id,
+                                        "session_id": sid,
+                                    }
+                                )
+                            }
+                        )
+                first_useful_event_at = time.time()
+                saw_useful_event = False
+                for line in response.iter_lines():
+                    if (
+                        not saw_useful_event
+                        and time.time() - first_useful_event_at > HERMES_USEFUL_EVENT_TIMEOUT
+                    ):
+                        raise TimeoutError(
+                            "Hermes gateway stream produced no usable event "
+                            f"within {int(HERMES_USEFUL_EVENT_TIMEOUT)}s"
+                        )
+                    raw_line_count += 1
+                    if raw_line_count <= 20:
+                        _log_stream(run_id, f"sync raw[{raw_line_count}] {line[:240]!r}")
                     if not line.startswith("data: "):
                         continue
                     chunk = line[6:]
@@ -387,10 +480,23 @@ async def _run_chat_stream(
                         parsed = json.loads(chunk)
                     except json.JSONDecodeError:
                         continue
-                    for payload in _normalize_sse_payload(parsed):
-                        event = {"data": json.dumps(payload)}
-                        state["events"].append(event)
+                    payloads = _normalize_sse_payload(parsed)
+                    if not payloads:
+                        continue
+                    saw_useful_event = True
+                    for payload in payloads:
+                        event_count += 1
+                        if payload.get("type") == "content":
+                            content_events += 1
+                        elif payload.get("type") in {"tool_call", "tool_output", "tool_progress"}:
+                            tool_events += 1
+                        state["events"].append({"data": json.dumps(payload)})
+                if not state.get("done"):
+                    state["done"] = True
+                    state["events"].append({"data": "[DONE]"})
+                    _log_stream(run_id, "sync upstream closed without explicit DONE")
     except Exception as exc:
+        _log_stream(run_id, f"sync error {type(exc).__name__}: {exc}")
         state["events"].append(
             {
                 "data": json.dumps(
@@ -406,6 +512,144 @@ async def _run_chat_stream(
         state["done"] = True
     finally:
         state["updated_at"] = time.time()
+        _log_stream(
+            run_id,
+            "sync finish "
+            f"done={state.get('done')} events={event_count} "
+            f"content={content_events} tool={tool_events} raw={raw_line_count} "
+            f"error={state.get('error') or '-'}",
+        )
+
+
+async def _run_chat_stream(
+    run_id: str, messages: list, session_id: Optional[str]
+) -> None:
+    await asyncio.to_thread(_run_chat_stream_sync, run_id, messages, session_id)
+    return
+    state = ACTIVE_RUNS[run_id]
+    event_count = 0
+    content_events = 0
+    tool_events = 0
+    raw_line_count = 0
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
+    if session_id:
+        headers["X-Hermes-Session-Id"] = session_id
+    _log_stream(run_id, f"start messages={len(messages)} session_id={session_id or '-'}")
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=30.0,
+                read=HERMES_READ_TIMEOUT,
+                write=300.0,
+                pool=30.0,
+            )
+        ) as client:
+            async with client.stream(
+                "POST",
+                f"{HERMES_API}/v1/chat/completions",
+                headers=headers,
+                json={
+                    "model": "hermes-agent",
+                    "messages": messages,
+                    "stream": True,
+                },
+            ) as response:
+                response.raise_for_status()
+                _log_stream(run_id, f"upstream status={response.status_code}")
+                if not state.get("session_id"):
+                    sid = response.headers.get("X-Hermes-Session-Id", "").strip()
+                    if sid:
+                        state["session_id"] = sid
+                        state["events"].append(
+                            {
+                                "data": json.dumps(
+                                    {
+                                        "type": "run_state",
+                                        "run_id": run_id,
+                                        "session_id": sid,
+                                    }
+                                )
+                            }
+                        )
+                first_useful_event_at = time.time()
+                saw_useful_event = False
+                line_iter = response.aiter_lines().__aiter__()
+                while True:
+                    if (
+                        not saw_useful_event
+                        and time.time() - first_useful_event_at > HERMES_USEFUL_EVENT_TIMEOUT
+                    ):
+                        raise TimeoutError(
+                            "Hermes gateway stream produced no usable event "
+                            f"within {int(HERMES_USEFUL_EVENT_TIMEOUT)}s"
+                        )
+                    try:
+                        line = await asyncio.wait_for(
+                            line_iter.__anext__(),
+                            timeout=min(5.0, HERMES_USEFUL_EVENT_TIMEOUT),
+                        )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError:
+                        continue
+                    raw_line_count += 1
+                    if raw_line_count <= 20:
+                        _log_stream(run_id, f"raw[{raw_line_count}] {line[:240]!r}")
+                    if not line.startswith("data: "):
+                        continue
+                    chunk = line[6:]
+                    state["updated_at"] = time.time()
+                    if chunk == "[DONE]":
+                        state["done"] = True
+                        state["events"].append({"data": "[DONE]"})
+                        break
+                    try:
+                        parsed = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        continue
+                    payloads = _normalize_sse_payload(parsed)
+                    if not payloads:
+                        continue
+                    saw_useful_event = True
+                    for payload in payloads:
+                        event_count += 1
+                        if payload.get("type") == "content":
+                            content_events += 1
+                        elif payload.get("type") in {"tool_call", "tool_output", "tool_progress"}:
+                            tool_events += 1
+                        event = {"data": json.dumps(payload)}
+                        state["events"].append(event)
+                if not state.get("done"):
+                    state["done"] = True
+                    state["events"].append({"data": "[DONE]"})
+                    _log_stream(run_id, "upstream closed without explicit DONE")
+    except Exception as exc:
+        _log_stream(run_id, f"error {type(exc).__name__}: {exc}")
+        state["events"].append(
+            {
+                "data": json.dumps(
+                    {
+                        "type": "content",
+                        "content": f"Error: Hermes gateway is unavailable ({exc}).",
+                    }
+                )
+            }
+        )
+        state["events"].append({"data": "[DONE]"})
+        state["error"] = str(exc)
+        state["done"] = True
+    finally:
+        state["updated_at"] = time.time()
+        _log_stream(
+            run_id,
+            "finish "
+            f"done={state.get('done')} events={event_count} "
+            f"content={content_events} tool={tool_events} raw={raw_line_count} "
+            f"error={state.get('error') or '-'}",
+        )
 
 
 def _child_session_ids(conn: sqlite3.Connection, session_id: str) -> list[str]:
@@ -790,7 +1034,7 @@ def _extract_title_from_messages(
         content = str(msg.get("content") or "").strip()
         role = str(msg.get("role") or "")
         cleaned_content = _clean_transcript_seed_text(content)
-        
+
         if role == "user" and cleaned_content:
             title = _condense_title(cleaned_content.replace("\n", " "))
             if title:
@@ -816,7 +1060,7 @@ def _extract_title_from_messages(
                     title = _condense_title(f"Running {tool_text}")
                     if title:
                         return title
-        
+
         tool_name = str(msg.get("tool_name") or "").strip()
         if tool_name:
             tool_names.append(tool_name)
@@ -1210,7 +1454,7 @@ async def chat_stream(request):
     if run_id and resume and run_id in ACTIVE_RUNS:
         state = ACTIVE_RUNS[run_id]
     else:
-        messages = data.get("messages", [])
+        messages = _sanitize_chat_messages(data.get("messages", []))
         preview = []
         for msg in messages[-6:]:
             if not isinstance(msg, dict):
@@ -1240,35 +1484,56 @@ async def chat_stream(request):
             "session_id": session_id,
         }
         ACTIVE_RUNS[run_id] = state
+        _log_stream(run_id, f"accepted sanitized_messages={len(messages)}")
         state["task"] = asyncio.create_task(
             _run_chat_stream(run_id, messages, session_id)
         )
 
     async def generate():
         sent = int(data.get("event_offset") or 0)
-        if sent == 0:
-            initial_session_id = state.get("session_id")
-            yield {
-                "data": json.dumps(
-                    {
-                        "type": "run_state",
-                        "run_id": run_id,
-                        "session_id": initial_session_id,
-                    }
-                )
-            }
-        while True:
-            while sent < len(state["events"]):
-                event = state["events"][sent]
-                sent += 1
-                yield event
-                if event.get("data") == "[DONE]":
+        last_heartbeat = time.time()
+        try:
+            if sent == 0:
+                initial_session_id = state.get("session_id")
+                yield {
+                    "data": json.dumps(
+                        {
+                            "type": "run_state",
+                            "run_id": run_id,
+                            "session_id": initial_session_id,
+                        }
+                    )
+                }
+            while True:
+                while sent < len(state["events"]):
+                    event = state["events"][sent]
+                    sent += 1
+                    yield event
+                    if event.get("data") == "[DONE]":
+                        return
+                if state.get("done"):
+                    if sent >= len(state["events"]):
+                        yield {"data": "[DONE]"}
                     return
-            if state.get("done"):
-                if sent >= len(state["events"]):
-                    yield {"data": "[DONE]"}
-                return
-            await asyncio.sleep(0.1)
+                if time.time() - last_heartbeat >= 15:
+                    last_heartbeat = time.time()
+                    yield {
+                        "data": json.dumps(
+                            {
+                                "type": "heartbeat",
+                                "run_id": run_id,
+                                "session_id": state.get("session_id"),
+                            }
+                        )
+                    }
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            _log_stream(run_id, f"client disconnected after sent={sent}")
+            task = state.get("task")
+            if task is not None and not task.done():
+                task.cancel()
+            state["done"] = True
+            raise
 
     return EventSourceResponse(
         generate(),
@@ -1566,6 +1831,152 @@ async def get_sessions(request):
         return JSONResponse({"sessions": sessions, "total": total})
     except Exception as e:
         return JSONResponse({"sessions": [], "total": 0, "error": str(e)})
+
+
+async def search_sessions(request):
+    db_path = HERMES_HOME / "state.db"
+    if not db_path.exists():
+        return JSONResponse({"results": [], "total": 0, "offset": 0, "limit": 20})
+
+    q = request.query_params.get("q", "").strip()
+    status = request.query_params.get("status", "all").strip().lower()
+    date_from = request.query_params.get("date_from", "").strip()
+    date_to = request.query_params.get("date_to", "").strip()
+    # tag is accepted but ignored since tags are not yet stored
+    _ = request.query_params.get("tag", "").strip()
+    limit = max(1, min(int(request.query_params.get("limit", 20)), 100))
+    offset = max(0, int(request.query_params.get("offset", 0)))
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        _ensure_sessions_summary_column(conn)
+
+        if not _sessions_table_exists(conn):
+            conn.close()
+            return JSONResponse(
+                {"results": [], "total": 0, "offset": offset, "limit": limit}
+            )
+
+        conditions = []
+        params = []
+
+        if q:
+            q_lower = q.lower()
+            conditions.append(
+                "(LOWER(s.title) LIKE ? OR LOWER(s.summary) LIKE ? OR s.id IN (SELECT session_id FROM messages WHERE LOWER(content) LIKE ?))"
+            )
+            params.extend([f"%{q_lower}%", f"%{q_lower}%", f"%{q_lower}%"])
+
+        if status == "complete":
+            conditions.append("s.ended_at IS NOT NULL")
+        elif status == "running":
+            conditions.append("s.ended_at IS NULL")
+        elif status == "error":
+            if _sessions_table_has_column(conn, "end_reason"):
+                conditions.append("s.end_reason = 'error'")
+            else:
+                conditions.append("1=0")
+
+        if date_from:
+            conditions.append("s.started_at >= ?")
+            params.append(date_from)
+        if date_to:
+            conditions.append("s.started_at <= ?")
+            params.append(date_to)
+
+        where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+        count_sql = f"SELECT COUNT(DISTINCT s.id) FROM sessions s {where_clause}"
+        total = conn.execute(count_sql, params).fetchone()[0]
+
+        query = f"""
+            SELECT DISTINCT s.id, s.title, s.summary, s.started_at, s.ended_at, s.source, s.end_reason
+            FROM sessions s
+            {where_clause}
+            ORDER BY s.started_at DESC
+            LIMIT ? OFFSET ?
+        """
+
+        cursor = conn.execute(query, params + [limit, offset])
+        results = []
+
+        for row in cursor.fetchall():
+            item = dict(row)
+            session_id = item["id"]
+
+            if (
+                not str(item.get("title") or "").strip()
+                or not str(item.get("summary") or "").strip()
+            ):
+                refreshed = _refresh_local_session_metadata(conn, session_id)
+                item["title"] = refreshed.get("title") or item.get("title")
+                item["summary"] = refreshed.get("summary") or item.get("summary")
+
+            title = _session_label(
+                item.get("title"),
+                item.get("summary"),
+                session_id,
+            )
+
+            if item.get("ended_at"):
+                if item.get("end_reason") == "error":
+                    session_status = "error"
+                else:
+                    session_status = "complete"
+            else:
+                session_status = "running"
+
+            match_context = ""
+            if q:
+                msg_row = conn.execute(
+                    "SELECT content FROM messages WHERE session_id = ? AND LOWER(content) LIKE ? ORDER BY timestamp, id LIMIT 1",
+                    (session_id, f"%{q.lower()}%"),
+                ).fetchone()
+                if msg_row:
+                    content = msg_row["content"] or ""
+                    idx = content.lower().find(q.lower())
+                    if idx >= 0:
+                        start = max(0, idx - 40)
+                        end = min(len(content), idx + len(q) + 80)
+                        snippet = content[start:end]
+                        if start > 0:
+                            snippet = "..." + snippet
+                        if end < len(content):
+                            snippet = snippet + "..."
+                        match_context = snippet[:120]
+
+            results.append(
+                {
+                    "session_id": session_id,
+                    "title": title,
+                    "status": session_status,
+                    "created_at": item.get("started_at"),
+                    "summary": item.get("summary") or "",
+                    "tags": [],
+                    "match_context": match_context,
+                }
+            )
+
+        conn.close()
+        return JSONResponse(
+            {
+                "results": results,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            {
+                "results": [],
+                "total": 0,
+                "offset": offset,
+                "limit": limit,
+                "error": str(e),
+            }
+        )
 
 
 async def get_session_sources(request):
@@ -2270,6 +2681,159 @@ async def run_cron_job(request):
             return JSONResponse({"error": str(e)}, status_code=500)
 
 
+def _extract_cron_schedule_name(session_id: str, title: Optional[str]) -> str:
+    """Extract schedule name from cron session ID or title."""
+    # Pattern: session_cron_<name>_<date>_<time> or cron_<name>_<date>_<time>
+    match = re.match(r"(?:session_)?cron_([a-zA-Z0-9\-]+)(?:_\d{8}_\d{6})?", session_id)
+    if match:
+        return match.group(1)
+    # Fallback: use first word of title if it looks meaningful
+    if title:
+        clean = str(title).strip()
+        if clean and not clean.startswith("Session ") and not clean.startswith("{"):
+            first = clean.split()[0] if clean.split() else clean
+            if len(first) > 2:
+                return first.lower()[:30]
+    # Final fallback: date prefix from timestamp-based IDs
+    match = re.match(r"(\d{8})_\d{6}_[a-zA-Z0-9]+", session_id)
+    if match:
+        return f"cron-{match.group(1)}"
+    return "untitled"
+
+
+def _iso_from_ts(ts: Optional[float]) -> Optional[str]:
+    if ts is None:
+        return None
+    dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _compute_next_run_simple(cron_expr: str, after: float) -> Optional[float]:
+    """Minimal cron next-run calculator for common expressions."""
+    if not cron_expr or not cron_expr.strip():
+        return None
+    parts = cron_expr.strip().split()
+    if len(parts) < 5:
+        return None
+    minute, hour, dom, month, dow = parts[:5]
+    now = datetime.datetime.fromtimestamp(after, tz=datetime.timezone.utc)
+    # Start searching from the next minute
+    candidate = now.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1)
+    max_iter = 366 * 24 * 60  # One year in minutes
+    for _ in range(max_iter):
+        # month
+        if month != "*" and str(candidate.month) != month:
+            candidate += datetime.timedelta(minutes=1)
+            continue
+        # day of month
+        if dom != "*" and str(candidate.day) != dom:
+            candidate += datetime.timedelta(minutes=1)
+            continue
+        # day of week (0=Mon in Python, but cron uses 0=Sun; keep it simple)
+        if dow != "*":
+            cron_dow = int(dow)
+            # Python weekday: Monday=0 ... Sunday=6
+            # Cron weekday: Sunday=0 ... Saturday=6
+            py_dow = (candidate.weekday() + 1) % 7
+            if py_dow != cron_dow:
+                candidate += datetime.timedelta(minutes=1)
+                continue
+        # hour
+        if hour != "*" and str(candidate.hour) != hour:
+            candidate += datetime.timedelta(minutes=1)
+            continue
+        # minute
+        if minute != "*" and str(candidate.minute) != minute:
+            candidate += datetime.timedelta(minutes=1)
+            continue
+        return candidate.timestamp()
+    return None
+
+
+async def get_cron_schedule(request):
+    db_path = HERMES_HOME / "state.db"
+    if not db_path.exists():
+        return JSONResponse({"schedules": []})
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+
+        # Detect cron sessions by source='cron' or id prefix patterns
+        rows = conn.execute(
+            """
+            SELECT id, title, summary, started_at, ended_at, source
+            FROM sessions
+            WHERE source = 'cron' OR id LIKE 'session_cron_%' OR id LIKE 'cron_%'
+            ORDER BY started_at DESC
+            """
+        ).fetchall()
+
+        schedules: dict[str, dict] = {}
+        for row in rows:
+            session_id = row["id"]
+            name = _extract_cron_schedule_name(session_id, row["title"])
+            if name not in schedules:
+                schedules[name] = {"name": name, "runs": []}
+
+            status = "complete" if row["ended_at"] else "running"
+            duration = None
+            if row["started_at"] and row["ended_at"]:
+                duration = round(row["ended_at"] - row["started_at"])
+
+            schedules[name]["runs"].append(
+                {
+                    "session_id": session_id,
+                    "status": status,
+                    "started_at": _iso_from_ts(row["started_at"]),
+                    "duration_seconds": duration,
+                }
+            )
+
+        result = []
+        for name, data in schedules.items():
+            runs = data["runs"]
+            last_run = runs[0] if runs else None
+            recent_runs = runs[:5]
+
+            schedule: dict = {
+                "name": name,
+                "last_run": last_run,
+                "recent_runs": recent_runs,
+            }
+
+            # Attempt to infer cron_expr from the most recent run's title/summary
+            cron_expr = None
+            if last_run:
+                first_run_row = conn.execute(
+                    "SELECT title, summary FROM sessions WHERE id = ?",
+                    (last_run["session_id"],),
+                ).fetchone()
+                if first_run_row:
+                    for field in (first_run_row["title"], first_run_row["summary"]):
+                        if field and "*" in str(field):
+                            # Heuristic: look for a 5-part cron expression
+                            m = re.search(r"(\S+\s+\S+\s+\S+\s+\S+\s+\S+)", str(field))
+                            if m:
+                                candidate = m.group(1)
+                                if candidate.count("*") >= 1 and len(candidate.split()) == 5:
+                                    cron_expr = candidate
+                                    break
+
+            if cron_expr:
+                schedule["cron_expr"] = cron_expr
+                next_ts = _compute_next_run_simple(cron_expr, time.time())
+                if next_ts:
+                    schedule["next_run"] = _iso_from_ts(next_ts)
+
+            result.append(schedule)
+
+        conn.close()
+        return JSONResponse({"schedules": result})
+    except Exception as e:
+        return JSONResponse({"schedules": [], "error": str(e)})
+
+
 async def get_secrets(request):
     return JSONResponse({"secrets": _build_secrets_payload(get_env())})
 
@@ -2428,27 +2992,27 @@ def _get_messages_from_session_files(since_ts: Optional[float] = None) -> list[d
     sessions_dir = HERMES_HOME / "sessions"
     if not sessions_dir.exists():
         return messages
-    
+
     # Use scandir for better performance
     files_processed = 0
     max_files = 500  # Limit to prevent timeouts
-    
+
     with os.scandir(sessions_dir) as it:
         for entry in it:
             if not entry.name.startswith("session_") or not entry.name.endswith(".json"):
                 continue
             if files_processed >= max_files:
                 break
-                
+
             try:
                 # Quick mtime check without full stat
                 mtime = entry.stat().st_mtime
                 if since_ts is not None and mtime < since_ts:
                     continue
-                
+
                 with open(entry.path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                
+
                 session_id = data.get("id")
                 if not session_id:
                     # Strip "session_" prefix from filename stem
@@ -2457,7 +3021,7 @@ def _get_messages_from_session_files(since_ts: Optional[float] = None) -> list[d
                         session_id = stem[8:]  # Remove "session_" prefix
                     else:
                         session_id = stem
-                
+
                 for msg in data.get("messages", []):
                     msg["session_id"] = session_id
                     # Convert timestamp to float if it's a string
@@ -2470,11 +3034,11 @@ def _get_messages_from_session_files(since_ts: Optional[float] = None) -> list[d
                     elif ts is None:
                         msg["timestamp"] = mtime
                     messages.append(msg)
-                
+
                 files_processed += 1
             except Exception:
                 continue
-    
+
     return messages
 
 
@@ -2630,7 +3194,24 @@ async def get_graph_data(request):
                        FROM messages
                        ORDER BY timestamp, id"""
                 ).fetchall()
-            
+
+            # Also get messages from session JSON files (not yet flushed to DB)
+            session_file_msgs = _get_messages_from_session_files(since_ts)
+            import sys
+            print(f"[graph-debug] Loaded {len(session_file_msgs)} messages from session files", file=sys.stderr)
+            # Convert session file msgs to same format as DB rows
+            for msg in session_file_msgs:
+                msgs.append({
+                    "session_id": msg.get("session_id", ""),
+                    "role": msg.get("role", ""),
+                    "content": msg.get("content", ""),
+                    "tool_call_id": msg.get("tool_call_id", ""),
+                    "tool_calls": json.dumps(msg.get("tool_calls")) if msg.get("tool_calls") else None,
+                    "tool_name": msg.get("tool_name", ""),
+                    "timestamp": msg.get("timestamp", 0),
+                    "id": msg.get("id", ""),
+                })
+
             # Also get messages from session JSON files (not yet flushed to DB)
             session_file_msgs = _get_messages_from_session_files(since_ts)
             import sys
@@ -2744,7 +3325,7 @@ async def get_graph_data(request):
                     name=tool_name,
                     usage_count=count,
                 )
-            
+
         conn.close()
 
         # --- 3. Skill nodes + relates_to edges (full depth only) ---
@@ -2838,6 +3419,508 @@ async def get_graph_data(request):
     )
 
 
+async def interrupt_session(request):
+    session_id = request.path_params["session_id"]
+    try:
+        body = await request.body()
+        data = json.loads(body) if body else {}
+    except Exception:
+        data = {}
+
+    action = data.get("action", "")
+    if action != "pause":
+        return JSONResponse(
+            {"status": "invalid_action", "session_id": session_id}, status_code=400
+        )
+
+    # Check if session has an active run in ACTIVE_RUNS
+    has_active_run = False
+    for state in ACTIVE_RUNS.values():
+        if state.get("session_id") == session_id and not state.get("done"):
+            has_active_run = True
+            break
+
+    if not has_active_run:
+        return JSONResponse({"status": "not_running", "session_id": session_id})
+
+    set_interrupt_flag(session_id, True)
+    for state in ACTIVE_RUNS.values():
+        if state.get("session_id") != session_id or state.get("done"):
+            continue
+        task = state.get("task")
+        if task is not None and not task.done():
+            task.cancel()
+        state["done"] = True
+        state["events"].append(
+            {
+                "data": json.dumps(
+                    {
+                        "type": "content",
+                        "content": "\n\nInterrupted by user.",
+                    }
+                )
+            }
+        )
+        state["events"].append({"data": "[DONE]"})
+    return JSONResponse({"status": "interrupt_queued", "session_id": session_id})
+
+
+async def session_stream(request):
+    session_id = request.path_params["session_id"]
+    db_path = HERMES_HOME / "state.db"
+
+    if not db_path.exists():
+        return JSONResponse({"error": "No sessions database"}, status_code=404)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    session_row = conn.execute(
+        "SELECT id, ended_at FROM sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    conn.close()
+
+    if not session_row:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+
+    active_run = None
+    for state in ACTIVE_RUNS.values():
+        if state.get("session_id") == session_id and not state.get("done"):
+            active_run = state
+            break
+
+    async def generate():
+        if active_run:
+            sent = 0
+            while True:
+                while sent < len(active_run["events"]):
+                    event = active_run["events"][sent]
+                    sent += 1
+                    yield event
+                    if event.get("data") == "[DONE]":
+                        return
+                if active_run.get("done"):
+                    if sent >= len(active_run["events"]):
+                        yield {"data": "[DONE]"}
+                    return
+                await asyncio.sleep(0.1)
+        else:
+            status = "complete" if session_row["ended_at"] else "unknown"
+            yield {
+                "data": json.dumps(
+                    {
+                        "type": "run_state",
+                        "session_id": session_id,
+                        "status": status,
+                    }
+                )
+            }
+            yield {"data": "[DONE]"}
+
+    return EventSourceResponse(
+        generate(),
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _message_board_db_path() -> Path:
+    return HERMES_HOME / "dashboard_message_board.sqlite3"
+
+
+def _message_board_now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _message_board_connection() -> sqlite3.Connection:
+    db_path = _message_board_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS message_board_posts (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            author TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS message_board_messages (
+            id TEXT PRIMARY KEY,
+            post_id TEXT NOT NULL REFERENCES message_board_posts(id) ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            author TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    return conn
+
+
+def _message_board_row_to_message(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "post_id": row["post_id"],
+        "role": row["role"],
+        "author": row["author"],
+        "content": row["content"],
+        "created_at": row["created_at"],
+    }
+
+
+def _load_message_board_post(conn: sqlite3.Connection, post_id: str) -> Optional[dict]:
+    post_row = conn.execute(
+        """
+        SELECT id, title, author, status, created_at, updated_at
+        FROM message_board_posts
+        WHERE id = ?
+        """,
+        (post_id,),
+    ).fetchone()
+    if not post_row:
+        return None
+    message_rows = conn.execute(
+        """
+        SELECT id, post_id, role, author, content, created_at
+        FROM message_board_messages
+        WHERE post_id = ?
+        ORDER BY created_at, rowid
+        """,
+        (post_id,),
+    ).fetchall()
+    post = dict(post_row)
+    post["messages"] = [_message_board_row_to_message(row) for row in message_rows]
+    post["reply_count"] = sum(1 for msg in post["messages"] if msg["role"] == "assistant")
+    return post
+
+
+def get_message_board_post(post_id: str) -> Optional[dict]:
+    with _message_board_connection() as conn:
+        return _load_message_board_post(conn, post_id)
+
+
+def list_message_board_posts(limit: int = 50) -> list[dict]:
+    with _message_board_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.title, p.author, p.status, p.created_at, p.updated_at,
+                   COUNT(CASE WHEN m.role = 'assistant' THEN 1 END) AS reply_count,
+                   (
+                       SELECT mm.content
+                       FROM message_board_messages mm
+                       WHERE mm.post_id = p.id AND mm.role = 'assistant'
+                       ORDER BY mm.created_at DESC, mm.rowid DESC
+                       LIMIT 1
+                   ) AS last_reply_preview
+            FROM message_board_posts p
+            LEFT JOIN message_board_messages m ON m.post_id = p.id
+            GROUP BY p.id
+            ORDER BY p.updated_at DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+        posts = []
+        for row in rows:
+            item = dict(row)
+            preview = item.get("last_reply_preview") or ""
+            item["last_reply_preview"] = preview[:240]
+            item["reply_count"] = int(item.get("reply_count") or 0)
+            posts.append(item)
+        return posts
+
+
+def add_message_board_reply(post_id: str, content: str, author: str = "Hermes", role: str = "assistant") -> dict:
+    content = str(content or "").strip()
+    if not content:
+        raise ValueError("Reply content is required")
+    if role not in {"assistant", "user"}:
+        raise ValueError("Reply role must be assistant or user")
+    now = _message_board_now()
+    with _message_board_connection() as conn:
+        if not _load_message_board_post(conn, post_id):
+            raise KeyError(post_id)
+        conn.execute(
+            """
+            INSERT INTO message_board_messages (id, post_id, role, author, content, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (f"msg_{uuid.uuid4().hex}", post_id, role, author, content, now),
+        )
+        status = "answered" if role == "assistant" else "open"
+        conn.execute(
+            """
+            UPDATE message_board_posts
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (status, now, post_id),
+        )
+        conn.commit()
+        return _load_message_board_post(conn, post_id)
+
+
+def add_message_board_user_message(post_id: str, content: str, author: str = "mojo") -> dict:
+    return add_message_board_reply(post_id, content, author=author, role="user")
+
+
+def create_message_board_post(
+    title: str,
+    body: str,
+    author: str = "mojo",
+    agent_reply: Optional[str] = None,
+) -> dict:
+    title = str(title or "").strip()
+    body = str(body or "").strip()
+    author = str(author or "mojo").strip() or "mojo"
+    if not title:
+        raise ValueError("Post title is required")
+    if not body:
+        raise ValueError("Post body is required")
+    post_id = f"post_{uuid.uuid4().hex}"
+    now = _message_board_now()
+    with _message_board_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO message_board_posts (id, title, author, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (post_id, title, author, "open", now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO message_board_messages (id, post_id, role, author, content, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (f"msg_{uuid.uuid4().hex}", post_id, "user", author, body, now),
+        )
+        conn.commit()
+    if agent_reply:
+        return add_message_board_reply(post_id, agent_reply, author="Hermes", role="assistant")
+    loaded = get_message_board_post(post_id)
+    if not loaded:
+        raise RuntimeError("Created message board post could not be loaded")
+    return loaded
+
+
+def _extract_non_stream_chat_content(payload: dict) -> str:
+    try:
+        choices = payload.get("choices") or []
+        first = choices[0] if choices else {}
+        message = first.get("message") or {}
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, dict):
+                    text = part.get("text") or part.get("content")
+                    if text:
+                        parts.append(str(text))
+                elif part:
+                    parts.append(str(part))
+            return "".join(parts).strip()
+    except Exception:
+        return ""
+    return ""
+
+
+async def generate_message_board_agent_reply(post: dict) -> str:
+    thread_messages = []
+    for msg in post.get("messages", []):
+        role = msg.get("role")
+        content = str(msg.get("content") or "").strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        thread_messages.append({"role": role, "content": content})
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are Hermes replying inside one dashboard message-board thread. "
+                "Treat this thread as its own forum conversation and use only the thread title "
+                "and ordered thread messages as conversational context. Be concrete, concise, "
+                "and iteration-focused. If the user asks for work, say what you did or what the "
+                "next action is. Do not imply you saw unrelated dashboard chat context."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Thread title: {post.get('title', '')}\n\nContinue this forum thread.",
+        },
+    ]
+    messages.extend(thread_messages)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=15.0, read=90.0, write=30.0, pool=15.0)) as client:
+            resp = await client.post(
+                f"{HERMES_API}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                json={"model": "hermes-agent", "messages": messages, "stream": False},
+            )
+            resp.raise_for_status()
+            content = _extract_non_stream_chat_content(resp.json())
+            if content:
+                return content
+    except Exception as exc:
+        return f"I saw this post, but my live reply path hit the Hermes gateway error: {exc}"
+    return "I saw this post. I do not have a generated reply yet, but it is saved here for iteration."
+
+
+async def get_message_board_posts_endpoint(request):
+    return JSONResponse({"posts": list_message_board_posts()})
+
+
+async def get_message_board_post_endpoint(request, post_id: Optional[str] = None):
+    if post_id is None:
+        post_id = getattr(request, "path_params", {}).get("post_id")
+    post = get_message_board_post(str(post_id or ""))
+    if not post:
+        return JSONResponse({"error": "Post not found"}, status_code=404)
+    return JSONResponse(post)
+
+
+async def create_message_board_post_endpoint(request):
+    data = await request.json()
+    try:
+        post = create_message_board_post(
+            title=data.get("title", ""),
+            body=data.get("body", ""),
+            author=data.get("author", "mojo"),
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    reply = await generate_message_board_agent_reply(post)
+    post = add_message_board_reply(post["id"], reply, author="Hermes", role="assistant")
+    return JSONResponse(post, status_code=201)
+
+
+async def create_message_board_message_endpoint(request):
+    post_id = request.path_params["post_id"]
+    data = await request.json()
+    content = str(data.get("content") or "").strip()
+    author = str(data.get("author") or "mojo").strip() or "mojo"
+    ask_agent = bool(data.get("ask_agent", True))
+    try:
+        post = add_message_board_user_message(post_id, content, author=author)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except KeyError:
+        return JSONResponse({"error": "Post not found"}, status_code=404)
+    if ask_agent:
+        reply = await generate_message_board_agent_reply(post)
+        post = add_message_board_reply(post_id, reply, author="Hermes", role="assistant")
+    return JSONResponse(post, status_code=201)
+
+
+async def get_session_tokens(request):
+    session_id = request.path_params["session_id"]
+    db_path = HERMES_HOME / "state.db"
+
+    if not db_path.exists():
+        return JSONResponse({"error": "No sessions database"}, status_code=404)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+
+    session_row = conn.execute(
+        """
+        SELECT input_tokens, output_tokens, estimated_cost_usd, model
+        FROM sessions
+        WHERE id = ?
+        """,
+        (session_id,),
+    ).fetchone()
+
+    if not session_row:
+        conn.close()
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+
+    session = dict(session_row)
+    cursor = conn.execute(
+        """
+        SELECT id, role, token_count, timestamp
+        FROM messages
+        WHERE session_id = ? AND token_count IS NOT NULL
+        ORDER BY timestamp, id
+        """,
+        (session_id,),
+    )
+
+    steps = []
+    step_index = 0
+    for row in cursor.fetchall():
+        item = dict(row)
+        token_count = item.get("token_count")
+        if token_count is None:
+            continue
+        steps.append(
+            {
+                "step_index": step_index,
+                "role": item.get("role") or "unknown",
+                "input_tokens": None,
+                "output_tokens": None,
+                "total_tokens": int(token_count),
+                "model": session.get("model"),
+            }
+        )
+        step_index += 1
+
+    conn.close()
+
+    input_tokens = session.get("input_tokens")
+    output_tokens = session.get("output_tokens")
+    estimated_cost_usd = session.get("estimated_cost_usd")
+
+    has_step_data = bool(steps)
+    has_session_totals = (
+        input_tokens is not None
+        and output_tokens is not None
+        and (input_tokens > 0 or output_tokens > 0 or has_step_data)
+    )
+
+    if has_session_totals:
+        input_tokens = int(input_tokens)
+        output_tokens = int(output_tokens)
+        total_tokens = input_tokens + output_tokens
+    elif has_step_data:
+        input_tokens = None
+        output_tokens = None
+        total_tokens = sum((s["total_tokens"] or 0) for s in steps)
+    else:
+        input_tokens = None
+        output_tokens = None
+        total_tokens = None
+
+    if estimated_cost_usd is None and total_tokens is not None:
+        rates = MODEL_COST_TABLE.get("default")
+        est_input = (input_tokens or 0) * (rates["input"] / 1_000_000)
+        est_output = (output_tokens or 0) * (rates["output"] / 1_000_000)
+        estimated_cost_usd = round(est_input + est_output, 6)
+
+    return JSONResponse(
+        {
+            "session_id": session_id,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "estimated_cost_usd": estimated_cost_usd,
+            "steps": steps,
+        }
+    )
+
+
 routes = [
     Route("/", homepage),
     Route("/chat", chat_stream, methods=["POST"]),
@@ -2851,6 +3934,7 @@ routes = [
     Route("/api/personality", set_personality, methods=["POST"]),
     Route("/api/model", set_model, methods=["POST"]),
     Route("/api/sessions", get_sessions),
+    Route("/api/sessions/search", search_sessions),
     Route("/api/sessions/sources", get_session_sources),
     Route(
         "/api/sessions/backfill-summaries",
@@ -2864,7 +3948,22 @@ routes = [
     ),
     Route("/api/sessions/{session_id}", get_session),
     Route("/api/sessions/{session_id}/files", get_session_files),
+    Route("/api/sessions/{session_id}/tokens", get_session_tokens),
+    Route("/api/sessions/{session_id}/stream", session_stream),
+    Route(
+        "/api/sessions/{session_id}/interrupt",
+        interrupt_session,
+        methods=["POST"],
+    ),
     Route("/api/sessions/{session_id}", delete_session, methods=["DELETE"]),
+    Route("/api/message-board", get_message_board_posts_endpoint),
+    Route("/api/message-board", create_message_board_post_endpoint, methods=["POST"]),
+    Route(
+        "/api/message-board/{post_id}/messages",
+        create_message_board_message_endpoint,
+        methods=["POST"],
+    ),
+    Route("/api/message-board/{post_id}", get_message_board_post_endpoint),
     Route("/api/files/content", get_file_content),
     Route("/api/memory", get_memory),
     Route("/api/memory", update_memory, methods=["POST"]),
@@ -2873,6 +3972,7 @@ routes = [
     Route("/api/skills/{skill_id}/content", get_skill_content),
     Route("/api/cron", get_cron_jobs),
     Route("/api/cron", create_cron_job, methods=["POST"]),
+    Route("/api/cron/schedule", get_cron_schedule),
     Route("/api/cron/{job_id}", update_cron_job, methods=["PATCH"]),
     Route("/api/cron/{job_id}", delete_cron_job, methods=["DELETE"]),
     Route("/api/cron/{job_id}/pause", pause_cron_job, methods=["POST"]),
