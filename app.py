@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -2201,6 +2202,12 @@ def _run_startup_session_metadata_backfill() -> None:
     ).start()
 
 
+@asynccontextmanager
+async def _dashboard_lifespan(starlette_app: Starlette):
+    _run_startup_session_metadata_backfill()
+    yield
+
+
 def _dashboard_allowed_roots() -> list[Path]:
     roots: list[Path] = []
     env_root = os.getenv("HERMES_WRITE_SAFE_ROOT", "").strip()
@@ -3984,7 +3991,7 @@ routes = [
     Route("/api/graph", get_graph_data),
 ]
 
-app = Starlette(routes=routes, on_startup=[_run_startup_session_metadata_backfill])
+app = Starlette(routes=routes, lifespan=_dashboard_lifespan)
 
 if __name__ == "__main__":
     import uvicorn
