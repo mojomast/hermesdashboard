@@ -805,6 +805,123 @@ return {
         self.assertEqual(result["itemKinds"], ["assistant_content", "tool_run"])
         self.assertEqual(result["toolProgress"][0]["label"], "started")
 
+    def test_terminal_progress_diagnostics_stay_separate_until_matching_call(self):
+        result = _run_dashboard_trace_js(
+            """
+const state = createAssistantTraceState({ sessionId: 'session-term-progress' });
+reduceAssistantTraceEvent(state, {
+  type: 'tool_progress',
+  name: 'terminal',
+  arguments: { command: 'python one.py' },
+  progress: 'starting one',
+});
+reduceAssistantTraceEvent(state, {
+  type: 'tool_progress',
+  name: 'terminal',
+  arguments: { command: 'python two.py' },
+  progress: 'starting two',
+});
+const beforeCalls = {
+  orphanCount: state.trace.orphanNodes.length,
+  orphanCommands: state.trace.orphanNodes.map(node => node.payload.tool.arguments.command),
+};
+reduceAssistantTraceEvent(state, {
+  type: 'tool_call',
+  call_id: 'call-terminal-one',
+  name: 'terminal',
+  arguments: { command: 'python one.py' },
+});
+reduceAssistantTraceEvent(state, {
+  type: 'tool_call',
+  call_id: 'call-terminal-two',
+  name: 'terminal',
+  arguments: { command: 'python two.py' },
+});
+return {
+  beforeCalls,
+  orphanCount: state.trace.orphanNodes.length,
+  toolCount: state.trace.toolNodes.length,
+  progressByCommand: state.trace.toolNodes.map(node => ({
+    command: node.payload.tool.arguments.command,
+    labels: node.payload.tool.progress.map(item => item.label),
+  })),
+  eventTypes: state.events.map(event => event.type),
+};
+            """
+        )
+
+        self.assertEqual(result["beforeCalls"]["orphanCount"], 2)
+        self.assertEqual(
+            result["beforeCalls"]["orphanCommands"], ["python one.py", "python two.py"]
+        )
+        self.assertEqual(result["orphanCount"], 0)
+        self.assertEqual(result["toolCount"], 2)
+        self.assertEqual(
+            result["progressByCommand"],
+            [
+                {"command": "python one.py", "labels": ["starting one"]},
+                {"command": "python two.py", "labels": ["starting two"]},
+            ],
+        )
+        self.assertEqual(result["eventTypes"], ["parallel_group"])
+
+    def test_progress_uses_tool_call_id_alias_for_matching_running_tool(self):
+        result = _run_dashboard_trace_js(
+            """
+const state = createAssistantTraceState({ sessionId: 'session-progress-alias' });
+reduceAssistantTraceEvent(state, {
+  type: 'tool_call',
+  call_id: 'call-terminal-alias',
+  name: 'terminal',
+  arguments: { command: 'pytest' },
+});
+reduceAssistantTraceEvent(state, {
+  type: 'tool_progress',
+  tool_call_id: 'call-terminal-alias',
+  name: 'terminal',
+  progress: 'running pytest',
+});
+return {
+  orphanCount: state.trace.orphanNodes.length,
+  toolCount: state.trace.toolNodes.length,
+  toolProgress: state.trace.toolNodes[0]?.payload?.tool?.progress || [],
+  eventTypes: state.events.map(event => event.type),
+};
+            """
+        )
+
+        self.assertEqual(result["orphanCount"], 0)
+        self.assertEqual(result["toolCount"], 1)
+        self.assertEqual(result["toolProgress"][0]["label"], "running pytest")
+        self.assertEqual(result["eventTypes"], ["tool_call"])
+
+    def test_delegate_task_renderer_accepts_raw_result_arrays(self):
+        result = _run_dashboard_trace_js(
+            """
+globalThis.escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/\"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+globalThis.highlightJSON = (value) => String(value ?? '');
+const raw = JSON.stringify([
+  { status: 'completed', task_index: 0, summary: 'subagent A found the bug', duration_seconds: 3 },
+  { status: 'failed', task_index: 1, error: 'subagent B timed out', api_calls: 2 }
+]);
+const html = renderToolOutput('delegate_task', JSON.parse(raw), raw);
+return {
+  hasFirstSummary: html.includes('subagent A found the bug'),
+  hasSecondError: html.includes('subagent B timed out'),
+  hasNoEmptyWarning: !html.includes('No delegated task results were returned.'),
+};
+            """
+        )
+
+        self.assertTrue(result["hasFirstSummary"])
+        self.assertTrue(result["hasSecondError"])
+        self.assertTrue(result["hasNoEmptyWarning"])
+
     def test_historical_hydration_uses_same_timeline_semantics(self):
         result = _run_dashboard_trace_js(
             """

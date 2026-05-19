@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import importlib.util
 import json
 import os
 import re
@@ -18,6 +19,10 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 from starlette.responses import JSONResponse, PlainTextResponse
+try:
+    from starlette.responses import StreamingResponse
+except Exception:  # Lightweight test stubs may omit StreamingResponse.
+    StreamingResponse = PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "hermes-agent"))
@@ -219,6 +224,9 @@ except Exception:
 
 HERMES_API = os.getenv("HERMES_API", "http://127.0.0.1:8642")
 HERMES_HOME = get_hermes_home()
+SELF_IMPROVEMENT_HOME = Path(
+    os.getenv("SELF_IMPROVEMENT_HOME", str(Path.home() / "self-improvement"))
+).expanduser().resolve()
 API_KEY = os.getenv(
     "API_SERVER_KEY", "hermes-dashboard-secret-9e4349ef052042545dd435d3330a2287"
 )
@@ -2589,6 +2597,1447 @@ async def get_skill_content(request):
     return JSONResponse({"id": skill_id, "content": content, "files": files})
 
 
+def _parse_game_skill_frontmatter(skill_md: Path) -> dict:
+    """Return YAML frontmatter from a game SKILL.md file, tolerating plain markdown."""
+    try:
+        content = skill_md.read_text(encoding="utf-8")
+    except Exception:
+        return {}
+    if not content.startswith("---"):
+        return {}
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    try:
+        meta = yaml.safe_load(parts[1]) or {}
+    except Exception:
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _categorize_game_skill(tags: list[str], description: str) -> str:
+    haystack = " ".join(tags + [description]).lower()
+
+    def has_any(words: tuple[str, ...]) -> bool:
+        return any(re.search(r"(?<![a-z0-9])" + re.escape(word) + r"(?![a-z0-9])", haystack) for word in words)
+
+    if has_any(("watch", "doom", "vizdoom", "fps", "stream")):
+        return "Watch"
+    if has_any(("emulator", "pokemon", "gameboy", "rom")):
+        return "Emulator"
+    if has_any(("server", "minecraft", "modpack")):
+        return "Server"
+    if has_any(("stats", "analytics", "coach", "strategy")):
+        return "Analysis"
+    return "Tool"
+
+
+def get_games_catalog() -> dict:
+    """Discover gaming-related Hermes skills for the dashboard Games tab."""
+    gaming_dir = HERMES_HOME / "skills" / "gaming"
+    games = []
+    if gaming_dir.exists():
+        for item in sorted(gaming_dir.iterdir(), key=lambda p: p.name.lower()):
+            if not item.is_dir() or item.name.startswith("."):
+                continue
+            skill_md = item / "SKILL.md"
+            meta = _parse_game_skill_frontmatter(skill_md) if skill_md.exists() else {}
+            name = str(meta.get("name") or item.name)
+            description = str(meta.get("description") or "")
+            tags = meta.get("tags") or []
+            if isinstance(tags, str):
+                tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
+            tags = [str(tag) for tag in tags]
+            dashboard_meta = meta.get("dashboard") if isinstance(meta.get("dashboard"), dict) else {}
+            game = {
+                "id": item.name,
+                "name": name.replace("-", " ").replace("_", " ").title(),
+                "description": description,
+                "tags": tags,
+                "category": _categorize_game_skill(tags, description),
+                "skill_path": str(skill_md if skill_md.exists() else item),
+            }
+            if dashboard_meta:
+                upload_url = dashboard_meta.get("upload_url")
+                upload_label = dashboard_meta.get("upload_label")
+                watch_url = dashboard_meta.get("watch_url")
+                launch_label = dashboard_meta.get("launch_label")
+                control_url = dashboard_meta.get("control_url")
+                control_label = dashboard_meta.get("control_label")
+                status_hint = dashboard_meta.get("status_hint")
+                if upload_url:
+                    game["upload_url"] = str(upload_url)
+                if upload_label:
+                    game["upload_label"] = str(upload_label)
+                if watch_url:
+                    game["watch_url"] = str(watch_url)
+                if launch_label:
+                    game["launch_label"] = str(launch_label)
+                if control_url:
+                    game["control_url"] = str(control_url)
+                if control_label:
+                    game["control_label"] = str(control_label)
+                if status_hint:
+                    game["status_hint"] = str(status_hint)
+            games.append(game)
+    return {"games": games, "count": len(games)}
+
+
+async def get_games_endpoint(request):
+    return JSONResponse(get_games_catalog())
+
+
+DOOM_WATCH_SERVER_URL = os.getenv("HERMES_DOOM_WATCH_URL", "http://127.0.0.1:9988")
+POKEMON_SERVER_URL = os.getenv("HERMES_POKEMON_SERVER_URL", "http://127.0.0.1:9879")
+
+
+def _rewrite_doom_watch_html(html: str) -> str:
+    """Make upstream Doom watch HTML safe under the dashboard /doom/ proxy.
+
+    The standalone watch server uses root-absolute URLs like /status.json and
+    /stream.mjpg. Those work when opened directly on port 9988, but inside the
+    dashboard proxy they point at the dashboard root and 404. Rewriting them to
+    /doom/... keeps the iframe same-origin and proxy-scoped.
+    """
+    replacements = {
+        'src="/stream.mjpg"': 'src="/doom/stream.mjpg"',
+        "src='/stream.mjpg'": "src='/doom/stream.mjpg'",
+        "fetch('/status.json'": "fetch('/doom/status.json'",
+        'fetch("/status.json"': 'fetch("/doom/status.json"',
+        "<code>/status.json</code> · <code>/stream.mjpg</code>": "<code>/doom/status.json</code> · <code>/doom/stream.mjpg</code>",
+    }
+    for old, new in replacements.items():
+        html = html.replace(old, new)
+    return html
+
+
+async def doom_watch_proxy_endpoint(request):
+    """Proxy the local ViZDoom watch server through the dashboard origin.
+
+    The watch server intentionally binds to 127.0.0.1 for safety. Browsing the
+    dashboard from another machine would make an iframe pointed at 127.0.0.1 try
+    to connect to the viewer's laptop instead of this host, causing connection
+    refused. Keeping the skill URL as /doom/ and proxying here makes the iframe
+    same-origin while preserving the local-only watch server.
+    """
+    path = request.path_params.get("path", "")
+    upstream_path = "/" + path.lstrip("/") if path else "/"
+    query = request.url.query
+    upstream_url = DOOM_WATCH_SERVER_URL.rstrip("/") + upstream_path
+    if query:
+        upstream_url += "?" + query
+
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        body = await request.body() if request.method not in ("GET", "HEAD") else None
+        headers = {}
+        content_type_header = request.headers.get("content-type")
+        if content_type_header:
+            headers["content-type"] = content_type_header
+        upstream_request = client.build_request(request.method, upstream_url, content=body, headers=headers)
+        upstream = await client.send(upstream_request, stream=True)
+    except httpx.RequestError as exc:
+        await client.aclose()
+        return PlainTextResponse(
+            "Doom watch server is not responding. Start it with: "
+            "cd ~/.hermes/skills/gaming/doom-player && "
+            ".venv/bin/python scripts/doom_watch_server.py --host 127.0.0.1 --port 9988\n"
+            f"Upstream error: {exc}",
+            status_code=502,
+        )
+
+    content_type = upstream.headers.get("content-type", "application/octet-stream")
+    if "text/html" in content_type.lower():
+        try:
+            body = await upstream.aread()
+            text = body.decode(upstream.encoding or "utf-8", errors="replace")
+            rewritten = _rewrite_doom_watch_html(text).encode("utf-8")
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+        async def html_iter():
+            yield rewritten
+
+        return StreamingResponse(
+            html_iter(),
+            status_code=upstream.status_code,
+            media_type="text/html; charset=utf-8",
+            headers={"cache-control": "no-cache"},
+        )
+
+    async def body_iter():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    headers = {}
+    for name in ("cache-control", "pragma", "age"):
+        if name in upstream.headers:
+            headers[name] = upstream.headers[name]
+    return StreamingResponse(
+        body_iter(),
+        status_code=upstream.status_code,
+        media_type=content_type,
+        headers=headers,
+    )
+
+
+def _rewrite_pokemon_dashboard_js(js: str) -> str:
+    """Scope the standalone pokemon-agent dashboard JS under /pokemon.
+
+    The upstream dashboard assumes its API is mounted at the browser origin root
+    (/state, /action, /screenshot/base64, /ws). In Hermes Dashboard it is opened
+    inside an iframe at /pokemon/dashboard/, so HTTP calls must go through the
+    dashboard proxy. WebSocket reconnects are optional because the upstream UI
+    already polls screenshots/state; /pokemon/ws is still the correct same-origin
+    location if a WS proxy is added later.
+    """
+    replacements = {
+        "return window.location.protocol + '//' + window.location.host;":
+            "return window.location.protocol + '//' + window.location.host + '/pokemon';",
+        "return proto + '//' + window.location.host + '/ws';":
+            "return proto + '//' + window.location.host + '/pokemon/ws';",
+        "return proto + '//' + window.location.host + '/watch/ws?role=stats';":
+            "return proto + '//' + window.location.host + '/pokemon/watch/ws?role=stats';",
+    }
+    for old, new in replacements.items():
+        js = js.replace(old, new)
+    return js
+
+
+def _pokemon_upstream_path(path: str) -> str:
+    path = (path or "").lstrip("/")
+    if not path:
+        return "/dashboard/"
+    if path == "dashboard":
+        return "/dashboard/"
+    return "/" + path
+
+
+async def pokemon_proxy_endpoint(request):
+    """Proxy the local pokemon-agent dashboard/API through Hermes Dashboard.
+
+    This mirrors the Doom watch proxy: the game server stays local to this host,
+    while remote dashboard users can open /pokemon/dashboard/ in the Games tab
+    and still view frames plus send A/B/D-pad controls.
+    """
+    path = request.path_params.get("path", "")
+    upstream_path = _pokemon_upstream_path(path)
+    query = request.url.query
+    upstream_url = POKEMON_SERVER_URL.rstrip("/") + upstream_path
+    if query:
+        upstream_url += "?" + query
+
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        body = await request.body() if request.method not in ("GET", "HEAD") else None
+        headers = {}
+        content_type_header = request.headers.get("content-type")
+        if content_type_header:
+            headers["content-type"] = content_type_header
+        upstream_request = client.build_request(request.method, upstream_url, content=body, headers=headers)
+        upstream = await client.send(upstream_request, stream=True)
+    except httpx.RequestError as exc:
+        await client.aclose()
+        return PlainTextResponse(
+            "Pokemon server is not responding. Start it with: "
+            "cd /home/mojo/pokemon-agent && . .venv/bin/activate && "
+            "pokemon-agent serve --rom /home/mojo/roms/pokemon_gold.gbc --port 9879 "
+            "--data-dir /home/mojo/.pokemon-agent-gold\n"
+            f"Upstream error: {exc}",
+            status_code=502,
+        )
+
+    content_type = upstream.headers.get("content-type", "application/octet-stream")
+    lower_content_type = content_type.lower()
+    should_rewrite_js = upstream_path.endswith(".js") or "javascript" in lower_content_type
+    if should_rewrite_js:
+        try:
+            body = await upstream.aread()
+            text = body.decode(upstream.encoding or "utf-8", errors="replace")
+            rewritten = _rewrite_pokemon_dashboard_js(text).encode("utf-8")
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+        async def js_iter():
+            yield rewritten
+
+        return StreamingResponse(
+            js_iter(),
+            status_code=upstream.status_code,
+            media_type="application/javascript; charset=utf-8",
+            headers={"cache-control": "no-cache"},
+        )
+
+    async def body_iter():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    headers = {}
+    for name in ("cache-control", "pragma", "age"):
+        if name in upstream.headers:
+            headers[name] = upstream.headers[name]
+    return StreamingResponse(
+        body_iter(),
+        status_code=upstream.status_code,
+        media_type=content_type,
+        headers=headers,
+    )
+
+
+async def get_game_content_endpoint(request):
+    game_id = request.path_params["game_id"]
+    safe_id = Path(game_id).name
+    game_dir = HERMES_HOME / "skills" / "gaming" / safe_id
+    skill_md = game_dir / "SKILL.md"
+    if not skill_md.exists():
+        return JSONResponse({"error": "Game skill not found"}, status_code=404)
+    try:
+        content = skill_md.read_text(encoding="utf-8")
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    files = [item.name for item in game_dir.iterdir() if item.is_file()]
+    return JSONResponse({"id": f"gaming/{safe_id}", "content": content, "files": files})
+
+
+SELF_IMPROVEMENT_ALLOWED_LAYERS = {
+    "agent_core",
+    "tooling",
+    "cron_autonomy",
+    "memory_becomussy",
+    "subagents",
+    "provider_routing",
+    "testing_verification",
+    "dashboard_control_surface",
+}
+SELF_IMPROVEMENT_BANNED_PHRASES = (
+    "new github project",
+    "github actions",
+    "repo creation",
+    "standalone project",
+    "unrelated project",
+    "gh repo create",
+    "git push",
+)
+
+
+def _self_improvement_json(path: Path, default):
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+
+def _write_self_improvement_json(path: Path, data) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _append_self_improvement_audit(action: str, details: dict, actor: str = "dashboard") -> dict:
+    entry = {
+        "id": f"audit_{uuid.uuid4().hex[:12]}",
+        "action": action,
+        "actor": actor,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "details": details,
+    }
+    audit_path = SELF_IMPROVEMENT_HOME / "control-audit.jsonl"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    with audit_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, sort_keys=True) + "\n")
+    return entry
+
+
+def _read_self_improvement_audit(limit: int = 20) -> list[dict]:
+    audit_path = SELF_IMPROVEMENT_HOME / "control-audit.jsonl"
+    entries: list[dict] = []
+    if audit_path.exists():
+        for line in audit_path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(item, dict):
+                entries.append(item)
+    return list(reversed(entries[-limit:]))
+
+
+def _summarize_validation(validation: dict) -> tuple[str, float, list[str]]:
+    status = str(validation.get("status") or validation.get("result") or "").lower()
+    commands_raw = validation.get("commands") or validation.get("verification_commands") or []
+    commands: list[str] = []
+    failures = 0
+    if isinstance(commands_raw, list):
+        for item in commands_raw:
+            if isinstance(item, dict):
+                command = item.get("command") or item.get("cmd")
+                if command:
+                    commands.append(str(command))
+                if item.get("exit_code") not in (None, 0, "0"):
+                    failures += 1
+            elif isinstance(item, str):
+                commands.append(item)
+    if status in {"passed", "pass", "ok", "success"} and failures == 0:
+        return "verified_useful_change", 1.0, commands
+    if status in {"skipped", "skip", "silent", "noop", "no-op", "paused"}:
+        return "valid_skip", 0.5, commands
+    if status or failures:
+        return "failed_or_unsafe_attempt", 0.0, commands
+    return "unknown", 0.0, commands
+
+
+def get_self_improvement_ledger(limit: int = 25) -> dict:
+    runs_dir = SELF_IMPROVEMENT_HOME / "runs"
+    runs: list[dict] = []
+    if runs_dir.exists():
+        for run_dir in sorted((p for p in runs_dir.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True):
+            decision = _self_improvement_json(run_dir / "decision.json", {})
+            validation = _self_improvement_json(run_dir / "validation.json", {})
+            backup = _self_improvement_json(run_dir / "backup.json", {})
+            changes_path = run_dir / "changes.md"
+            summary = ""
+            if changes_path.exists():
+                summary = changes_path.read_text(encoding="utf-8", errors="replace").strip().split("\n", 1)[0][:240]
+            outcome, score, commands = _summarize_validation(validation if isinstance(validation, dict) else {})
+            artifacts = [p.name for p in sorted(run_dir.iterdir()) if p.is_file()]
+            run_id = str(decision.get("run_id") or run_dir.name) if isinstance(decision, dict) else run_dir.name
+            runs.append(
+                {
+                    "run_id": run_id,
+                    "started_at": decision.get("started_at") if isinstance(decision, dict) else None,
+                    "ended_at": validation.get("ended_at") if isinstance(validation, dict) else None,
+                    "trigger_source": decision.get("trigger_source") if isinstance(decision, dict) else None,
+                    "selected_layer": decision.get("selected_layer") if isinstance(decision, dict) else None,
+                    "candidate": decision.get("candidate") or decision.get("candidate_title") if isinstance(decision, dict) else None,
+                    "files_touched": validation.get("files_touched", []) if isinstance(validation, dict) else [],
+                    "verification_commands": commands,
+                    "status": validation.get("status") if isinstance(validation, dict) else None,
+                    "outcome": outcome,
+                    "outcome_score": score,
+                    "summary": summary,
+                    "artifacts": artifacts,
+                    "artifact_dir": str(run_dir),
+                    "backup_dir": backup.get("backup_dir") if isinstance(backup, dict) else None,
+                }
+            )
+            if len(runs) >= limit:
+                break
+    return {"runs": runs, "count": len(runs)}
+
+
+def _self_improvement_feature_queue_path() -> Path:
+    return SELF_IMPROVEMENT_HOME / "feature-candidates.jsonl"
+
+
+def _self_improvement_queue_helper_path() -> Path:
+    return Path.home() / "scripts" / "self-augment" / "self_improvement_queue.py"
+
+
+def _load_self_improvement_queue_helper():
+    """Load the canonical queue helper used by research/tournament crons."""
+    helper_path = _self_improvement_queue_helper_path()
+    if not helper_path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("hermes_self_improvement_queue", helper_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _normalize_dashboard_candidate_for_strict_queue(candidate: dict) -> dict:
+    """Map dashboard submissions to the canonical strict JSONL queue schema."""
+    item = _candidate_for_dashboard_policy(candidate)
+    title = str(item.get("title") or "").strip()
+    evidence_source = str(item.get("evidence_source") or "").strip()
+    benefit = str(item.get("expected_measurable_benefit") or "").strip()
+    problem = str(item.get("problem") or evidence_source or title or "Manual dashboard candidate").strip()
+    if "proposed_solution" in item:
+        proposed_solution = str(item.get("proposed_solution") or "").strip()
+    else:
+        proposed_solution = str(benefit or item.get("explanation") or "").strip()
+    raw_has_evidence = isinstance((candidate or {}).get("evidence"), list)
+    evidence = item.get("evidence") if isinstance(item.get("evidence"), list) else []
+    evidence = [str(value).strip() for value in evidence if str(value).strip()]
+    if not raw_has_evidence:
+        for value in (evidence_source, benefit, problem, proposed_solution):
+            if value and value not in evidence:
+                evidence.append(value)
+    normalized = dict(item)
+    normalized["title"] = title
+    normalized["problem"] = problem
+    normalized["proposed_solution"] = proposed_solution
+    normalized["target_layer"] = item.get("target_layer") or item.get("allowed_layer") or "dashboard_control_surface"
+    normalized["evidence"] = evidence[:4]
+    normalized.setdefault("source", "dashboard")
+    for dashboard_key, strict_key in (
+        ("expected_impact", "usefulness_score"),
+        ("evidence_strength", "novelty_score"),
+        ("verification_clarity", "testability_score"),
+    ):
+        if strict_key not in normalized or normalized.get(strict_key) is None:
+            normalized[strict_key] = int(item.get(dashboard_key, 5) or 5)
+    return normalized
+
+
+def _normalize_self_improvement_queue_candidate(candidate: dict, *, source_path: str) -> dict:
+    """Normalize both dashboard legacy JSON and cron JSONL queue rows for the UI.
+
+    The active self-improvement research/tournament pipeline writes JSONL rows
+    with fields such as ``target_layer``, ``problem``, and
+    ``proposed_solution``.  The dashboard originally used ``queue.json`` with
+    ``allowed_layer`` and score/explanation fields.  Keep both shapes readable
+    so the control surface reflects the live cron queue instead of a divergent
+    legacy file.
+    """
+    item = dict(candidate or {})
+    layer = str(item.get("target_layer") or item.get("allowed_layer") or "")
+    item.setdefault("allowed_layer", layer)
+    item.setdefault("target_layer", layer)
+    if "score" not in item:
+        score_parts = []
+        for key in ("usefulness_score", "testability_score", "novelty_score"):
+            try:
+                value = item.get(key)
+                if value is not None:
+                    score_parts.append(float(value))
+            except (TypeError, ValueError):
+                pass
+        item["score"] = round(sum(score_parts) / len(score_parts), 2) if score_parts else None
+    if not item.get("explanation"):
+        item["explanation"] = (
+            item.get("selection_reason")
+            or item.get("problem")
+            or item.get("proposed_solution")
+            or item.get("expected_measurable_benefit")
+            or ""
+        )
+    item["queue_source"] = source_path
+    return item
+
+
+def _load_self_improvement_jsonl_queue(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    candidates: list[dict] = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            normalized = _normalize_self_improvement_queue_candidate(row, source_path=path.name)
+            normalized.setdefault("_queue_line", line_no)
+            candidates.append(normalized)
+    return candidates
+
+
+def _load_self_improvement_legacy_queue(path: Path) -> list[dict]:
+    data = _self_improvement_json(path, {"candidates": []})
+    if not isinstance(data, dict) or not isinstance(data.get("candidates"), list):
+        return []
+    return [
+        _normalize_self_improvement_queue_candidate(candidate, source_path=path.name)
+        for candidate in data["candidates"]
+        if isinstance(candidate, dict)
+    ]
+
+
+def _summarize_self_improvement_queue(candidates: list[dict]) -> dict:
+    status_counts: dict[str, int] = {}
+    target_layer_counts: dict[str, int] = {}
+    for candidate in candidates:
+        status = str(candidate.get("status") or "queued")
+        layer = str(candidate.get("target_layer") or candidate.get("allowed_layer") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        target_layer_counts[layer] = target_layer_counts.get(layer, 0) + 1
+    return {"total": len(candidates), "statuses": status_counts, "target_layers": target_layer_counts}
+
+
+def _self_improvement_backlog_gate_summary(jsonl_path: Path, jsonl_candidates: list[dict]) -> dict:
+    """Return the canonical research-cron backlog gate for dashboard visibility.
+
+    The queue helper owns the live research/tournament capacity rules.  The
+    dashboard should surface those read-only decisions instead of forcing
+    operators to infer them from historical JSONL row counts.
+    """
+    helper = _load_self_improvement_queue_helper()
+    if helper is not None and hasattr(helper, "backlog_gate"):
+        try:
+            result = helper.backlog_gate(jsonl_path)
+            if isinstance(result, dict):
+                return result
+        except Exception as exc:
+            return {"ok": False, "action": "unknown", "reason": str(exc), "queue_path": str(jsonl_path)}
+
+    summary = _summarize_self_improvement_queue(jsonl_candidates)
+    statuses = summary.get("statuses", {})
+    queued_count = int(statuses.get("queued", 0))
+    selected_count = int(statuses.get("selected", 0))
+    target_queued_backlog = 6
+    selected_pause_threshold = 3
+    max_additions = 3
+    if selected_count >= selected_pause_threshold:
+        action = "silent"
+        needed_additions = 0
+        reason = "selected backlog is full; let the build loop consume selected candidates"
+    elif queued_count >= target_queued_backlog:
+        action = "silent"
+        needed_additions = 0
+        reason = "queued backlog is full; research cron should not add candidates"
+    else:
+        needed_additions = min(max_additions, max(0, target_queued_backlog - queued_count))
+        action = "add_candidates" if needed_additions else "silent"
+        reason = f"queued backlog has room for {needed_additions} candidate(s)"
+    return {
+        "ok": True,
+        "action": action,
+        "reason": reason,
+        "queued_count": queued_count,
+        "selected_count": selected_count,
+        "target_queued_backlog": target_queued_backlog,
+        "selected_pause_threshold": selected_pause_threshold,
+        "max_additions_configured": max_additions,
+        "max_additions_this_tick": needed_additions,
+        "needed_additions": needed_additions,
+        "summary": summary,
+        "queue_path": str(jsonl_path),
+    }
+
+
+def _load_self_improvement_queue() -> dict:
+    jsonl_path = _self_improvement_feature_queue_path()
+    legacy_path = SELF_IMPROVEMENT_HOME / "queue.json"
+    jsonl_candidates = _load_self_improvement_jsonl_queue(jsonl_path)
+    legacy_candidates = _load_self_improvement_legacy_queue(legacy_path)
+    seen = {str(candidate.get("id")) for candidate in jsonl_candidates if candidate.get("id")}
+    merged = jsonl_candidates + [
+        candidate for candidate in legacy_candidates
+        if not candidate.get("id") or str(candidate.get("id")) not in seen
+    ]
+    return {
+        "candidates": merged,
+        "queue_path": str(jsonl_path if jsonl_path.exists() else legacy_path),
+        "legacy_queue_path": str(legacy_path),
+        "source_counts": {"feature-candidates.jsonl": len(jsonl_candidates), "queue.json": len(legacy_candidates)},
+        "status_counts": _summarize_self_improvement_queue(merged).get("statuses", {}),
+        "target_layer_counts": _summarize_self_improvement_queue(merged).get("target_layers", {}),
+        "backlog_gate": _self_improvement_backlog_gate_summary(jsonl_path, jsonl_candidates),
+    }
+
+
+def _candidate_for_jsonl_queue(candidate: dict) -> dict:
+    item = dict(candidate or {})
+    item.setdefault("problem", item.get("evidence_source") or item.get("title") or "Manual dashboard candidate")
+    item.setdefault("proposed_solution", item.get("expected_measurable_benefit") or item.get("explanation") or "")
+    item.setdefault("target_layer", item.get("allowed_layer") or "dashboard_control_surface")
+    item.setdefault("evidence", [item.get("evidence_source")] if item.get("evidence_source") else [])
+    item.setdefault("updated_at", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    return item
+
+
+def _candidate_for_dashboard_policy(candidate: dict) -> dict:
+    """Accept either legacy dashboard fields or live JSONL queue fields for policy scoring."""
+    item = dict(candidate or {})
+    layer = item.get("allowed_layer") or item.get("target_layer")
+    if layer is not None:
+        item.setdefault("allowed_layer", layer)
+        item.setdefault("target_layer", layer)
+
+    evidence = item.get("evidence")
+    if not str(item.get("evidence_source") or "").strip():
+        if isinstance(evidence, list):
+            first_evidence = next((str(value).strip() for value in evidence if str(value).strip()), "")
+            if first_evidence:
+                item["evidence_source"] = first_evidence
+        elif str(evidence or "").strip():
+            item["evidence_source"] = str(evidence).strip()
+
+    if not str(item.get("expected_measurable_benefit") or "").strip():
+        benefit = item.get("proposed_solution") or item.get("selection_reason") or item.get("problem")
+        if str(benefit or "").strip():
+            item["expected_measurable_benefit"] = str(benefit).strip()
+
+    if not str(item.get("explanation") or "").strip():
+        item["explanation"] = (
+            item.get("selection_reason")
+            or item.get("proposed_solution")
+            or item.get("problem")
+            or item.get("expected_measurable_benefit")
+            or ""
+        )
+    return item
+
+
+def _save_self_improvement_queue(data: dict) -> None:
+    candidates = data.get("candidates", []) if isinstance(data, dict) else []
+    if not isinstance(candidates, list):
+        candidates = []
+    path = _self_improvement_feature_queue_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        json.dumps(_candidate_for_jsonl_queue(candidate), sort_keys=True)
+        for candidate in candidates
+        if isinstance(candidate, dict)
+    ]
+    path.write_text("\n".join(rows) + ("\n" if rows else ""), encoding="utf-8")
+
+
+def _score_self_improvement_candidate(candidate: dict) -> tuple[float, list[str]]:
+    candidate = _candidate_for_dashboard_policy(candidate)
+    reasons: list[str] = []
+    layer = str(candidate.get("allowed_layer") or "")
+    if layer not in SELF_IMPROVEMENT_ALLOWED_LAYERS:
+        reasons.append("outside allowed layers")
+    title_blob = " ".join(
+        str(candidate.get(k) or "")
+        for k in ("title", "evidence_source", "expected_measurable_benefit", "explanation", "problem", "proposed_solution")
+    ).lower()
+    for phrase in SELF_IMPROVEMENT_BANNED_PHRASES:
+        if phrase in title_blob:
+            reasons.append(f"banned scope: {phrase}")
+    if not str(candidate.get("evidence_source") or "").strip():
+        reasons.append("missing evidence source")
+    if not str(candidate.get("expected_measurable_benefit") or "").strip():
+        reasons.append("missing measurable benefit")
+    def bounded(name: str, default: int = 3) -> int:
+        try:
+            return max(1, min(5, int(candidate.get(name, default))))
+        except Exception:
+            return default
+    evidence = bounded("evidence_strength")
+    impact = bounded("expected_impact")
+    clarity = bounded("verification_clarity")
+    size = bounded("implementation_size")
+    risk_value = str(candidate.get("risk") or "medium").lower()
+    risk_penalty = {"low": 0.5, "medium": 1.5, "high": 3.0}.get(risk_value, 1.5)
+    score = evidence + impact + clarity - size - risk_penalty
+    if reasons:
+        score = min(score, 0.0)
+    return round(score, 2), reasons
+
+
+def add_self_improvement_candidate(candidate: dict) -> dict:
+    queue = _load_self_improvement_queue()
+    helper = _load_self_improvement_queue_helper()
+    strict_item = _normalize_dashboard_candidate_for_strict_queue(candidate)
+    strict_item.setdefault("id", f"cand_{uuid.uuid4().hex[:12]}")
+    strict_item.setdefault("created_at", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    strict_item.setdefault("decision", None)
+    strict_item.setdefault("selected_run_id", None)
+
+    if helper is not None:
+        result = helper.add_candidates(
+            _self_improvement_feature_queue_path(),
+            [strict_item],
+            source="dashboard",
+            strict=True,
+        )
+        if not result.get("ok"):
+            item = _candidate_for_dashboard_policy(strict_item)
+            item["score"] = 0.0
+            item["status"] = "rejected"
+            policy_score, policy_reasons = _score_self_improvement_candidate(item)
+            errors = list(result.get("errors") or ["strict queue validation failed"])
+            errors.extend(reason for reason in policy_reasons if reason not in errors)
+            item["explanation"] = "; ".join(errors)
+            _append_self_improvement_audit("candidate_added", {"candidate_id": item.get("id"), "status": item["status"]})
+            return {"accepted": False, "candidate": item, "queue_result": result}
+        if result.get("duplicates"):
+            item = _candidate_for_dashboard_policy(strict_item)
+            item["score"] = 0.0
+            item["status"] = "rejected"
+            item["explanation"] = "duplicate candidate already exists in canonical queue"
+            _append_self_improvement_audit("candidate_added", {"candidate_id": item.get("id"), "status": item["status"]})
+            return {"accepted": False, "candidate": item, "queue_result": result}
+        refreshed = _load_self_improvement_queue()
+        added_id = (result.get("candidate_ids") or [strict_item.get("id")])[0]
+        item = next((entry for entry in refreshed["candidates"] if entry.get("id") == added_id), strict_item)
+        item = _candidate_for_dashboard_policy(item)
+        score, reasons = _score_self_improvement_candidate(item)
+        item["score"] = score
+        item["status"] = "queued" if not reasons else "rejected"
+        item["explanation"] = "Accepted: canonical strict queue validation passed." if not reasons else "; ".join(reasons)
+        _append_self_improvement_audit("candidate_added", {"candidate_id": item.get("id"), "status": item["status"]})
+        return {"accepted": item["status"] == "queued", "candidate": item, "queue_result": result}
+
+    item = _candidate_for_dashboard_policy(candidate)
+    item.setdefault("id", f"cand_{uuid.uuid4().hex[:12]}")
+    item.setdefault("created_at", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    item.setdefault("decision", None)
+    item.setdefault("selected_run_id", None)
+    score, reasons = _score_self_improvement_candidate(item)
+    item["score"] = score
+    item["status"] = "queued" if not reasons else "rejected"
+    item["explanation"] = "Accepted: evidence-backed and in-scope." if not reasons else "; ".join(reasons)
+    queue["candidates"].append(item)
+    _save_self_improvement_queue(queue)
+    _append_self_improvement_audit("candidate_added", {"candidate_id": item["id"], "status": item["status"]})
+    return {"accepted": item["status"] == "queued", "candidate": item}
+
+
+def list_self_improvement_candidates() -> dict:
+    queue = _load_self_improvement_queue()
+    candidates = sorted(queue["candidates"], key=lambda c: (c.get("status") != "queued", -float(c.get("score") or 0)))
+    return {
+        "candidates": candidates,
+        "count": len(candidates),
+        "queue_path": queue.get("queue_path"),
+        "legacy_queue_path": queue.get("legacy_queue_path"),
+        "source_counts": queue.get("source_counts", {}),
+        "status_counts": queue.get("status_counts", {}),
+        "target_layer_counts": queue.get("target_layer_counts", {}),
+        "backlog_gate": queue.get("backlog_gate", {}),
+    }
+
+
+def select_self_improvement_candidate(threshold: float = 5.0) -> dict:
+    queue = _load_self_improvement_queue()
+    queued = [c for c in queue["candidates"] if c.get("status") == "queued"]
+    if not queued:
+        explanation = "No queued candidate clears policy; pause instead of inventing work."
+        _append_self_improvement_audit("candidate_selection_paused", {"explanation": explanation})
+        return {"decision": "pause", "explanation": explanation, "candidate": None}
+    best = max(queued, key=lambda c: float(c.get("score") or 0))
+    if float(best.get("score") or 0) < threshold:
+        explanation = f"Best candidate score {best.get('score')} is below threshold {threshold}."
+        _append_self_improvement_audit("candidate_selection_paused", {"explanation": explanation, "candidate_id": best.get("id")})
+        return {"decision": "pause", "explanation": explanation, "candidate": best}
+    best["status"] = "selected"
+    best["decision"] = "build"
+    best["selected_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    helper = _load_self_improvement_queue_helper()
+    if helper is not None and best.get("id"):
+        try:
+            helper.update_status(
+                _self_improvement_feature_queue_path(),
+                str(best["id"]),
+                "selected",
+                reason="selected by dashboard control surface",
+            )
+        except Exception:
+            _save_self_improvement_queue(queue)
+    else:
+        _save_self_improvement_queue(queue)
+    _append_self_improvement_audit("candidate_selected", {"candidate_id": best.get("id"), "score": best.get("score")})
+    return {"decision": "build", "explanation": best.get("explanation", "selected"), "candidate": best}
+
+
+def _self_improvement_jobs_path() -> Path:
+    return HERMES_HOME / "cron" / "jobs.json"
+
+
+def _load_cron_jobs_file() -> dict:
+    return _self_improvement_json(_self_improvement_jobs_path(), {"jobs": []})
+
+
+def _iter_cron_jobs(jobs_data) -> list[dict]:
+    if isinstance(jobs_data, dict):
+        jobs = jobs_data.get("jobs", [])
+    elif isinstance(jobs_data, list):
+        jobs = jobs_data
+    else:
+        jobs = []
+    return [job for job in jobs if isinstance(job, dict)]
+
+
+def _cron_job_enabled(job: dict) -> bool:
+    return bool(job.get("enabled", job.get("state") not in {"paused", "disabled"}))
+
+
+def _find_self_improvement_job(jobs_data) -> Optional[dict]:
+    for job in _iter_cron_jobs(jobs_data):
+        if job.get("name") == "self-improvement-loop" or job.get("script") == "self-improvement-loop.py":
+            return job
+    return None
+
+
+def get_self_improvement_cron_mesh() -> dict:
+    jobs_data = _load_cron_jobs_file()
+    jobs = _iter_cron_jobs(jobs_data)
+    self_jobs = []
+    legacy_jobs = []
+    required_skills = {
+        "self-aug-decision-packet",
+        "self-gap-scout",
+        "self-tool-registry",
+        "self-tool-hygiene",
+        "self-tool-smoke",
+        "hermes-agent",
+        "becomussy",
+        "systematic-debugging",
+    }
+    banned_skills = {"zai-web-search", "spec-driven-build", "tournament-build", "github-repo-management"}
+    for job in jobs:
+        name = str(job.get("name") or "")
+        script = str(job.get("script") or "")
+        skills = [str(skill) for skill in (job.get("skills") or [])]
+        enabled = _cron_job_enabled(job)
+        summary = {
+            "id": job.get("id"),
+            "name": name,
+            "script": script or None,
+            "enabled": enabled,
+            "state": job.get("state") or ("scheduled" if enabled else "paused"),
+            "schedule": job.get("schedule"),
+            "max_runs_per_day": job.get("max_runs_per_day"),
+            "last_run_at": job.get("last_run_at"),
+            "next_run_at": job.get("next_run_at"),
+            "skills": skills,
+            "missing_required_skills": sorted(required_skills - set(skills)) if name == "self-improvement-loop" else [],
+            "banned_skills_present": sorted(set(skills) & banned_skills),
+        }
+        if "self-improvement" in name or "self-augmentation" in name or script == "self-improvement-loop.py":
+            self_jobs.append(summary)
+        elif name in {"autonomous-research", "autonomous-build", "tournament-build", "project-curation-tournament"}:
+            legacy_jobs.append(summary)
+    active_legacy = [job for job in legacy_jobs if job["enabled"]]
+    primary = _find_self_improvement_job(jobs_data)
+    primary_skills = set(primary.get("skills") or []) if primary else set()
+    blockers: list[str] = []
+    if not primary:
+        blockers.append("self-improvement-loop cron job is missing")
+    elif not _cron_job_enabled(primary):
+        blockers.append("self-improvement-loop is paused")
+    if primary and (required_skills - primary_skills):
+        blockers.append("self-improvement-loop is missing required skills")
+    if active_legacy:
+        blockers.append("legacy build/research cron jobs are still active")
+    return {
+        "jobs_path": str(_self_improvement_jobs_path()),
+        "job_count": len(jobs),
+        "self_improvement_jobs": self_jobs,
+        "legacy_jobs": legacy_jobs,
+        "active_legacy_count": len(active_legacy),
+        "primary_job_id": primary.get("id") if primary else None,
+        "required_skills": sorted(required_skills),
+        "ok": not blockers,
+        "blockers": blockers,
+    }
+
+
+def get_self_improvement_drift_status() -> dict:
+    runs_dir = SELF_IMPROVEMENT_HOME / "runs"
+    latest = None
+    if runs_dir.exists():
+        candidates = []
+        for path in runs_dir.glob("*/cron-drift*.json"):
+            try:
+                candidates.append((path.stat().st_mtime, path))
+            except OSError:
+                continue
+        if candidates:
+            latest = max(candidates, key=lambda item: item[0])[1]
+    if latest:
+        payload = _self_improvement_json(latest, {})
+        if isinstance(payload, dict):
+            return {
+                "source": str(latest),
+                "ok": bool(payload.get("ok", False)),
+                "scope": payload.get("scope"),
+                "finding_count": payload.get("finding_count", 0),
+                "severity_counts": payload.get("severity_counts", {}),
+                "inactive_skipped_count": payload.get("inactive_skipped_count"),
+                "findings": payload.get("findings", [])[:8] if isinstance(payload.get("findings"), list) else [],
+            }
+    return {"source": None, "ok": None, "finding_count": None, "severity_counts": {}, "findings": []}
+
+
+def get_self_improvement_supervisor() -> dict:
+    jobs_data = _load_cron_jobs_file()
+    job = _find_self_improvement_job(jobs_data)
+    lock_path = SELF_IMPROVEMENT_HOME / "self-improvement.lock.json"
+    lock = _self_improvement_json(lock_path, None) if lock_path.exists() else None
+    ledger = get_self_improvement_ledger(limit=1)
+    queue = list_self_improvement_candidates()
+    queued_count = len([c for c in queue["candidates"] if c.get("status") == "queued"])
+    return {
+        "cron_job": job,
+        "active": bool(job and job.get("enabled", job.get("state") != "paused")),
+        "state": job.get("state") if job else "missing",
+        "last_run_at": job.get("last_run_at") if job else None,
+        "next_run_at": job.get("next_run_at") if job else None,
+        "lock": {"locked": lock is not None, "path": str(lock_path), "data": lock},
+        "recent_outcome_score": ledger["runs"][0]["outcome_score"] if ledger["runs"] else None,
+        "queued_candidate_count": queued_count,
+        "audit": _read_self_improvement_audit(),
+    }
+
+
+def _save_cron_jobs_file(jobs_data: dict) -> None:
+    _write_self_improvement_json(_self_improvement_jobs_path(), jobs_data)
+
+
+def apply_self_improvement_control(action: str, confirm: bool = False, actor: str = "dashboard") -> dict:
+    action = str(action or "").strip().lower()
+    jobs_data = _load_cron_jobs_file()
+    job = _find_self_improvement_job(jobs_data)
+    if action in {"pause", "resume"}:
+        if not job:
+            return {"success": False, "error": "self-improvement-loop cron job not found"}
+        if action == "pause":
+            job["enabled"] = False
+            job["state"] = "paused"
+            job["paused_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            job["paused_reason"] = "Paused from Hermes Dashboard supervisor"
+        else:
+            job["enabled"] = True
+            job["state"] = "scheduled"
+            job["paused_at"] = None
+            job["paused_reason"] = None
+        _save_cron_jobs_file(jobs_data)
+        audit = _append_self_improvement_audit(f"cron_{action}", {"job_id": job.get("id")}, actor=actor)
+        return {"success": True, "action": action, "cron_job": job, "audit": audit}
+    if action == "clear_stale_lock":
+        lock_path = SELF_IMPROVEMENT_HOME / "self-improvement.lock.json"
+        if not confirm:
+            return {"success": False, "error": "confirmation required to clear stale lock"}
+        if lock_path.exists():
+            lock_path.unlink()
+        audit = _append_self_improvement_audit("lock_cleared", {"path": str(lock_path)}, actor=actor)
+        return {"success": True, "action": action, "audit": audit}
+    if action == "kill":
+        audit = _append_self_improvement_audit("kill_requested", {"result": "no tracked process handle; cron paused only"}, actor=actor)
+        if job:
+            job["enabled"] = False
+            job["state"] = "paused"
+            job["paused_reason"] = "Kill-switch requested from Hermes Dashboard supervisor"
+            _save_cron_jobs_file(jobs_data)
+        return {"success": True, "action": action, "audit": audit, "note": "No live process handle was discoverable; future runs paused."}
+    return {"success": False, "error": f"unknown control action: {action}"}
+
+
+def get_self_improvement_status() -> dict:
+    cron_mesh = get_self_improvement_cron_mesh()
+    drift = get_self_improvement_drift_status()
+    return {
+        "ledger": get_self_improvement_ledger(),
+        "queue": list_self_improvement_candidates(),
+        "supervisor": get_self_improvement_supervisor(),
+        "cron_mesh": cron_mesh,
+        "drift": drift,
+        "policy": {
+            "allowed_layers": sorted(SELF_IMPROVEMENT_ALLOWED_LAYERS),
+            "banned_phrases": sorted(SELF_IMPROVEMENT_BANNED_PHRASES),
+            "hub_ok": bool(cron_mesh.get("ok") and drift.get("ok") is not False),
+        },
+    }
+
+
+AUTONOMOUS_DEVELOPMENT_DEFAULT_PIPELINES = [
+    {
+        "id": "self-improvement",
+        "name": "Hermes Self-Improvement Pipeline",
+        "description": "Active guarded pipeline for improving Hermes backend capabilities, tooling, Becomussy continuity, cron reliability, subagent workflows, tests, and dashboard control surfaces.",
+        "kind": "self_improvement",
+        "activation_mode": "managed",
+        "desired_enabled": True,
+        "schedule": "research every 180m · tournament every 120m · build every 120m",
+        "job_names": ["self-improvement-research-queue", "self-improvement-feature-tournament", "self-improvement-loop"],
+        "directories": ["~/self-improvement", "~/scripts/self-augment", "~/.hermes/scripts"],
+        "specifications": {
+            "research": "Mine Becomussy, cron outputs, skills, and self-augment scripts for small, testable Hermes self-improvement candidates; avoid Z.AI web search and duplicates.",
+            "tournament": "Run a champion/judge tournament over queued candidates only when selection capacity exists; record exactly one winner and do not build in the tournament job.",
+            "build": "Build one selected candidate with rollback snapshot, focused tests, self-tool hygiene/smoke, run artifacts, and lock release.",
+            "safety": "Only improve Hermes itself; do not build unrelated standalone projects.",
+        },
+    },
+    {
+        "id": "legacy-software-development",
+        "name": "Legacy Automated Software Development Pipeline",
+        "description": "Paused research/spec/tournament/build system for generating standalone projects from specs. Registered here for visibility but intentionally not activated.",
+        "kind": "legacy_software_development",
+        "activation_mode": "manual",
+        "desired_enabled": False,
+        "schedule": "research every 120m · build every 240m · tournament every 60m",
+        "job_names": ["autonomous-research", "autonomous-build", "tournament-build"],
+        "directories": ["~/specs", "~/builds", "~/scripts/autonomous-cycle"],
+        "specifications": {
+            "research": "Generate genuinely novel non-developer consumer project specs with overlap checks, daily theme coverage, and uniqueness guarantees.",
+            "tournament": "Debate eligible specs under diversity constraints before selecting a build target.",
+            "build": "Build selected specs with tests and packaging; legacy pipeline remains disabled until explicitly enabled.",
+            "safety": "Keep disabled by default; no GitHub push/repo creation without explicit approval.",
+        },
+    },
+    {
+        "id": "legacy-project-curation",
+        "name": "Legacy Project Curation Pipeline",
+        "description": "Paused local-only curation tournament over existing assistant-built projects. Registered for management but intentionally not activated.",
+        "kind": "legacy_project_curation",
+        "activation_mode": "manual",
+        "desired_enabled": False,
+        "schedule": "curation tournament every 60m",
+        "job_names": ["project-curation-tournament"],
+        "directories": ["~/curation", "~/scripts/project-curation", "~/.hermes/scripts/project-curation-tournament.py"],
+        "specifications": {
+            "research": "Inventory direct ~/builds/* folders with .built markers and <=1 local git commit; exclude user-built/Ussyverse/multi-commit repos.",
+            "tournament": "Champion/judge local-only curation tournament deciding develop, preserve, archive, or needs_manual_review.",
+            "build": "No builds; write local curation artifacts, validation.json, and ledger rows only.",
+            "safety": "Hard ban git push/fetch/pull, gh, GitHub Actions, repo creation, and project source mutations.",
+        },
+    },
+]
+
+
+def _autonomous_development_home() -> Path:
+    return HERMES_HOME / "autonomous-development"
+
+
+def _autonomous_development_registry_path() -> Path:
+    return _autonomous_development_home() / "pipelines.json"
+
+
+def _autonomous_development_audit_path() -> Path:
+    return _autonomous_development_home() / "audit.jsonl"
+
+
+def _slugify_pipeline_id(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(name or "pipeline").lower()).strip("-") or "pipeline"
+    return slug[:60]
+
+
+def _read_autonomous_development_audit(limit: int = 30) -> list[dict]:
+    path = _autonomous_development_audit_path()
+    entries: list[dict] = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                item = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(item, dict):
+                entries.append(item)
+    return list(reversed(entries[-limit:]))
+
+
+def _append_autonomous_development_audit(action: str, details: dict, actor: str = "dashboard") -> dict:
+    entry = {
+        "id": f"audit_{uuid.uuid4().hex[:12]}",
+        "action": action,
+        "actor": actor,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "details": details,
+    }
+    path = _autonomous_development_audit_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, sort_keys=True) + "\n")
+    return entry
+
+
+def _normalize_pipeline_specifications(data: dict) -> dict:
+    specs = data.get("specifications") if isinstance(data.get("specifications"), dict) else {}
+    return {
+        "research": str(data.get("research_specification") or specs.get("research") or ""),
+        "tournament": str(data.get("tournament_specification") or specs.get("tournament") or ""),
+        "build": str(data.get("build_specification") or specs.get("build") or ""),
+        "safety": str(data.get("safety_policy") or specs.get("safety") or ""),
+    }
+
+
+def _load_autonomous_development_registry() -> dict:
+    path = _autonomous_development_registry_path()
+    existing = _self_improvement_json(path, None)
+    if isinstance(existing, dict) and isinstance(existing.get("pipelines"), list):
+        pipelines = [p for p in existing["pipelines"] if isinstance(p, dict)]
+        by_id = {str(p.get("id")): p for p in pipelines if p.get("id")}
+        changed = False
+        for default in AUTONOMOUS_DEVELOPMENT_DEFAULT_PIPELINES:
+            if default["id"] not in by_id:
+                pipelines.append(dict(default))
+                changed = True
+        registry = {"version": 1, "pipelines": pipelines, "updated_at": existing.get("updated_at")}
+        if changed:
+            registry["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            _write_self_improvement_json(path, registry)
+        return registry
+    registry = {
+        "version": 1,
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "pipelines": [dict(pipeline) for pipeline in AUTONOMOUS_DEVELOPMENT_DEFAULT_PIPELINES],
+    }
+    _write_self_improvement_json(path, registry)
+    return registry
+
+
+def _save_autonomous_development_registry(registry: dict) -> None:
+    registry = dict(registry or {})
+    registry["version"] = registry.get("version") or 1
+    registry["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    _write_self_improvement_json(_autonomous_development_registry_path(), registry)
+
+
+def _find_autonomous_pipeline(registry: dict, pipeline_id: str) -> Optional[dict]:
+    for pipeline in registry.get("pipelines", []):
+        if str(pipeline.get("id")) == str(pipeline_id):
+            return pipeline
+    return None
+
+
+def _jobs_by_name() -> dict[str, dict]:
+    return {str(job.get("name") or ""): job for job in _iter_cron_jobs(_load_cron_jobs_file())}
+
+
+def _pipeline_jobs_summary(pipeline: dict, jobs_by_name: dict[str, dict]) -> dict:
+    names = [str(name) for name in pipeline.get("job_names", []) if str(name)]
+    linked = []
+    active = 0
+    missing = []
+    for name in names:
+        job = jobs_by_name.get(name)
+        if not job:
+            missing.append(name)
+            continue
+        enabled = _cron_job_enabled(job)
+        if enabled:
+            active += 1
+        linked.append({
+            "id": job.get("id"),
+            "name": name,
+            "enabled": enabled,
+            "state": job.get("state") or ("scheduled" if enabled else "paused"),
+            "schedule": job.get("schedule"),
+            "schedule_display": job.get("schedule_display") or (job.get("schedule") or {}).get("display"),
+            "script": job.get("script"),
+            "skills": job.get("skills") or [],
+            "last_run_at": job.get("last_run_at"),
+            "next_run_at": job.get("next_run_at"),
+        })
+    return {"total": len(names), "linked": len(linked), "active": active, "missing": missing, "jobs": linked}
+
+
+def _hydrate_autonomous_pipeline(pipeline: dict, jobs_by_name: dict[str, dict]) -> dict:
+    item = dict(pipeline)
+    item["specifications"] = _normalize_pipeline_specifications(item)
+    item.setdefault("job_names", [])
+    item.setdefault("directories", [])
+    item.setdefault("activation_mode", "manual")
+    item.setdefault("desired_enabled", False)
+    summary = _pipeline_jobs_summary(item, jobs_by_name)
+    item["jobs_summary"] = summary
+    item["active"] = bool(summary["active"] > 0)
+    item["missing_jobs"] = summary["missing"]
+    return item
+
+
+def get_autonomous_development_status() -> dict:
+    registry = _load_autonomous_development_registry()
+    jobs_by_name = _jobs_by_name()
+    pipelines = [_hydrate_autonomous_pipeline(pipeline, jobs_by_name) for pipeline in registry.get("pipelines", [])]
+    return {
+        "registry_path": str(_autonomous_development_registry_path()),
+        "jobs_path": str(_self_improvement_jobs_path()),
+        "pipelines": pipelines,
+        "count": len(pipelines),
+        "active_count": len([pipeline for pipeline in pipelines if pipeline.get("active")]),
+        "audit": _read_autonomous_development_audit(),
+    }
+
+
+def create_autonomous_development_pipeline(data: dict, actor: str = "dashboard") -> dict:
+    data = data or {}
+    name = str(data.get("name") or "").strip()
+    if not name:
+        return {"success": False, "error": "pipeline name is required"}
+    registry = _load_autonomous_development_registry()
+    existing_ids = {str(p.get("id")) for p in registry.get("pipelines", [])}
+    pipeline_id = str(data.get("id") or "").strip() or f"pipeline_{uuid.uuid4().hex[:10]}"
+    if pipeline_id in existing_ids:
+        pipeline_id = f"pipeline_{uuid.uuid4().hex[:10]}"
+    pipeline = {
+        "id": pipeline_id,
+        "name": name,
+        "description": str(data.get("description") or ""),
+        "kind": str(data.get("kind") or "custom"),
+        "activation_mode": "manual",
+        "desired_enabled": bool(data.get("enabled", False)),
+        "schedule": str(data.get("schedule") or ""),
+        "job_names": [str(x).strip() for x in data.get("job_names", []) if str(x).strip()],
+        "directories": [str(x).strip() for x in data.get("directories", []) if str(x).strip()],
+        "specifications": _normalize_pipeline_specifications(data),
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    registry.setdefault("pipelines", []).append(pipeline)
+    _save_autonomous_development_registry(registry)
+    audit = _append_autonomous_development_audit("pipeline_created", {"pipeline_id": pipeline_id}, actor=actor)
+    return {"success": True, "pipeline": _hydrate_autonomous_pipeline(pipeline, _jobs_by_name()), "audit": audit}
+
+
+def update_autonomous_development_pipeline(pipeline_id: str, data: dict, actor: str = "dashboard") -> dict:
+    registry = _load_autonomous_development_registry()
+    pipeline = _find_autonomous_pipeline(registry, pipeline_id)
+    if not pipeline:
+        return {"success": False, "error": "pipeline not found"}
+    for field in ("name", "description", "kind", "schedule"):
+        if field in data:
+            pipeline[field] = str(data.get(field) or "")
+    if "enabled" in data:
+        pipeline["desired_enabled"] = bool(data.get("enabled"))
+    if "desired_enabled" in data:
+        pipeline["desired_enabled"] = bool(data.get("desired_enabled"))
+    if "job_names" in data and isinstance(data.get("job_names"), list):
+        pipeline["job_names"] = [str(x).strip() for x in data.get("job_names", []) if str(x).strip()]
+    if "directories" in data and isinstance(data.get("directories"), list):
+        pipeline["directories"] = [str(x).strip() for x in data.get("directories", []) if str(x).strip()]
+    specs = pipeline.get("specifications") if isinstance(pipeline.get("specifications"), dict) else {}
+    merged = dict(specs)
+    incoming_specs = data.get("specifications") if isinstance(data.get("specifications"), dict) else {}
+    for key in ("research", "tournament", "build", "safety"):
+        if key in incoming_specs:
+            merged[key] = str(incoming_specs.get(key) or "")
+    flat_fields = {
+        "research_specification": "research",
+        "tournament_specification": "tournament",
+        "build_specification": "build",
+        "safety_policy": "safety",
+    }
+    for flat, key in flat_fields.items():
+        if flat in data:
+            merged[key] = str(data.get(flat) or "")
+    for key in ("research", "tournament", "build", "safety"):
+        merged.setdefault(key, "")
+    pipeline["specifications"] = merged
+    pipeline["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    _save_autonomous_development_registry(registry)
+    audit = _append_autonomous_development_audit("pipeline_updated", {"pipeline_id": pipeline_id}, actor=actor)
+    return {"success": True, "pipeline": _hydrate_autonomous_pipeline(pipeline, _jobs_by_name()), "audit": audit}
+
+
+def _schedule_from_display(display: str):
+    text = str(display or "").strip()
+    match = re.search(r"(\d+)\s*(m|min|minute|minutes|h|hr|hour|hours)", text, re.I)
+    if not match:
+        return None
+    value = int(match.group(1))
+    unit = match.group(2).lower()
+    minutes = value * 60 if unit.startswith("h") else value
+    return {"kind": "interval", "minutes": minutes, "display": f"every {minutes}m"}
+
+
+def apply_autonomous_development_pipeline_control(pipeline_id: str, action: str, actor: str = "dashboard") -> dict:
+    action = str(action or "").strip().lower()
+    if action not in {"enable", "disable"}:
+        return {"success": False, "error": f"unknown control action: {action}"}
+    registry = _load_autonomous_development_registry()
+    pipeline = _find_autonomous_pipeline(registry, pipeline_id)
+    if not pipeline:
+        return {"success": False, "error": "pipeline not found"}
+    jobs_data = _load_cron_jobs_file()
+    jobs = _iter_cron_jobs(jobs_data)
+    names = {str(name) for name in pipeline.get("job_names", [])}
+    touched = []
+    for job in jobs:
+        if str(job.get("name") or "") not in names:
+            continue
+        if action == "enable":
+            job["enabled"] = True
+            job["state"] = "scheduled"
+            if pipeline.get("schedule"):
+                job["schedule_display"] = str(pipeline.get("schedule"))
+                parsed = _schedule_from_display(str(pipeline.get("schedule")))
+                if parsed:
+                    job["schedule"] = parsed
+            job["paused_at"] = None
+            job["paused_reason"] = None
+        else:
+            job["enabled"] = False
+            job["state"] = "paused"
+            job["paused_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            job["paused_reason"] = f"Disabled from Autonomous Development dashboard pipeline {pipeline_id}"
+        touched.append(job.get("id") or job.get("name"))
+    pipeline["desired_enabled"] = action == "enable"
+    pipeline["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    _save_cron_jobs_file(jobs_data)
+    _save_autonomous_development_registry(registry)
+    audit = _append_autonomous_development_audit(f"pipeline_{action}d", {"pipeline_id": pipeline_id, "jobs": touched}, actor=actor)
+    return {"success": True, "action": action, "pipeline": _hydrate_autonomous_pipeline(pipeline, _jobs_by_name()), "touched_jobs": touched, "audit": audit}
+
+
+async def get_autonomous_development_endpoint(request):
+    return JSONResponse(get_autonomous_development_status())
+
+
+async def create_autonomous_development_pipeline_endpoint(request):
+    try:
+        data = json.loads((await request.body()) or b"{}")
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    result = create_autonomous_development_pipeline(data)
+    return JSONResponse(result, status_code=200 if result.get("success") else 400)
+
+
+async def update_autonomous_development_pipeline_endpoint(request):
+    pipeline_id = request.path_params.get("pipeline_id")
+    try:
+        data = json.loads((await request.body()) or b"{}")
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    result = update_autonomous_development_pipeline(pipeline_id, data)
+    return JSONResponse(result, status_code=200 if result.get("success") else 404)
+
+
+async def control_autonomous_development_pipeline_endpoint(request):
+    pipeline_id = request.path_params.get("pipeline_id")
+    try:
+        data = json.loads((await request.body()) or b"{}")
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    result = apply_autonomous_development_pipeline_control(pipeline_id, data.get("action"), actor=data.get("actor") or "dashboard")
+    return JSONResponse(result, status_code=200 if result.get("success") else 400)
+
+
+async def get_self_improvement_endpoint(request):
+    return JSONResponse(get_self_improvement_status())
+
+
+async def get_self_improvement_runs_endpoint(request):
+    return JSONResponse(get_self_improvement_ledger())
+
+
+async def get_self_improvement_candidates_endpoint(request):
+    return JSONResponse(list_self_improvement_candidates())
+
+
+async def create_self_improvement_candidate_endpoint(request):
+    try:
+        data = json.loads((await request.body()) or b"{}")
+    except Exception:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    result = add_self_improvement_candidate(data)
+    return JSONResponse(result, status_code=201 if result["accepted"] else 400)
+
+
+async def select_self_improvement_candidate_endpoint(request):
+    return JSONResponse(select_self_improvement_candidate())
+
+
+async def control_self_improvement_endpoint(request):
+    try:
+        data = json.loads((await request.body()) or b"{}")
+    except Exception:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    result = apply_self_improvement_control(
+        data.get("action"), confirm=bool(data.get("confirm")), actor=str(data.get("actor") or "dashboard")
+    )
+    return JSONResponse(result, status_code=200 if result.get("success") else 400)
+
+
 async def get_cron_jobs(request):
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -3970,6 +5419,22 @@ routes = [
     Route("/api/skills", get_skills),
     Route("/api/skills/toggle", toggle_skill, methods=["POST"]),
     Route("/api/skills/{skill_id}/content", get_skill_content),
+    Route("/api/games", get_games_endpoint),
+    Route("/api/games/{game_id}/content", get_game_content_endpoint),
+    Route("/doom/", doom_watch_proxy_endpoint, methods=["GET", "POST"]),
+    Route("/doom/{path:path}", doom_watch_proxy_endpoint, methods=["GET", "POST"]),
+    Route("/pokemon/", pokemon_proxy_endpoint, methods=["GET", "POST"]),
+    Route("/pokemon/{path:path}", pokemon_proxy_endpoint, methods=["GET", "POST"]),
+    Route("/api/self-improvement", get_self_improvement_endpoint),
+    Route("/api/autonomous-development", get_autonomous_development_endpoint),
+    Route("/api/autonomous-development/pipelines", create_autonomous_development_pipeline_endpoint, methods=["POST"]),
+    Route("/api/autonomous-development/pipelines/{pipeline_id}", update_autonomous_development_pipeline_endpoint, methods=["PATCH"]),
+    Route("/api/autonomous-development/pipelines/{pipeline_id}/control", control_autonomous_development_pipeline_endpoint, methods=["POST"]),
+    Route("/api/self-improvement/runs", get_self_improvement_runs_endpoint),
+    Route("/api/self-improvement/candidates", get_self_improvement_candidates_endpoint),
+    Route("/api/self-improvement/candidates", create_self_improvement_candidate_endpoint, methods=["POST"]),
+    Route("/api/self-improvement/candidates/select", select_self_improvement_candidate_endpoint, methods=["POST"]),
+    Route("/api/self-improvement/control", control_self_improvement_endpoint, methods=["POST"]),
     Route("/api/cron", get_cron_jobs),
     Route("/api/cron", create_cron_job, methods=["POST"]),
     Route("/api/cron/schedule", get_cron_schedule),

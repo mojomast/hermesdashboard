@@ -816,6 +816,109 @@
 
         .message pre code { background: none; padding: 0; }
 
+        .markdown-body {
+            line-height: 1.55;
+        }
+
+        .markdown-body > *:first-child { margin-top: 0; }
+        .markdown-body > *:last-child { margin-bottom: 0; }
+
+        .markdown-body p,
+        .markdown-body ul,
+        .markdown-body ol,
+        .markdown-body blockquote,
+        .markdown-body table,
+        .markdown-body pre {
+            margin: 0.55rem 0;
+        }
+
+        .markdown-body h1,
+        .markdown-body h2,
+        .markdown-body h3,
+        .markdown-body h4,
+        .markdown-body h5,
+        .markdown-body h6 {
+            margin: 0.85rem 0 0.35rem;
+            color: var(--text);
+            line-height: 1.25;
+        }
+
+        .markdown-body h1 { font-size: 1.45rem; }
+        .markdown-body h2 { font-size: 1.25rem; }
+        .markdown-body h3 { font-size: 1.08rem; }
+        .markdown-body h4,
+        .markdown-body h5,
+        .markdown-body h6 { font-size: 0.98rem; }
+
+        .markdown-body ul,
+        .markdown-body ol {
+            padding-left: 1.4rem;
+        }
+
+        .markdown-body li + li { margin-top: 0.2rem; }
+
+        .markdown-body blockquote {
+            border-left: 3px solid var(--primary-border);
+            padding: 0.35rem 0.75rem;
+            color: var(--text-dim);
+            background: rgba(255,255,255,0.03);
+            border-radius: 0 6px 6px 0;
+        }
+
+        .markdown-body hr {
+            border: 0;
+            border-top: 1px solid var(--border-subtle);
+            margin: 0.85rem 0;
+        }
+
+        .markdown-body a {
+            color: #93c5fd;
+            text-decoration: none;
+            border-bottom: 1px solid rgba(147, 197, 253, 0.35);
+        }
+
+        .markdown-body a:hover {
+            border-bottom-color: #93c5fd;
+        }
+
+        .markdown-table-wrap {
+            overflow-x: auto;
+            margin: 0.75rem 0;
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            background: rgba(0,0,0,0.18);
+        }
+
+        .markdown-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0;
+            min-width: 360px;
+        }
+
+        .markdown-body th,
+        .markdown-body td {
+            padding: 0.55rem 0.7rem;
+            border-bottom: 1px solid var(--border-subtle);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .markdown-body th {
+            color: var(--primary);
+            font-weight: 700;
+            background: rgba(255,255,255,0.05);
+            white-space: nowrap;
+        }
+
+        .markdown-body tr:last-child td { border-bottom: 0; }
+        .markdown-body tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
+
+        .markdown-body td.align-right,
+        .markdown-body th.align-right { text-align: right; }
+        .markdown-body td.align-center,
+        .markdown-body th.align-center { text-align: center; }
+
         .tool-call-args, .tool-call-result {
             margin: 0.25rem 0;
         }
@@ -4142,6 +4245,9 @@
         <button class="tab" data-panel="sessions">Sessions</button>
         <button class="tab" data-panel="memory">Memory</button>
         <button class="tab" data-panel="skills">Skills</button>
+        <button class="tab" data-panel="games">Games</button>
+        <button class="tab" data-panel="self-improvement">Self-Improvement</button>
+        <button class="tab" data-panel="autonomous-development">Autonomous Development</button>
         <button class="tab" data-panel="cron">Cron</button>
         <button class="tab" data-panel="schedule">Schedule</button>
         <button class="tab" data-panel="graph">Graph</button>
@@ -4158,6 +4264,9 @@
         <button class="mobile-tab" data-panel="sessions" onclick="navigateTo('sessions')">Sessions</button>
         <button class="mobile-tab" data-panel="memory" onclick="navigateTo('memory')">Memory</button>
         <button class="mobile-tab" data-panel="skills" onclick="navigateTo('skills')">Skills</button>
+        <button class="mobile-tab" data-panel="games" onclick="navigateTo('games')">Games</button>
+        <button class="mobile-tab" data-panel="self-improvement" onclick="navigateTo('self-improvement')">Self-Improvement</button>
+        <button class="mobile-tab" data-panel="autonomous-development" onclick="navigateTo('autonomous-development')">Autonomous Development</button>
         <button class="mobile-tab" data-panel="cron" onclick="navigateTo('cron')">Cron</button>
         <button class="mobile-tab" data-panel="schedule" onclick="navigateTo('schedule')">Schedule</button>
         <button class="mobile-tab" data-panel="graph" onclick="navigateTo('graph')">Graph</button>
@@ -4350,6 +4459,109 @@
                 <span class="stats" id="skills-stats"></span>
             </div>
             <div class="skills-list" id="skills-list"></div>
+        </div>
+
+        <!-- Games Panel -->
+        <div class="panel" id="games-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Games</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Gaming launchpads and play/run skills installed in Hermes.</p>
+                </div>
+                <button class="btn" onclick="loadGames()">Refresh</button>
+            </div>
+            <div class="stats" id="games-stats"></div>
+            <div class="skills-list" id="games-list">
+                <div style="color:var(--text-dim);">Loading games...</div>
+            </div>
+            <iframe id="games-watch-frame" title="Game Watch" style="display:none;width:100%;min-height:640px;border:1px solid var(--border);border-radius:12px;margin-top:1rem;background:#050505;"></iframe>
+        </div>
+
+        <!-- Self-Improvement Panel -->
+        <div class="panel" id="self-improvement-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Self-Improvement Cockpit</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Run ledger, evidence-gated backlog, and supervisor controls for Hermes improving itself.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadSelfImprovement()">Refresh</button>
+                    <button class="btn" onclick="selfImprovementControl('pause')">Pause Loop</button>
+                    <button class="btn primary" onclick="selfImprovementControl('resume')">Resume Loop</button>
+                    <button class="btn danger" onclick="selfImprovementControl('kill')">Kill-Switch</button>
+                    <button class="btn" onclick="selfImprovementControl('clear_stale_lock', true)">Clear Stale Lock</button>
+                </div>
+            </div>
+            <div class="stats" id="self-improvement-stats"></div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin:1rem 0;">
+                <div class="card" id="self-improvement-supervisor"><h4>Supervisor</h4><p style="color:var(--text-dim);">Loading...</p></div>
+                <div class="card" id="self-improvement-cron-mesh"><h4>Cron Wiring</h4><p style="color:var(--text-dim);">Loading cron mesh...</p></div>
+                <div class="card" id="self-improvement-drift"><h4>Drift / Guardrails</h4><p style="color:var(--text-dim);">Loading drift status...</p></div>
+                <div class="card">
+                    <h4>Add Evidence-Gated Candidate</h4>
+                    <form class="message-board-form" onsubmit="submitSelfImprovementCandidate(event)">
+                        <input id="si-candidate-title" type="text" placeholder="Candidate title" required>
+                        <select id="si-candidate-layer" required>
+                            <option value="dashboard_control_surface">dashboard_control_surface</option>
+                            <option value="agent_core">agent_core</option>
+                            <option value="tooling">tooling</option>
+                            <option value="cron_autonomy">cron_autonomy</option>
+                            <option value="memory_becomussy">memory_becomussy</option>
+                            <option value="subagents">subagents</option>
+                            <option value="provider_routing">provider_routing</option>
+                            <option value="testing_verification">testing_verification</option>
+                        </select>
+                        <textarea id="si-candidate-evidence" placeholder="Evidence source" required></textarea>
+                        <textarea id="si-candidate-benefit" placeholder="Expected measurable benefit" required></textarea>
+                        <button class="btn primary" type="submit">Add Candidate</button>
+                    </form>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:1rem;min-height:0;">
+                <div class="card" style="overflow:auto;">
+                    <h4>Run Ledger</h4>
+                    <div id="self-improvement-runs"><p style="color:var(--text-dim);">Loading runs...</p></div>
+                </div>
+                <div class="card" style="overflow:auto;">
+                    <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+                        <h4>Improvement Queue</h4>
+                        <button class="btn" onclick="selectSelfImprovementCandidate()">Select Next</button>
+                    </div>
+                    <div id="self-improvement-queue"><p style="color:var(--text-dim);">Loading candidates...</p></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Autonomous Development Panel -->
+        <div class="panel" id="autonomous-development-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Autonomous Development Pipelines</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Create, inspect, schedule, enable, and disable autonomous research → tournament → build/curation pipelines from one registry.</p>
+                </div>
+                <button class="btn" onclick="loadAutonomousDevelopment()">Refresh</button>
+            </div>
+            <div class="stats" id="autonomous-development-stats"></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,0.65fr);gap:1rem;margin-top:1rem;align-items:start;">
+                <div class="card" style="overflow:auto;">
+                    <h4>Pipeline Registry</h4>
+                    <div id="autonomous-development-pipelines"><p style="color:var(--text-dim);">Loading pipelines...</p></div>
+                </div>
+                <div class="card">
+                    <h4>Add Pipeline</h4>
+                    <form class="message-board-form" id="autonomous-development-form" onsubmit="submitAutonomousDevelopmentPipeline(event)">
+                        <input id="ad-name" type="text" placeholder="Pipeline name" required>
+                        <textarea id="ad-description" placeholder="What this pipeline manages"></textarea>
+                        <input id="ad-jobs" type="text" placeholder="Linked cron job names, comma-separated">
+                        <input id="ad-schedule" type="text" placeholder="Schedule, e.g. every 120m">
+                        <textarea id="ad-research-spec" placeholder="Research specification"></textarea>
+                        <textarea id="ad-tournament-spec" placeholder="Tournament specification"></textarea>
+                        <textarea id="ad-build-spec" placeholder="Build / curation specification"></textarea>
+                        <textarea id="ad-safety-policy" placeholder="Safety policy / activation guardrails"></textarea>
+                        <button class="btn primary" type="submit">Create Pipeline</button>
+                    </form>
+                </div>
+            </div>
         </div>
 
         <!-- Skill Content Modal -->
@@ -5637,7 +5849,13 @@
                 });
             }
 
-            const callId = event.call_id || event.arguments?.call_id || '';
+            const callId = event.call_id
+                || event.tool_call_id
+                || event.arguments?.call_id
+                || event.arguments?.tool_call_id
+                || event.tool?.call_id
+                || event.tool?.tool_call_id
+                || '';
             const toolEvent = {
                 call_id: callId,
                 name: event.name || event.tool?.name || 'tool',
@@ -5774,11 +5992,18 @@
                     output: '',
                     progress: progressEntry.label ? [progressEntry] : [],
                 };
+                const normalizedUnmatchedArgs = normalizeAssistantTraceToolIdentityValue(unmatchedTool.arguments);
                 const diagnosticNode = findAssistantDiagnosticNode(
                     state,
                     node => node?.payload?.reason === 'unmatched_tool_progress'
                         && node?.payload?.tool?.name === unmatchedTool.name
-                        && !node?.payload?.tool?.output,
+                        && !node?.payload?.tool?.output
+                        && !node?.payload?.tool?.call_id
+                        && (
+                            normalizedUnmatchedArgs
+                                ? normalizeAssistantTraceToolIdentityValue(node?.payload?.tool?.arguments) === normalizedUnmatchedArgs
+                                : !normalizeAssistantTraceToolIdentityValue(node?.payload?.tool?.arguments)
+                        ),
                 );
                 if (diagnosticNode) {
                     const progress = Array.isArray(diagnosticNode.payload.tool.progress) ? diagnosticNode.payload.tool.progress : [];
@@ -5796,11 +6021,11 @@
                 return appendAssistantTraceDiagnostic(state, {
                     node: event.node || null,
                     tool: unmatchedTool,
-                    message: event.toolRow || null,
+                    message: progressEntry.label || null,
                     timestamp: event.timestamp || null,
                     sortKey: event.sortKey || null,
-                    label: event.label || `Unmatched ${unmatchedTool.name} progress`,
-                    reason: 'unmatched_tool_progress',
+                    label: event.label || `${unmatchedTool.name} progress`,
+                    reason: event.reason || 'unmatched_tool_progress',
                 });
             }
 
@@ -6193,6 +6418,7 @@
         }
 
         function renderOrphanDiagnosticNode(node, traceContext = currentSessionTraceContext) {
+            if (node?.payload?.reason === 'unmatched_tool_progress') return '';
             const tool = node?.payload?.tool || {};
             return `
                 <div class="orphan-tool-block execution-node" id="${escapeHtml(scopedExecutionDomId(node.dom_id, traceContext))}">
@@ -6424,7 +6650,17 @@
                 case 'skill_manage':
                     return summarizeToolSubject(args.name || args.skill_id || args.action, 88);
                 case 'delegate_task':
-                    return summarizeToolSubject(args.task_description || args.prompt || args.description, 88);
+                    return summarizeToolSubject(
+                        args.goal
+                        || args.task_description
+                        || args.prompt
+                        || args.description
+                        || args.task
+                        || args.tasks?.[0]?.goal
+                        || args.tasks?.[0]?.task
+                        || args.tasks?.[0]?.description,
+                        88,
+                    );
                 case 'todo':
                     return summarizeToolSubject(args.content || args.items?.[0]?.content || args.action, 88);
                 case 'mcp_becomussy_project_list':
@@ -6497,19 +6733,27 @@
         }
 
         function renderDelegateTaskOutput(parsedOutput, rawOutput) {
-            const results = Array.isArray(parsedOutput?.results) ? parsedOutput.results : [];
-            const totalDuration = parsedOutput?.total_duration_seconds;
+            const envelope = Array.isArray(parsedOutput) ? { results: parsedOutput } : (parsedOutput || {});
+            const results = Array.isArray(envelope?.results) ? envelope.results : [];
+            const totalDuration = envelope?.total_duration_seconds;
             const summaryHtml = results.length ? `
                 <div class="delegate-task-results">${results.map((result, idx) => {
                     const status = result?.status || 'unknown';
                     const itemClass = status === 'completed' ? 'success' : 'error';
-                    const title = result?.task_index !== undefined ? `Task ${Number(result.task_index) + 1}` : `Task ${idx + 1}`;
+                    const title = result?.title
+                        || result?.label
+                        || (result?.task_index !== undefined ? `Task ${Number(result.task_index) + 1}` : `Task ${idx + 1}`);
                     const secondary = [
                         status,
                         result?.duration_seconds ? `${result.duration_seconds}s` : '',
                         result?.api_calls ? `${result.api_calls} API calls` : '',
                     ].filter(Boolean).join(' • ');
-                    const body = result?.summary || result?.error || '';
+                    const body = result?.summary
+                        || result?.final_summary
+                        || result?.result
+                        || result?.output
+                        || result?.error
+                        || '';
                     return `
                         <div class="delegate-task-item ${itemClass}">
                             <div class="delegate-task-topline">
@@ -7455,16 +7699,25 @@
             };
         }
 
+        function getParallelToolBatchStatusClass(tools = []) {
+            const statuses = tools.map((tool) => getToolStatusClass(tool));
+            if (statuses.includes('error')) return 'error';
+            if (statuses.length && statuses.every((status) => status === 'complete')) return 'complete';
+            if (statuses.includes('running')) return 'running';
+            return 'pending';
+        }
+
         function renderParallelToolBatch(toolNodes = [], traceContext = null, label = '') {
             const batchId = `parallel:${toolNodes.map((node, idx) => getToolCallId(node?.payload?.tool || {}, idx)).join('|')}`;
             const state = ensureToolCallUiState(batchId);
             const tools = toolNodes.map((node) => node?.payload?.tool || {}).filter(Boolean);
             const names = Array.from(new Set(tools.map((tool) => tool?.name || 'tool'))).slice(0, 3).join(', ');
             const totalDuration = tools.map((tool) => getToolDurationLabel(tool)).filter(Boolean).pop() || '';
+            const batchStatusClass = getParallelToolBatchStatusClass(tools);
             return `
                 <div class="tool-call-parallel-block${state.expanded ? ' active' : ''}" data-tool-id="${escapeHtml(batchId)}">
                     <button type="button" class="tool-call-parallel-pill" onclick="toggleToolCall('${escapeHtml(batchId)}')">
-                        <span class="tool-call-status-dot running"></span>
+                        <span class="tool-call-status-dot ${escapeHtml(batchStatusClass)}"></span>
                         <span class="tool-call-chip">parallel ${toolNodes.length}</span>
                         <span class="tool-call-summary-text">${escapeHtml(label || `parallel · ${toolNodes.length} calls · ${names}`)}</span>
                         <span class="tool-call-meta">
@@ -7997,6 +8250,9 @@
                     case 'sessions': loadSessions(); loadSessionSources(); break;
                     case 'memory': loadMemory(); break;
                     case 'skills': loadSkills(); break;
+                    case 'games': loadGames(); break;
+                    case 'self-improvement': loadSelfImprovement(); break;
+                    case 'autonomous-development': loadAutonomousDevelopment(); break;
                     case 'cron': loadCronJobs(); break;
                     case 'schedule': loadSchedulePanel(); break;
                     case 'graph': loadGraph(); break;
@@ -8005,6 +8261,12 @@
                 loadSessions();
             } else if (panel === 'message-board') {
                 loadMessageBoardPosts();
+            } else if (panel === 'games') {
+                loadGames();
+            } else if (panel === 'self-improvement') {
+                loadSelfImprovement();
+            } else if (panel === 'autonomous-development') {
+                loadAutonomousDevelopment();
             } else if (panel === 'graph') {
                 loadGraph();
             }
@@ -8031,7 +8293,7 @@
             const parts = hash.split('/');
             const panel = parts[0];
 
-            const validPanels = ['chat','message-board','config','secrets','sessions','memory','skills','cron','schedule','graph'];
+            const validPanels = ['chat','message-board','config','secrets','sessions','memory','skills','games','self-improvement','autonomous-development','cron','schedule','graph'];
             if (!validPanels.includes(panel)) {
                 switchToPanel('chat');
                 return;
@@ -8052,7 +8314,7 @@
             const bc = document.getElementById('breadcrumbs');
             if (!bc) return;
 
-            const names = { chat:'Chat', 'message-board':'Message Board', config:'Config', secrets:'Secrets', sessions:'Sessions', memory:'Memory', skills:'Skills', cron:'Cron', schedule:'Schedule', graph:'Graph' };
+            const names = { chat:'Chat', 'message-board':'Message Board', config:'Config', secrets:'Secrets', sessions:'Sessions', memory:'Memory', skills:'Skills', games:'Games', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', cron:'Cron', schedule:'Schedule', graph:'Graph' };
 
             if (detail) {
                 bc.className = 'breadcrumbs visible';
@@ -9604,6 +9866,22 @@
             document.getElementById('skill-modal').style.display = 'none';
         }
 
+        async function viewGameSkillContent(gameId) {
+            try {
+                const data = await fetchJsonOrThrow('/api/games/' + encodeURIComponent(gameId) + '/content');
+                const modal = document.getElementById('skill-modal');
+                document.getElementById('skill-modal-title').textContent = data.id || gameId;
+                document.getElementById('skill-modal-content').textContent = data.content || 'No content available';
+                document.getElementById('skill-modal-files').innerHTML = data.files && data.files.length
+                    ? '<strong>Files:</strong> ' + data.files.map(f => escapeHtml(f)).join(', ')
+                    : '';
+                modal.style.display = 'flex';
+            } catch (e) {
+                showToast('Failed to load game skill content', true);
+                log('err', 'Failed to load game skill content: ' + e.message, true);
+            }
+        }
+
         async function toggleSkill(skillId, enable) {
             try {
                 log('req', `POST /api/skills/toggle {skill_id: ${skillId}, enabled: ${enable}}`);
@@ -9620,6 +9898,421 @@
                 showToast(`Skill update failed: ${e.message}`, true);
                 log('err', `Skill update failed: ${e.message}`, true);
             }
+        }
+
+        let allGames = [];
+
+        async function loadGames() {
+            const list = document.getElementById('games-list');
+            const stats = document.getElementById('games-stats');
+            try {
+                log('req', 'GET /api/games');
+                const data = await fetchJsonOrThrow('/api/games');
+                allGames = data.games || [];
+                if (stats) stats.textContent = `${allGames.length} game ${allGames.length === 1 ? 'launcher' : 'launchers'}`;
+                renderGames(allGames);
+                log('res', `Loaded ${allGames.length} games`);
+            } catch (e) {
+                if (stats) stats.textContent = '';
+                if (list) list.innerHTML = '<div style="text-align:center;color:var(--danger);padding:2rem;">Failed to load games</div>';
+                showToast(`Games load failed: ${e.message}`, true);
+                log('err', `Games load failed: ${e.message}`, true);
+            }
+        }
+
+        function openGameWatch(url) {
+            const frame = document.getElementById('games-watch-frame');
+            if (!frame || !url) return;
+            if (location.hash !== '#games') {
+                history.replaceState(null, '', '#games');
+            }
+            frame.src = url;
+            frame.style.display = 'block';
+            frame.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function renderGames(games) {
+            const list = document.getElementById('games-list');
+            if (!list) return;
+            if (!games.length) {
+                list.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:2rem;">No gaming skills installed yet.</div>';
+                return;
+            }
+            list.innerHTML = games.map(game => {
+                const tags = (game.tags || []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join(' ');
+                const uploadLabel = game.upload_label || 'Upload / Choose ROM';
+                const uploadButton = game.upload_url
+                    ? `<button class="btn primary" onclick="openGameWatch('${escapeHtml(game.upload_url)}')">${escapeHtml(uploadLabel)}</button>`
+                    : '';
+                const uploadTabLink = game.upload_url
+                    ? `<a class="btn" href="${escapeHtml(game.upload_url)}" target="_blank" rel="noopener noreferrer">Open Upload New Tab</a>`
+                    : '';
+                const watchLabel = game.launch_label || `Open ${game.name || 'Dashboard'}`;
+                const watchButton = game.watch_url
+                    ? `<button class="btn" onclick="openGameWatch('${escapeHtml(game.watch_url)}')">${escapeHtml(watchLabel)}</button>`
+                    : '';
+                const watchTabLink = game.watch_url
+                    ? `<a class="btn" href="${escapeHtml(game.watch_url)}" target="_blank" rel="noopener noreferrer">Open Watch New Tab</a>`
+                    : '';
+                const controlLabel = game.control_label || 'Open Controls';
+                const controlButton = game.control_url
+                    ? `<button class="btn" onclick="openGameWatch('${escapeHtml(game.control_url)}')">${escapeHtml(controlLabel)}</button>`
+                    : '';
+                const controlTabLink = game.control_url
+                    ? `<a class="btn" href="${escapeHtml(game.control_url)}" target="_blank" rel="noopener noreferrer">Open Control New Tab</a>`
+                    : '';
+                return `
+                    <div class="skill-card">
+                        <div class="skill-info" onclick="viewGameSkillContent('${escapeHtml(game.id)}')" style="cursor:pointer;">
+                            <h4>${escapeHtml(game.name || game.id)}</h4>
+                            <p>${escapeHtml(game.description || 'No description')}</p>
+                            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.5rem;">${tags}</div>
+                            <span style="font-size:0.7rem;color:var(--text-dim);display:block;margin-top:0.5rem;">${escapeHtml(game.category || 'Tool')} · ${escapeHtml(game.id)}</span>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;justify-content:flex-end;">
+                            ${uploadButton}
+                            ${uploadTabLink}
+                            ${watchButton}
+                            ${watchTabLink}
+                            ${controlButton}
+                            ${controlTabLink}
+                            <button class="btn" onclick="viewGameSkillContent('${escapeHtml(game.id)}')">Open Skill</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function loadSelfImprovement() {
+            const stats = document.getElementById('self-improvement-stats');
+            try {
+                log('req', 'GET /api/self-improvement');
+                const data = await fetchJsonOrThrow('/api/self-improvement');
+                renderSelfImprovement(data);
+                const runs = data?.ledger?.count || 0;
+                const queued = data?.supervisor?.queued_candidate_count || 0;
+                const hub = data?.policy?.hub_ok ? 'hub ok' : 'needs attention';
+                if (stats) stats.textContent = `${runs} recent runs · ${queued} queued candidates · ${hub}`;
+                log('res', 'Loaded self-improvement cockpit');
+            } catch (e) {
+                if (stats) stats.textContent = '';
+                const runs = document.getElementById('self-improvement-runs');
+                if (runs) runs.innerHTML = `<p style="color:var(--error);">Failed to load self-improvement state: ${escapeHtml(e.message)}</p>`;
+                showToast(`Self-improvement load failed: ${e.message}`, true);
+                log('err', `Self-improvement load failed: ${e.message}`, true);
+            }
+        }
+
+        function renderSelfImprovement(data) {
+            const supervisor = data?.supervisor || {};
+            const supervisorEl = document.getElementById('self-improvement-supervisor');
+            const job = supervisor.cron_job || {};
+            const locked = !!supervisor?.lock?.locked;
+            if (supervisorEl) {
+                supervisorEl.innerHTML = `
+                    <h4>Supervisor</h4>
+                    <div class="message-meta" style="margin:0.5rem 0;">
+                        <span class="meta-pill">${supervisor.active ? 'Active' : 'Paused/Missing'}</span>
+                        <span class="meta-pill">State: ${escapeHtml(supervisor.state || 'unknown')}</span>
+                        <span class="meta-pill">Lock: ${locked ? 'locked' : 'free'}</span>
+                        <span class="meta-pill">Score: ${supervisor.recent_outcome_score ?? '—'}</span>
+                    </div>
+                    <p style="color:var(--text-dim);font-size:0.84rem;margin-top:0.5rem;">Job: ${escapeHtml(job.name || 'self-improvement-loop not found')} · next: ${escapeHtml(job.next_run_at || '—')} · last: ${escapeHtml(job.last_run_at || 'never')}</p>
+                `;
+            }
+            renderSelfImprovementCronMesh(data?.cron_mesh || {});
+            renderSelfImprovementDrift(data?.drift || {}, data?.policy || {});
+            renderSelfImprovementRuns(data?.ledger?.runs || []);
+            renderSelfImprovementQueue(data?.queue || {});
+        }
+
+        function renderSelfImprovementCronMesh(mesh) {
+            const el = document.getElementById('self-improvement-cron-mesh');
+            if (!el) return;
+            const selfJobs = mesh.self_improvement_jobs || [];
+            const legacyJobs = mesh.legacy_jobs || [];
+            const primary = selfJobs.find(job => job.id === mesh.primary_job_id) || selfJobs[0] || {};
+            const blockers = mesh.blockers || [];
+            const legacySummary = legacyJobs.length
+                ? legacyJobs.map(job => `${job.enabled ? 'ACTIVE' : 'paused'} ${job.name}`).join(' · ')
+                : 'No legacy jobs found';
+            const skillGap = (primary.missing_required_skills || []).join(', ') || 'none';
+            el.innerHTML = `
+                <h4>Cron Wiring</h4>
+                <div class="message-meta" style="margin:0.5rem 0;">
+                    <span class="meta-pill">${mesh.ok ? 'wired' : 'attention'}</span>
+                    <span class="meta-pill">jobs: ${escapeHtml(String(mesh.job_count ?? 0))}</span>
+                    <span class="meta-pill">active legacy: ${escapeHtml(String(mesh.active_legacy_count ?? 0))}</span>
+                </div>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Primary: ${escapeHtml(primary.name || 'missing')} · ${escapeHtml(primary.script || 'inline prompt')} · next ${escapeHtml(primary.next_run_at || '—')}</p>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Required skill gaps: ${escapeHtml(skillGap)}</p>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Legacy: ${escapeHtml(legacySummary)}</p>
+                ${blockers.length ? `<p style="color:var(--warning);font-size:0.84rem;">${escapeHtml(blockers.join(' · '))}</p>` : ''}
+            `;
+        }
+
+        function renderSelfImprovementDrift(drift, policy) {
+            const el = document.getElementById('self-improvement-drift');
+            if (!el) return;
+            const severities = drift.severity_counts || {};
+            const severityText = Object.keys(severities).length
+                ? Object.entries(severities).map(([k, v]) => `${k}:${v}`).join(' · ')
+                : 'none';
+            const findings = drift.findings || [];
+            el.innerHTML = `
+                <h4>Drift / Guardrails</h4>
+                <div class="message-meta" style="margin:0.5rem 0;">
+                    <span class="meta-pill">${policy.hub_ok ? 'hub ok' : 'needs attention'}</span>
+                    <span class="meta-pill">drift: ${drift.ok === null || drift.ok === undefined ? 'unknown' : (drift.ok ? 'ok' : 'findings')}</span>
+                    <span class="meta-pill">findings: ${escapeHtml(String(drift.finding_count ?? '—'))}</span>
+                </div>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Scope: ${escapeHtml(drift.scope || 'no drift artifact yet')} · severity: ${escapeHtml(severityText)}</p>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Source: ${escapeHtml(drift.source || 'waiting for first run')}</p>
+                ${findings.length ? `<ul style="color:var(--warning);font-size:0.82rem;margin:0.4rem 0 0 1rem;">${findings.map(f => `<li>${escapeHtml(f.message || f.summary || JSON.stringify(f).slice(0, 120))}</li>`).join('')}</ul>` : ''}
+            `;
+        }
+
+        function renderSelfImprovementRuns(runs) {
+            const el = document.getElementById('self-improvement-runs');
+            if (!el) return;
+            if (!runs.length) {
+                el.innerHTML = '<p style="color:var(--text-dim);">No self-improvement runs recorded yet.</p>';
+                return;
+            }
+            el.innerHTML = runs.map(run => `
+                <div class="activity-item" style="margin:0.75rem 0;">
+                    <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+                        <strong>${escapeHtml(run.run_id || 'unknown run')}</strong>
+                        <span class="meta-pill">${escapeHtml(run.outcome || 'unknown')} · ${escapeHtml(String(run.outcome_score ?? '—'))}</span>
+                    </div>
+                    <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">${escapeHtml(run.summary || run.candidate || 'No summary')}</p>
+                    <div class="message-meta">
+                        <span>${escapeHtml(run.selected_layer || 'no layer')}</span>
+                        <span>${escapeHtml((run.verification_commands || []).join(', ') || 'no verification')}</span>
+                        <span>${escapeHtml((run.artifacts || []).join(', ') || 'no artifacts')}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderSelfImprovementQueue(queue) {
+            const el = document.getElementById('self-improvement-queue');
+            if (!el) return;
+            const candidates = Array.isArray(queue) ? queue : (queue?.candidates || []);
+            const statusCounts = queue?.status_counts || {};
+            const gate = queue?.backlog_gate || {};
+            const statusSummary = Object.keys(statusCounts).length
+                ? Object.entries(statusCounts).map(([k, v]) => `${k}:${v}`).join(' · ')
+                : 'none';
+            const gateSummary = gate.action
+                ? `${gate.action} · queued ${gate.queued_count ?? '—'} · selected ${gate.selected_count ?? '—'} · needed ${gate.needed_additions ?? gate.max_additions_this_tick ?? '—'}`
+                : 'backlog gate unavailable';
+            if (!candidates.length) {
+                el.innerHTML = `
+                    <div class="message-meta" style="margin:0.5rem 0;">
+                        <span class="meta-pill">statuses: ${escapeHtml(statusSummary)}</span>
+                        <span class="meta-pill">${escapeHtml(gateSummary)}</span>
+                    </div>
+                    <p style="color:var(--text-dim);">No candidates yet. Add an evidence-backed candidate or let cron pause cleanly.</p>
+                `;
+                return;
+            }
+            el.innerHTML = `
+                <div class="message-meta" style="margin:0.5rem 0;">
+                    <span class="meta-pill">statuses: ${escapeHtml(statusSummary)}</span>
+                    <span class="meta-pill">${escapeHtml(gateSummary)}</span>
+                    <span class="meta-pill">sources: ${escapeHtml(JSON.stringify(queue?.source_counts || {}))}</span>
+                </div>
+                ${(gate.reason || gate.queue_path) ? `<p style="color:var(--text-dim);font-size:0.82rem;margin:0.35rem 0;">${escapeHtml(gate.reason || '')} ${gate.queue_path ? `· ${gate.queue_path}` : ''}</p>` : ''}
+                ${candidates.map(candidate => `
+                    <div class="activity-item" style="margin:0.75rem 0;">
+                        <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;">
+                            <strong>${escapeHtml(candidate.title || candidate.id || 'untitled')}</strong>
+                            <span class="meta-pill">${escapeHtml(candidate.status || 'unknown')} · ${escapeHtml(String(candidate.score ?? '—'))}</span>
+                        </div>
+                        <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">${escapeHtml(candidate.explanation || '')}</p>
+                        <div class="message-meta"><span>${escapeHtml(candidate.allowed_layer || 'no layer')}</span><span>${escapeHtml(candidate.risk || 'risk?')}</span></div>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        async function submitSelfImprovementCandidate(event) {
+            event.preventDefault();
+            const payload = {
+                title: document.getElementById('si-candidate-title')?.value?.trim() || '',
+                allowed_layer: document.getElementById('si-candidate-layer')?.value || 'dashboard_control_surface',
+                evidence_source: document.getElementById('si-candidate-evidence')?.value?.trim() || '',
+                expected_measurable_benefit: document.getElementById('si-candidate-benefit')?.value?.trim() || '',
+                risk: 'low',
+                evidence_strength: 4,
+                expected_impact: 4,
+                implementation_size: 2,
+                verification_clarity: 4,
+            };
+            try {
+                await fetchJsonOrThrow('/api/self-improvement/candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                ['si-candidate-title','si-candidate-evidence','si-candidate-benefit'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+                showToast('Candidate added');
+                await loadSelfImprovement();
+            } catch (e) {
+                showToast(`Candidate rejected: ${e.message}`, true);
+            }
+        }
+
+        async function selectSelfImprovementCandidate() {
+            const result = await fetchJsonOrThrow('/api/self-improvement/candidates/select', { method: 'POST' });
+            showToast(result.decision === 'build' ? 'Candidate selected for build' : 'No candidate selected: loop should pause');
+            await loadSelfImprovement();
+        }
+
+        async function selfImprovementControl(action, confirmAction = false) {
+            if (confirmAction && !confirm(`Confirm ${action}?`)) return;
+            try {
+                const result = await fetchJsonOrThrow('/api/self-improvement/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, confirm: confirmAction, actor: 'dashboard' }),
+                });
+                showToast(result.note || `Self-improvement ${action} complete`);
+                await loadSelfImprovement();
+            } catch (e) {
+                showToast(`Control failed: ${e.message}`, true);
+            }
+        }
+
+        async function loadAutonomousDevelopment() {
+            const stats = document.getElementById('autonomous-development-stats');
+            try {
+                log('req', 'GET /api/autonomous-development');
+                const data = await fetchJsonOrThrow('/api/autonomous-development');
+                renderAutonomousDevelopment(data);
+                if (stats) stats.textContent = `${data.count || 0} pipelines · ${data.active_count || 0} active · registry ${data.registry_path || '—'}`;
+                log('res', 'Loaded autonomous development pipelines');
+            } catch (e) {
+                if (stats) stats.textContent = '';
+                const list = document.getElementById('autonomous-development-pipelines');
+                if (list) list.innerHTML = `<p style="color:var(--error);">Failed to load autonomous development pipelines: ${escapeHtml(e.message)}</p>`;
+                showToast(`Autonomous development load failed: ${e.message}`, true);
+            }
+        }
+
+        function renderAutonomousDevelopment(data) {
+            const el = document.getElementById('autonomous-development-pipelines');
+            if (!el) return;
+            const pipelines = data?.pipelines || [];
+            if (!pipelines.length) {
+                el.innerHTML = '<p style="color:var(--text-dim);">No pipelines registered yet.</p>';
+                return;
+            }
+            el.innerHTML = pipelines.map(pipeline => {
+                const jobs = pipeline.jobs_summary?.jobs || [];
+                const specs = pipeline.specifications || {};
+                const missing = (pipeline.missing_jobs || []).join(', ');
+                return `
+                    <div class="activity-item" style="margin:0.85rem 0;padding:0.85rem;border:1px solid var(--border-subtle);border-radius:10px;">
+                        <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:flex-start;">
+                            <div style="min-width:0;">
+                                <strong>${escapeHtml(pipeline.name || pipeline.id)}</strong>
+                                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.35rem 0;">${escapeHtml(pipeline.description || '')}</p>
+                            </div>
+                            <span class="meta-pill">${pipeline.active ? 'active' : 'paused'} · ${escapeHtml(pipeline.activation_mode || 'manual')}</span>
+                        </div>
+                        <div class="message-meta" style="margin:0.5rem 0;">
+                            <span>${escapeHtml(pipeline.kind || 'custom')}</span>
+                            <span>jobs ${escapeHtml(String(pipeline.jobs_summary?.active || 0))}/${escapeHtml(String(pipeline.jobs_summary?.total || 0))}</span>
+                            <span>${escapeHtml(pipeline.schedule || 'no schedule')}</span>
+                        </div>
+                        ${missing ? `<p style="color:var(--warning);font-size:0.82rem;">Missing jobs: ${escapeHtml(missing)}</p>` : ''}
+                        <details style="margin-top:0.55rem;">
+                            <summary style="cursor:pointer;color:var(--primary);">Specifications & linked jobs</summary>
+                            <div style="display:grid;gap:0.55rem;margin-top:0.55rem;font-size:0.83rem;color:var(--text-dim);">
+                                <div><strong style="color:var(--text);">Research:</strong> ${escapeHtml(specs.research || '—')}</div>
+                                <div><strong style="color:var(--text);">Tournament:</strong> ${escapeHtml(specs.tournament || '—')}</div>
+                                <div><strong style="color:var(--text);">Build/Curation:</strong> ${escapeHtml(specs.build || '—')}</div>
+                                <div><strong style="color:var(--text);">Safety:</strong> ${escapeHtml(specs.safety || '—')}</div>
+                                <div><strong style="color:var(--text);">Jobs:</strong> ${escapeHtml(jobs.map(job => `${job.enabled ? 'ACTIVE' : 'paused'} ${job.name}`).join(' · ') || 'none linked')}</div>
+                                <div><strong style="color:var(--text);">Dirs:</strong> ${escapeHtml((pipeline.directories || []).join(' · ') || '—')}</div>
+                            </div>
+                        </details>
+                        <div class="cron-actions-row" style="margin-top:0.75rem;">
+                            <button onclick="controlAutonomousDevelopmentPipeline('${escapeHtml(pipeline.id)}', 'enable')">Enable Linked Jobs</button>
+                            <button onclick="controlAutonomousDevelopmentPipeline('${escapeHtml(pipeline.id)}', 'disable')">Disable Linked Jobs</button>
+                            <button onclick="editAutonomousDevelopmentPipeline('${escapeHtml(pipeline.id)}')">Edit Specs</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function submitAutonomousDevelopmentPipeline(event) {
+            event.preventDefault();
+            const payload = {
+                name: document.getElementById('ad-name')?.value?.trim() || '',
+                description: document.getElementById('ad-description')?.value?.trim() || '',
+                job_names: (document.getElementById('ad-jobs')?.value || '').split(',').map(x => x.trim()).filter(Boolean),
+                schedule: document.getElementById('ad-schedule')?.value?.trim() || '',
+                research_specification: document.getElementById('ad-research-spec')?.value?.trim() || '',
+                tournament_specification: document.getElementById('ad-tournament-spec')?.value?.trim() || '',
+                build_specification: document.getElementById('ad-build-spec')?.value?.trim() || '',
+                safety_policy: document.getElementById('ad-safety-policy')?.value?.trim() || '',
+            };
+            try {
+                await fetchJsonOrThrow('/api/autonomous-development/pipelines', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                document.getElementById('autonomous-development-form')?.reset();
+                showToast('Pipeline created');
+                await loadAutonomousDevelopment();
+            } catch (e) {
+                showToast(`Pipeline create failed: ${e.message}`, true);
+            }
+        }
+
+        async function controlAutonomousDevelopmentPipeline(pipelineId, action) {
+            if (action === 'enable' && !confirm(`Enable all linked jobs for ${pipelineId}?`)) return;
+            try {
+                const result = await fetchJsonOrThrow(`/api/autonomous-development/pipelines/${encodeURIComponent(pipelineId)}/control`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, actor: 'dashboard' }),
+                });
+                showToast(`${action} touched ${result.touched_jobs?.length || 0} jobs`);
+                invalidateCache('/api/cron');
+                await loadAutonomousDevelopment();
+            } catch (e) {
+                showToast(`Pipeline ${action} failed: ${e.message}`, true);
+            }
+        }
+
+        async function editAutonomousDevelopmentPipeline(pipelineId) {
+            const data = await fetchJsonOrThrow('/api/autonomous-development');
+            const pipeline = (data.pipelines || []).find(p => p.id === pipelineId);
+            if (!pipeline) return showToast('Pipeline not found', true);
+            const specs = pipeline.specifications || {};
+            const research = prompt('Research specification', specs.research || '');
+            if (research === null) return;
+            const tournament = prompt('Tournament specification', specs.tournament || '');
+            if (tournament === null) return;
+            const build = prompt('Build / curation specification', specs.build || '');
+            if (build === null) return;
+            const safety = prompt('Safety policy', specs.safety || '');
+            if (safety === null) return;
+            await fetchJsonOrThrow(`/api/autonomous-development/pipelines/${encodeURIComponent(pipelineId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    specifications: { research, tournament, build, safety },
+                }),
+            });
+            showToast('Pipeline specifications updated');
+            await loadAutonomousDevelopment();
         }
 
         // ── Cron Jobs ──
@@ -10128,23 +10821,185 @@
             return div.innerHTML;
         }
 
-        function formatMessageContent(text) {
-            let formatted = escapeHtml(text);
+        function markdownTableCells(line) {
+            let trimmed = String(line || '').trim();
+            if (!trimmed.includes('|')) return [];
+            if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+            if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
+            return trimmed.split('|').map(cell => cell.trim());
+        }
 
-            // Handle base64 images
+        function isMarkdownTableSeparator(line) {
+            const cells = markdownTableCells(line);
+            return cells.length >= 2 && cells.every(cell => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, '')));
+        }
+
+        function markdownTableAlignments(separatorLine) {
+            return markdownTableCells(separatorLine).map(cell => {
+                const compact = cell.replace(/\s+/g, '');
+                if (compact.startsWith(':') && compact.endsWith(':')) return 'center';
+                if (compact.endsWith(':')) return 'right';
+                return 'left';
+            });
+        }
+
+        function renderMarkdownInline(rawText) {
             const imageRegex = /(data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+)/g;
-            formatted = formatted.replace(imageRegex, (match) => {
-                return `<div class="image-container"><img src="${match}" class="message-image" onclick="showImageModal('${match}')" alt="Screenshot"><span class="image-label">Click to enlarge</span></div>`;
+            const codeTokens = [];
+            let text = String(rawText ?? '').replace(/`([^`]+)`/g, (_, code) => {
+                const token = `\u0000CODE${codeTokens.length}\u0000`;
+                codeTokens.push(`<code>${escapeHtml(code)}</code>`);
+                return token;
             });
 
-            // Code blocks
-            formatted = formatted.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
-            formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+            let html = escapeHtml(text);
+            html = html.replace(imageRegex, (match) => {
+                return `<div class="image-container"><img src="${match}" class="message-image" onclick="showImageModal('${match}')" alt="Screenshot"><span class="image-label">Click to enlarge</span></div>`;
+            });
+            html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => {
+                const safeUrl = escapeHtml(url);
+                return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+            });
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+            html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+            html = html.replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+            codeTokens.forEach((replacement, index) => {
+                html = html.replaceAll(`\u0000CODE${index}\u0000`, replacement);
+            });
+            return html;
+        }
 
-            // Line breaks
-            formatted = formatted.replace(/\n/g, '<br>');
+        function renderMarkdownTable(lines, startIndex) {
+            const header = markdownTableCells(lines[startIndex]);
+            const separator = lines[startIndex + 1];
+            const aligns = markdownTableAlignments(separator);
+            let index = startIndex + 2;
+            const rows = [];
+            while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
+                if (isMarkdownTableSeparator(lines[index])) break;
+                rows.push(markdownTableCells(lines[index]));
+                index++;
+            }
+            const headerHtml = header.map((cell, idx) => {
+                const cls = aligns[idx] && aligns[idx] !== 'left' ? ` class="align-${aligns[idx]}"` : '';
+                return `<th${cls}>${renderMarkdownInline(cell)}</th>`;
+            }).join('');
+            const rowsHtml = rows.map(row => `<tr>${header.map((_, idx) => {
+                const cls = aligns[idx] && aligns[idx] !== 'left' ? ` class="align-${aligns[idx]}"` : '';
+                return `<td${cls}>${renderMarkdownInline(row[idx] || '')}</td>`;
+            }).join('')}</tr>`).join('');
+            return {
+                html: `<div class="markdown-table-wrap"><table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table></div>`,
+                nextIndex: index,
+            };
+        }
 
-            return formatted;
+        function renderMarkdownBlocks(markdownText) {
+            const lines = String(markdownText ?? '').replace(/\r\n/g, '\n').split('\n');
+            const blocks = [];
+            let i = 0;
+
+            const paragraphLines = [];
+            const flushParagraph = () => {
+                if (!paragraphLines.length) return;
+                blocks.push(`<p>${paragraphLines.map(renderMarkdownInline).join('<br>')}</p>`);
+                paragraphLines.length = 0;
+            };
+
+            while (i < lines.length) {
+                const line = lines[i];
+                const trimmed = line.trim();
+
+                if (!trimmed) {
+                    flushParagraph();
+                    i++;
+                    continue;
+                }
+
+                if (/^\s*[-*_]{3,}\s*$/.test(trimmed)) {
+                    flushParagraph();
+                    blocks.push('<hr>');
+                    i++;
+                    continue;
+                }
+
+                const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+                if (heading) {
+                    flushParagraph();
+                    const level = heading[1].length;
+                    blocks.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+                    i++;
+                    continue;
+                }
+
+                if (i + 1 < lines.length && line.includes('|') && isMarkdownTableSeparator(lines[i + 1])) {
+                    flushParagraph();
+                    const rendered = renderMarkdownTable(lines, i);
+                    blocks.push(rendered.html);
+                    i = rendered.nextIndex;
+                    continue;
+                }
+
+                if (/^>\s?/.test(trimmed)) {
+                    flushParagraph();
+                    const quoteLines = [];
+                    while (i < lines.length && /^>\s?/.test(lines[i].trim())) {
+                        quoteLines.push(lines[i].trim().replace(/^>\s?/, ''));
+                        i++;
+                    }
+                    blocks.push(`<blockquote>${quoteLines.map(renderMarkdownInline).join('<br>')}</blockquote>`);
+                    continue;
+                }
+
+                if (/^[-*+]\s+/.test(trimmed)) {
+                    flushParagraph();
+                    const items = [];
+                    while (i < lines.length && /^[-*+]\s+/.test(lines[i].trim())) {
+                        items.push(lines[i].trim().replace(/^[-*+]\s+/, ''));
+                        i++;
+                    }
+                    blocks.push(`<ul>${items.map(item => `<li>${renderMarkdownInline(item)}</li>`).join('')}</ul>`);
+                    continue;
+                }
+
+                if (/^\d+[.)]\s+/.test(trimmed)) {
+                    flushParagraph();
+                    const items = [];
+                    while (i < lines.length && /^\d+[.)]\s+/.test(lines[i].trim())) {
+                        items.push(lines[i].trim().replace(/^\d+[.)]\s+/, ''));
+                        i++;
+                    }
+                    blocks.push(`<ol>${items.map(item => `<li>${renderMarkdownInline(item)}</li>`).join('')}</ol>`);
+                    continue;
+                }
+
+                paragraphLines.push(line);
+                i++;
+            }
+            flushParagraph();
+            return blocks.join('');
+        }
+
+        function formatMessageContent(text) {
+            const raw = typeof text === 'string' ? text : String(text ?? '');
+            const fenceRegex = /```([^\n`]*)\n([\s\S]*?)```/g;
+            const parts = [];
+            let cursor = 0;
+            let match;
+            while ((match = fenceRegex.exec(raw)) !== null) {
+                if (match.index > cursor) {
+                    parts.push(renderMarkdownBlocks(raw.slice(cursor, match.index)));
+                }
+                const language = String(match[1] || '').trim().replace(/[^A-Za-z0-9_-]/g, '');
+                const languageClass = language ? ` class="language-${escapeHtml(language)}"` : '';
+                parts.push(`<pre><code${languageClass}>${escapeHtml(match[2] || '')}</code></pre>`);
+                cursor = fenceRegex.lastIndex;
+            }
+            if (cursor < raw.length) {
+                parts.push(renderMarkdownBlocks(raw.slice(cursor)));
+            }
+            return `<div class="markdown-body">${parts.join('')}</div>`;
         }
 
         function formatSessionTranscriptContent(text) {
