@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -2207,6 +2208,12 @@ def _run_startup_session_metadata_backfill() -> None:
         daemon=True,
         name="dashboard-session-metadata-backfill",
     ).start()
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    _run_startup_session_metadata_backfill()
+    yield
 
 
 def _dashboard_allowed_roots() -> list[Path]:
@@ -5449,7 +5456,7 @@ routes = [
     Route("/api/graph", get_graph_data),
 ]
 
-app = Starlette(routes=routes, on_startup=[_run_startup_session_metadata_backfill])
+app = Starlette(routes=routes, lifespan=_lifespan)
 
 if __name__ == "__main__":
     import uvicorn
