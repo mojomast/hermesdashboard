@@ -32,6 +32,12 @@ If you want a different install location, set `HERMESDASHBOARD_DIR` first:
 HERMESDASHBOARD_DIR="$HOME/tools/hermesdashboard" bash -c "$(curl -fsSL https://raw.githubusercontent.com/mojomast/hermesdashboard/main/install.sh)"
 ```
 
+## Updating
+
+See [`UPDATE.md`](UPDATE.md) for all update paths, including non-command-line options.
+
+From the running dashboard, click the gear button in the header and choose **Update Instructions**. The dashboard explains GitHub Desktop/Git GUI updates, Download ZIP updates, installer reruns, and terminal updates, then reminds you to restart and use **Reload Dashboard**.
+
 ## Quick Start
 
 After installation:

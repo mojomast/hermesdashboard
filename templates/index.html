@@ -2965,6 +2965,54 @@
 
         .modal h3 { color: var(--primary); margin-bottom: 1rem; }
 
+        .update-modal {
+            max-width: 760px;
+            max-height: min(82vh, 760px);
+            overflow-y: auto;
+        }
+
+        .update-options {
+            display: grid;
+            gap: 0.8rem;
+            margin: 1rem 0;
+        }
+
+        .update-option-card {
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 0.85rem;
+            background: var(--bg-card);
+        }
+
+        .update-option-card h4 {
+            margin: 0 0 0.35rem;
+            color: var(--text);
+        }
+
+        .update-option-card p,
+        .update-option-card li {
+            color: var(--text-dim);
+            font-size: 0.88rem;
+            line-height: 1.4;
+        }
+
+        .update-command {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-top: 0.55rem;
+            padding: 0.55rem;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.22);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .update-command code {
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
         .modal input {
             width: 100%;
             padding: 0.75rem;
@@ -4506,6 +4554,7 @@
                     <p>Reload this dashboard after code changes and choose which tabs appear in the top and mobile navigation. Tab visibility is saved in this browser.</p>
                     <div class="dashboard-settings-actions">
                         <button class="btn" type="button" onclick="hardRefreshDashboard()">Reload Dashboard</button>
+                        <button class="btn" type="button" onclick="openUpdateInstructions()">Update Instructions</button>
                         <button class="btn" type="button" onclick="resetDashboardTabs()">Show All Tabs</button>
                     </div>
                     <h3>Visible Tabs</h3>
@@ -4561,6 +4610,48 @@
         <button class="mobile-tab" data-panel="cron" onclick="navigateTo('cron')">Cron</button>
         <button class="mobile-tab" data-panel="schedule" onclick="navigateTo('schedule')">Schedule</button>
         <button class="mobile-tab" data-panel="graph" onclick="navigateTo('graph')">Graph</button>
+    </div>
+
+    <div class="modal-overlay" id="update-instructions-modal" onclick="closeUpdateInstructions(event)">
+        <div class="modal update-modal" role="dialog" aria-modal="true" aria-labelledby="update-instructions-title" onclick="event.stopPropagation()">
+            <h3 id="update-instructions-title">Update Hermes Dashboard</h3>
+            <p>Pick the update path that matches how you installed the dashboard. After files update, restart the dashboard process and use <strong>Reload Dashboard</strong> to clear browser cache.</p>
+            <div class="update-options">
+                <div class="update-option-card">
+                    <h4>Dashboard helper</h4>
+                    <p>Use this screen from the gear menu when you forget the steps. It does not run code in the browser; it gives safe, copyable paths so you stay in control of file changes.</p>
+                </div>
+                <div class="update-option-card">
+                    <h4>GitHub Desktop or another Git GUI</h4>
+                    <ol>
+                        <li>Open the <code>hermesdashboard</code> repository in your Git app.</li>
+                        <li>Fetch origin, pull the latest <code>main</code>, then restart the dashboard launcher/service.</li>
+                        <li>Return here and click <strong>Reload Dashboard</strong>.</li>
+                    </ol>
+                </div>
+                <div class="update-option-card">
+                    <h4>Download ZIP from GitHub</h4>
+                    <ol>
+                        <li>Open the GitHub repository and choose <strong>Code → Download ZIP</strong>.</li>
+                        <li>Extract it over your dashboard install directory, preserving your local <code>.env.local</code> and launcher scripts.</li>
+                        <li>Restart the dashboard, then reload this page.</li>
+                    </ol>
+                    <p><a href="https://github.com/mojomast/hermesdashboard" target="_blank" rel="noopener noreferrer">Open hermesdashboard on GitHub</a></p>
+                </div>
+                <div class="update-option-card">
+                    <h4>Terminal update</h4>
+                    <p>If you are comfortable with a shell, run this from the install directory:</p>
+                    <div class="update-command">
+                        <code id="dashboard-update-command">git pull --ff-only &amp;&amp; python -m pip install -r requirements.txt</code>
+                        <button class="btn" type="button" onclick="copyDashboardUpdateCommand()">Copy</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" type="button" onclick="hardRefreshDashboard()">Reload Dashboard</button>
+                <button class="btn" type="button" onclick="closeUpdateInstructions()">Close</button>
+            </div>
+        </div>
     </div>
 
     <div class="container">
@@ -5396,6 +5487,30 @@
             applyDashboardTabSettings();
             renderDashboardTabSettings();
             showToast('All dashboard tabs are visible again');
+        }
+
+        function openUpdateInstructions() {
+            closeDashboardSettings();
+            const modal = document.getElementById('update-instructions-modal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeUpdateInstructions(event) {
+            if (event && event.target && event.currentTarget && event.target !== event.currentTarget) return;
+            const modal = document.getElementById('update-instructions-modal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        async function copyDashboardUpdateCommand() {
+            const command = document.getElementById('dashboard-update-command')?.textContent?.trim() || 'git pull --ff-only && python -m pip install -r requirements.txt';
+            try {
+                if (!navigator.clipboard) throw new Error('Clipboard API unavailable');
+                await navigator.clipboard.writeText(command);
+                showToast('Update command copied');
+            } catch (error) {
+                console.warn('Failed to copy update command:', error);
+                showToast(command);
+            }
         }
 
         async function hardRefreshDashboard() {

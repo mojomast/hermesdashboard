@@ -16,6 +16,20 @@ def test_dashboard_settings_button_and_menu_are_rendered():
     assert 'id="dashboard-settings-menu"' in html
     assert 'Reload Dashboard' in html
     assert 'hardRefreshDashboard()' in html
+    assert 'Update Instructions' in html
+    assert 'openUpdateInstructions()' in html
+
+
+def test_dashboard_update_instructions_cover_non_cli_paths():
+    html = _html()
+
+    assert 'id="update-instructions-modal"' in html
+    assert 'GitHub Desktop or another Git GUI' in html
+    assert 'Download ZIP from GitHub' in html
+    assert 'https://github.com/mojomast/hermesdashboard' in html
+    assert 'id="dashboard-update-command"' in html
+    assert 'git pull --ff-only' in html
+    assert 'function copyDashboardUpdateCommand()' in html
 
 
 def test_dashboard_tab_visibility_settings_are_persistent_and_safe():
