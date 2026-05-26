@@ -117,6 +117,242 @@ def test_self_improvement_run_ledger_scores_and_links_artifacts(tmp_path, monkey
     assert ledger["runs"][0]["outcome_score"] == 1.0
     assert "validation.json" in ledger["runs"][0]["artifacts"]
     assert ledger["runs"][0]["verification_commands"] == ["pytest tests"]
+    assert ledger["candidate_event_timeline"]["events"] == []
+
+
+def test_self_improvement_run_ledger_summarizes_step_journal(tmp_path, monkeypatch):
+    root = tmp_path / "self-improvement"
+    run_dir = root / "runs" / "run-with-steps"
+    run_dir.mkdir(parents=True)
+    (run_dir / "decision.json").write_text(json.dumps({"run_id": "run-with-steps"}), encoding="utf-8")
+    (run_dir / "validation.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    (run_dir / "step_journal.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({
+                    "run_id": "run-with-steps",
+                    "step_name": "backup",
+                    "status": "completed",
+                    "side_effect_kind": "backup",
+                    "started_at": "2026-05-21T01:00:00Z",
+                    "completed_at": "2026-05-21T01:01:00Z",
+                }),
+                json.dumps({
+                    "run_id": "run-with-steps",
+                    "step_name": "validation",
+                    "status": "waiting",
+                    "side_effect_kind": "validation",
+                    "artifact_refs": ["validation.json"],
+                    "recovery_hint": "rerun focused pytest",
+                    "started_at": "2026-05-21T01:02:00Z",
+                }),
+                json.dumps({
+                    "run_id": "run-with-steps",
+                    "step_name": "smoke",
+                    "status": "failed",
+                    "side_effect_kind": "validation",
+                    "recovery_hint": "inspect smoke output",
+                    "started_at": "2026-05-21T01:03:00Z",
+                    "completed_at": "2026-05-21T01:04:00Z",
+                }),
+                "not-json",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)
+
+    run = dashboard_app.get_self_improvement_ledger()["runs"][0]
+
+    assert run["step_journal_summary"]["count"] == 3
+    assert run["step_journal_summary"]["malformed_count"] == 1
+    assert run["step_journal_summary"]["status_counts"] == {"completed": 1, "waiting": 1, "failed": 1}
+    assert run["recoverable_step_count"] == 2
+    assert run["latest_step_status"] == "failed"
+    assert run["step_journal_summary"]["latest_step"]["step_name"] == "smoke"
+    assert run["step_journal_summary"]["recoverable_steps"][0]["recovery_hint"] == "rerun focused pytest"
+
+
+def test_becomussy_outbox_health_surfaces_pending_replay_state(tmp_path, monkeypatch):
+    hermes_home = tmp_path / ".hermes"
+    hermes_home.mkdir()
+    monkeypatch.setattr(dashboard_app, "HERMES_HOME", hermes_home)
+    (hermes_home / "becomussy_outbox.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({
+                    "id": "pending-1",
+                    "created_at": "2026-05-21T01:00:00Z",
+                    "done": False,
+                    "attempts": 2,
+                    "last_error": "connection refused",
+                    "path": "/memory",
+                }),
+                json.dumps({
+                    "id": "done-1",
+                    "created_at": "2026-05-21T02:00:00Z",
+                    "completed_at": "2026-05-21T02:01:00Z",
+                    "done": True,
+                    "attempts": 1,
+                    "path": "/journal",
+                }),
+                "not-json",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    health = dashboard_app.get_becomussy_outbox_health()
+    status = dashboard_app.get_self_improvement_status()
+
+    assert health["exists"] is True
+    assert health["total_count"] == 2
+    assert health["pending_count"] == 1
+    assert health["done_count"] == 1
+    assert health["malformed_count"] == 1
+    assert health["status"] == "error"
+    assert health["severity"] == "error"
+    assert health["status_reason"] == "malformed_outbox_records"
+    assert health["replay_needed"] is True
+    assert health["replay_command_hint"] == "~/scripts/self-augment/becomussy_outbox.py replay --preflight"
+    assert health["oldest_pending"]["id"] == "pending-1"
+    assert health["recent_errors"][0]["last_error"] == "connection refused"
+    assert status["becomussy_outbox"] == health
+
+
+def test_becomussy_outbox_health_surfaces_schema_preflight_invalid_records(tmp_path, monkeypatch):
+    hermes_home = tmp_path / ".hermes"
+    hermes_home.mkdir()
+    monkeypatch.setattr(dashboard_app, "HERMES_HOME", hermes_home)
+    (hermes_home / "becomussy_outbox.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({
+                    "id": "valid-memory",
+                    "created_at": "2026-05-21T01:00:00Z",
+                    "done": False,
+                    "method": "POST",
+                    "path": "/memory",
+                    "data": {"summary": "Remember dashboard outbox state"},
+                }),
+                json.dumps({
+                    "id": "invalid-journal",
+                    "created_at": "2026-05-21T02:00:00Z",
+                    "done": False,
+                    "method": "POST",
+                    "path": "/journal",
+                    "data": {"title": "Missing body"},
+                }),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    health = dashboard_app.get_becomussy_outbox_health()
+
+    assert health["ok"] is True
+    assert health["preflight_ok"] is False
+    assert health["status"] == "attention"
+    assert health["severity"] == "attention"
+    assert health["status_reason"] == "invalid_outbox_records"
+    assert health["invalid_count"] == 1
+    assert health["invalid_records"][0]["id"] == "invalid-journal"
+    assert health["invalid_records"][0]["path"] == "/journal"
+    assert health["invalid_records"][0]["issues"] == [
+        "journal.entry_type is required",
+        "journal.body_md is required",
+    ]
+    assert health["valid_pending_count"] == 1
+
+
+def test_self_improvement_candidate_event_timeline_surfaces_transition_audit(tmp_path, monkeypatch):
+    root = tmp_path / "self-improvement"
+    root.mkdir()
+    monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)
+    (root / "feature-candidates.jsonl").write_text(
+        json.dumps({"id": "cand-1", "title": "Expose queue transitions", "status": "built"}) + "\n",
+        encoding="utf-8",
+    )
+    (root / "feature-candidate-events.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({
+                    "candidate_id": "cand-1",
+                    "previous_status": "queued",
+                    "new_status": "selected",
+                    "operation": "status",
+                    "actor": "tournament",
+                    "reason": "winner",
+                    "artifact": "/tmp/tournament.json",
+                    "at": "2026-05-21T01:00:00Z",
+                }),
+                json.dumps({
+                    "candidate_id": "cand-1",
+                    "previous_status": "selected",
+                    "new_status": "built",
+                    "operation": "status",
+                    "actor": "self-improvement-loop",
+                    "reason": "validated",
+                    "artifact": "/tmp/run/validation.json",
+                    "at": "2026-05-21T02:00:00Z",
+                }),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    timeline = dashboard_app._read_self_improvement_candidate_events()
+    state = dashboard_app.get_self_improvement_status()
+
+    assert timeline["count"] == 2
+    assert timeline["events"][0]["new_status"] == "built"
+    assert timeline["events"][0]["candidate_title"] == "Expose queue transitions"
+    assert timeline["operation_counts"] == {"status": 2}
+    assert timeline["status_transition_counts"]["selected->built"] == 1
+    assert state["candidate_event_timeline"]["events"][0]["artifact"] == "/tmp/run/validation.json"
+
+
+def test_candidate_event_coverage_summary_surfaces_missing_ledger_coverage(tmp_path, monkeypatch):
+    root = tmp_path / "self-improvement"
+    root.mkdir()
+    monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)
+    (root / "feature-candidates.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"id": "built-missing", "title": "Historical built candidate", "status": "built"}),
+                json.dumps({"id": "queued-covered", "title": "Queued with event", "status": "queued"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / "feature-candidate-events.jsonl").write_text(
+        json.dumps({
+            "candidate_id": "queued-covered",
+            "previous_status": None,
+            "new_status": "queued",
+            "operation": "add",
+            "actor": "test",
+            "reason": "fixture",
+            "at": "2026-05-24T01:00:00Z",
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    coverage = dashboard_app._read_self_improvement_candidate_event_coverage()
+    state = dashboard_app.get_self_improvement_status()
+
+    assert coverage["coverage_ok"] is False
+    assert coverage["event_count"] == 1
+    assert coverage["missing_event_coverage"]["status_counts"]["built"] == 1
+    assert coverage["missing_event_coverage"]["candidate_ids_by_status"]["built"] == ["built-missing"]
+    assert coverage["missing_event_coverage_severity"]["level"] == "high"
+    assert state["candidate_event_coverage"]["missing_event_coverage"]["count"] == 1
 
 
 def test_evidence_gated_queue_accepts_valid_and_rejects_out_of_scope(tmp_path, monkeypatch):
@@ -307,6 +543,36 @@ def test_dashboard_candidate_submission_uses_strict_queue_validation(tmp_path, m
     assert not queue_path.exists() or queue_path.read_text(encoding="utf-8") == ""
 
 
+def test_candidate_scoring_honors_strict_queue_risk_prefixes():
+    base = {
+        "title": "Risk prefix scoring parity",
+        "target_layer": "dashboard_control_surface",
+        "problem": "Dashboard scoring should match strict queue risk validation",
+        "proposed_solution": "Normalize low, medium, and high risk prefixes before scoring",
+        "evidence": [
+            "Strict queue validation accepts explanatory risk prefixes",
+            "Dashboard scoring controls candidate selection priority",
+        ],
+        "usefulness_score": 8,
+        "testability_score": 9,
+        "novelty_score": 6,
+        "evidence_strength": 5,
+        "expected_impact": 5,
+        "verification_clarity": 5,
+        "implementation_size": 2,
+    }
+
+    exact_low_score, exact_low_reasons = dashboard_app._score_self_improvement_candidate({**base, "risk": "low"})
+    prefixed_low_score, prefixed_low_reasons = dashboard_app._score_self_improvement_candidate({**base, "risk": "low - deterministic fixture test only"})
+    prefixed_high_score, prefixed_high_reasons = dashboard_app._score_self_improvement_candidate({**base, "risk": "high - touches cron scheduling"})
+
+    assert exact_low_reasons == []
+    assert prefixed_low_reasons == []
+    assert prefixed_high_reasons == []
+    assert prefixed_low_score == exact_low_score
+    assert prefixed_high_score < prefixed_low_score
+
+
 def test_supervisor_pause_resume_and_confirmed_lock_clear(tmp_path, monkeypatch):
     root = tmp_path / "self-improvement"
     hermes_home = tmp_path / ".hermes"
@@ -372,6 +638,78 @@ def test_cron_mesh_and_drift_make_tab_a_self_improvement_hub(tmp_path, monkeypat
     assert status["policy"]["hub_ok"] is True
 
 
+def test_becomussy_resume_packet_surfaces_in_self_improvement_status(tmp_path, monkeypatch):
+    root = tmp_path / "self-improvement"
+    root.mkdir()
+    monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)
+    packet = {
+        "schema": "hermes.becomussy_resume_packet.v1",
+        "ok": True,
+        "next_actions": ["Continue selected dashboard feature"],
+        "feature_resume": {"queue": {"resumable_count": 1}},
+    }
+    (root / "becomussy-resume-packet.json").write_text(json.dumps(packet), encoding="utf-8")
+
+    loaded = dashboard_app.get_becomussy_resume_packet()
+    status = dashboard_app.get_self_improvement_status()
+
+    assert loaded["schema"] == "hermes.becomussy_resume_packet.v1"
+    assert loaded["exists"] is True
+    assert loaded["next_actions"] == ["Continue selected dashboard feature"]
+    assert status["becomussy_resume_packet"]["feature_resume"]["queue"]["resumable_count"] == 1
+
+
+def test_becomussy_resume_packet_prefers_compact_artifact(tmp_path, monkeypatch):
+    root = tmp_path / "self-improvement"
+    root.mkdir()
+    monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)
+    full_packet = {
+        "schema": "hermes.becomussy_resume_packet.v1",
+        "ok": True,
+        "next_actions": ["full"],
+        "becomussy_project_hydration_preview": {"projects": [{"blob": "x" * 2000}]},
+    }
+    compact_packet = {
+        "schema": "hermes.becomussy_resume_packet.v1",
+        "ok": True,
+        "next_actions": ["compact"],
+        "compact": {"enabled": True, "truncated_sections": ["becomussy_project_hydration_preview"]},
+    }
+    (root / "becomussy-resume-packet.json").write_text(json.dumps(full_packet), encoding="utf-8")
+    (root / "becomussy-resume-packet.compact.json").write_text(json.dumps(compact_packet), encoding="utf-8")
+
+    loaded = dashboard_app.get_becomussy_resume_packet()
+
+    assert loaded["next_actions"] == ["compact"]
+    assert loaded["source"].endswith("becomussy-resume-packet.compact.json")
+    assert loaded["full_source"].endswith("becomussy-resume-packet.json")
+    assert loaded["exists"] is True
+
+
+def test_becomussy_resume_packet_compacts_oversized_full_packet(tmp_path, monkeypatch):
+    root = tmp_path / "self-improvement"
+    root.mkdir()
+    monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)
+    oversized_projects = [{"id": f"project-{idx}", "notes": "x" * 1000} for idx in range(20)]
+    packet = {
+        "schema": "hermes.becomussy_resume_packet.v1",
+        "ok": True,
+        "next_actions": ["selected candidate remains visible"],
+        "becomussy_project_hydration_preview": {"projects": oversized_projects, "stale_project_count": 20},
+    }
+    (root / "becomussy-resume-packet.json").write_text(json.dumps(packet), encoding="utf-8")
+
+    loaded = dashboard_app.get_becomussy_resume_packet()
+
+    assert loaded["ok"] is True
+    assert loaded["next_actions"] == ["selected candidate remains visible"]
+    assert loaded["compact"]["enabled"] is True
+    assert "becomussy_project_hydration_preview" in loaded["compact"]["truncated_sections"]
+    assert loaded["compact"]["section_sizes"]["becomussy_project_hydration_preview"] > 12000
+    assert loaded["becomussy_project_hydration_preview"]["_compact"]["truncated"] is True
+    assert loaded["becomussy_project_hydration_preview"]["projects_total_count"] == 20
+
+
 def test_self_improvement_api_routes_and_template_are_wired(tmp_path, monkeypatch):
     root = tmp_path / "self-improvement"
     monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)
@@ -380,7 +718,7 @@ def test_self_improvement_api_routes_and_template_are_wired(tmp_path, monkeypatc
     payload = _decode(response)
 
     assert response.status_code == 200
-    assert set(payload) >= {"ledger", "queue", "supervisor", "cron_mesh", "drift", "policy"}
+    assert set(payload) >= {"ledger", "queue", "supervisor", "cron_mesh", "drift", "policy", "candidate_event_coverage", "becomussy_outbox", "becomussy_resume_packet"}
     route_paths = [
         getattr(route, "path", getattr(route, "path_format", None))
         or (route.args[0] if getattr(route, "args", None) else None)
@@ -396,4 +734,14 @@ def test_self_improvement_api_routes_and_template_are_wired(tmp_path, monkeypatc
     assert "loadSelfImprovement()" in html
     assert 'id="self-improvement-cron-mesh"' in html
     assert 'id="self-improvement-drift"' in html
+    assert 'id="self-improvement-outbox"' in html
+    assert 'id="self-improvement-event-coverage"' in html
+    assert 'id="self-improvement-resume-packet"' in html
+    assert "renderSelfImprovementEventCoverage" in html
     assert "renderSelfImprovementCronMesh" in html
+    assert "renderBecomussyOutboxHealth" in html
+    assert "invalid:" in html
+    assert "invalid_records" in html
+    assert "renderBecomussyResumePacket" in html
+    assert "recoverable steps:" in html
+    assert "step_journal_summary" in html

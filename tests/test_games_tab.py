@@ -145,6 +145,35 @@ def test_games_catalog_exposes_doom_watch_metadata(tmp_path, monkeypatch):
     assert game["status_hint"] == "Start the Doom watch server first."
 
 
+def test_games_catalog_exposes_minihack_watch_metadata(tmp_path, monkeypatch):
+    minihack = tmp_path / "skills" / "gaming" / "minihack-player"
+    minihack.mkdir(parents=True)
+    (minihack / "SKILL.md").write_text(
+        "---\n"
+        "name: minihack-player\n"
+        "description: Watch Hermes crawl MiniHack dungeons.\n"
+        "tags: [gaming, minihack, nethack, roguelike, watch, benchmark]\n"
+        "dashboard:\n"
+        "  watch_url: /minihack/\n"
+        "  launch_label: Watch Hermes Crawl Dungeons\n"
+        "  status_hint: Start the MiniHack watch server first.\n"
+        "---\n"
+        "# MiniHack Player\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dashboard_app, "HERMES_HOME", tmp_path)
+
+    catalog = dashboard_app.get_games_catalog()
+
+    assert catalog["count"] == 1
+    game = catalog["games"][0]
+    assert game["id"] == "minihack-player"
+    assert game["category"] == "Watch"
+    assert game["watch_url"] == "/minihack/"
+    assert game["launch_label"] == "Watch Hermes Crawl Dungeons"
+    assert game["status_hint"] == "Start the MiniHack watch server first."
+
+
 def test_games_catalog_exposes_pokemon_dashboard_metadata(tmp_path, monkeypatch):
     pokemon = tmp_path / "skills" / "gaming" / "pokemon-player"
     pokemon.mkdir(parents=True)
@@ -207,8 +236,30 @@ def test_games_api_route_returns_catalog(tmp_path, monkeypatch):
     assert "/api/games" in route_paths
     assert "/doom/" in route_paths
     assert "/doom/{path:path}" in route_paths
+    assert "/minihack/" in route_paths
+    assert "/minihack/{path:path}" in route_paths
     assert "/pokemon/" in route_paths
     assert "/pokemon/{path:path}" in route_paths
+    assert "/api/diagnostics/context" in route_paths
+    assert "/api/pokemon/restart" in route_paths
+    assert "/pokemon/chat" in route_paths
+    assert "/pokemon/api/diagnostics/context" in route_paths
+
+
+def test_diagnostics_redacts_secret_like_keys():
+    payload = dashboard_app._diagnostics_redact(
+        {
+            "api_key": "abc123",
+            "nested": {"Authorization": "Bearer nope", "safe": "ok"},
+            "items": [{"password": "hidden", "value": "visible"}],
+        }
+    )
+
+    assert payload["api_key"] == "[redacted]"
+    assert payload["nested"]["Authorization"] == "[redacted]"
+    assert payload["nested"]["safe"] == "ok"
+    assert payload["items"][0]["password"] == "[redacted]"
+    assert payload["items"][0]["value"] == "visible"
 
 
 def test_doom_watch_html_rewrite_scopes_absolute_assets_to_proxy():
@@ -263,5 +314,7 @@ def test_games_tab_is_wired_into_dashboard_template():
     assert 'id="games-watch-frame"' in html
     assert "upload_url" in html
     assert "openGameWatch" in html
+    assert "restartPokemonAgent()" in html
+    assert "/api/pokemon/restart" in html
     assert "loadGames()" in html
     assert "'games'" in html

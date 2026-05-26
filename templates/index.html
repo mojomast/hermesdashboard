@@ -155,7 +155,8 @@
             background: rgba(0,0,0,0.06);
         }
 
-        .theme-toggle {
+        .theme-toggle,
+        .dashboard-settings-button {
             background: transparent;
             border: 1px solid var(--primary-border);
             color: var(--primary);
@@ -167,8 +168,99 @@
             display: flex;
             align-items: center;
         }
-        .theme-toggle:hover {
+        .theme-toggle:hover,
+        .dashboard-settings-button:hover,
+        .dashboard-settings-button.active {
             background: var(--primary-dim);
+        }
+
+        .dashboard-settings-wrapper {
+            position: relative;
+        }
+
+        .dashboard-settings-menu {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 0.65rem);
+            width: min(360px, calc(100vw - 2rem));
+            max-height: calc(100vh - 6rem);
+            overflow-y: auto;
+            display: none;
+            z-index: 1200;
+            padding: 1rem;
+            border: 1px solid var(--primary-border);
+            border-radius: 12px;
+            background: rgba(15, 15, 35, 0.98);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.38);
+        }
+
+        [data-theme="light"] .dashboard-settings-menu {
+            background: rgba(255,255,255,0.98);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        }
+
+        .dashboard-settings-menu.open {
+            display: block;
+        }
+
+        .dashboard-settings-menu h3 {
+            margin: 0 0 0.25rem;
+            color: var(--primary);
+            font-size: 1rem;
+        }
+
+        .dashboard-settings-menu p {
+            margin: 0.2rem 0 0.75rem;
+            color: var(--text-dim);
+            font-size: 0.82rem;
+            line-height: 1.35;
+        }
+
+        .dashboard-settings-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+
+        .dashboard-tab-settings {
+            display: grid;
+            gap: 0.35rem;
+            margin-top: 0.5rem;
+        }
+
+        .dashboard-tab-setting {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.45rem 0.55rem;
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 0.88rem;
+        }
+
+        .dashboard-tab-setting input {
+            accent-color: var(--primary);
+        }
+
+        .tab.dashboard-tab-hidden,
+        .mobile-tab.dashboard-tab-hidden {
+            display: none !important;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
 
         body {
@@ -243,6 +335,123 @@
 
         .panel { display: none; flex: 1; flex-direction: column; min-height: 0; }
         .panel.active { display: flex; }
+
+        #scrolls-panel .sessions-toolbar {
+            flex: 0 0 auto;
+            margin-bottom: 0.55rem;
+        }
+
+        #scrolls-panel .sessions-toolbar h2 {
+            margin-bottom: 0.2rem !important;
+        }
+
+        #scrolls-panel .sessions-toolbar p {
+            max-width: 760px;
+            line-height: 1.35;
+        }
+
+        #scrolls-container {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 0 0.35rem 1.5rem 0;
+        }
+
+        .scrolls-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.65fr);
+            gap: 0.75rem;
+            align-items: start;
+        }
+
+        .scrolls-cockpit {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(260px, 0.75fr);
+            gap: 0.75rem;
+            align-items: start;
+            margin-top: 0.75rem;
+        }
+
+        .scrolls-card-tight {
+            padding: 0.85rem !important;
+        }
+
+        .scrolls-card-tight h4,
+        .scrolls-card-tight h5 {
+            margin-bottom: 0.35rem;
+        }
+
+        .scrolls-table-wrap {
+            overflow: auto;
+            max-height: 430px;
+        }
+
+        .scrolls-micro-list {
+            display: grid;
+            gap: 0.35rem;
+            margin-top: 0.5rem;
+        }
+
+        .scrolls-health-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.45rem;
+            margin-top: 0.55rem;
+        }
+
+        .scrolls-health-row .meta-pill {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .scrolls-hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(380px, 0.8fr);
+            gap: 0.75rem;
+            align-items: start;
+        }
+
+        .scrolls-hero .stats {
+            margin: 0;
+        }
+
+        .scrolls-hero-side {
+            display: grid;
+            gap: 0.55rem;
+        }
+
+        .scrolls-console {
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.76rem;
+            line-height: 1.4;
+            max-height: 330px;
+            overflow: auto;
+            padding: 0.75rem;
+            white-space: pre-wrap;
+        }
+
+        .scrolls-control-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+            gap: 0.75rem;
+            align-items: start;
+            margin-top: 0.75rem;
+        }
+
+        @media (max-width: 980px) {
+            .scrolls-grid,
+            .scrolls-cockpit,
+            .scrolls-hero,
+            .scrolls-control-grid {
+                grid-template-columns: 1fr;
+            }
+        }
 
         /* Chat Panel with Debug Log */
         .chat-layout {
@@ -4209,14 +4418,72 @@
         margin-right: 0.4rem;
     }
 
-    .schedule-empty-state {
-        text-align: center;
-        color: var(--text-dim);
-        padding: 3rem 1rem;
-        font-size: 0.9rem;
-    }
-    /* === END TRACK C === */
+        .schedule-empty-state {
+            text-align: center;
+            color: var(--text-dim);
+            padding: 3rem 1rem;
+            font-size: 0.9rem;
+        }
+        .diagnostics-grid {
+            display: grid;
+            grid-template-columns: minmax(300px, 0.75fr) minmax(0, 1.25fr);
+            gap: 1rem;
+            min-height: 0;
+        }
+        .diagnostics-output,
+        .diagnostics-context {
+            min-height: 360px;
+            max-height: calc(100dvh - 260px);
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            line-height: 1.45;
+        }
+        .diagnostics-output {
+            color: var(--text);
+        }
+        .diagnostics-context {
+            color: var(--text-dim);
+        }
+        .diagnostics-toolbar {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .diagnostics-form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .diagnostics-form textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        @media (max-width: 900px) {
+            .diagnostics-grid { grid-template-columns: 1fr; }
+        }
+        /* === END TRACK C === */
 
+
+        body.dnd-popout-mode .sidebar,
+        body.dnd-popout-mode .mobile-nav,
+        body.dnd-popout-mode #status-panel,
+        body.dnd-popout-mode .header { display: none !important; }
+        body.dnd-popout-mode .main-content { margin-left: 0 !important; width: 100vw !important; max-width: none !important; padding: 1rem !important; }
+        body.dnd-popout-mode .panel:not(#dnd-panel) { display: none !important; }
+        body.dnd-popout-mode #dnd-panel { display: block !important; min-height: calc(100vh - 2rem); }
+        .dnd-dashboard-grid { display:grid; grid-template-columns:minmax(280px,0.8fr) minmax(420px,1.35fr) minmax(320px,0.95fr); gap:1rem; align-items:start; }
+        .dnd-cockpit-card { border:1px solid var(--border-subtle); border-radius:12px; padding:0.85rem; background:rgba(255,255,255,0.03); margin-bottom:1rem; }
+        .dnd-event-narration { border-left:3px solid var(--purple); }
+        .dnd-event-action { border-left:3px solid var(--info); }
+        .dnd-event-dice { border-left:3px solid var(--warning); }
+        .dnd-event-scene { border-left:3px solid var(--success); }
+        .dnd-event-subagent { border-left:3px solid var(--pink); }
+        .dnd-character-sheet, .dnd-world-entity { padding:0.6rem; border:1px solid var(--border-subtle); border-radius:10px; margin:0.45rem 0; background:rgba(0,0,0,0.16); }
+        @media (max-width: 1100px) { .dnd-dashboard-grid { grid-template-columns:1fr; } }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -4230,6 +4497,22 @@
             <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
                 <span id="theme-icon">&#9790;</span>
             </button>
+            <div class="dashboard-settings-wrapper">
+                <button class="dashboard-settings-button" id="dashboard-settings-button" onclick="toggleDashboardSettings(event)" title="Dashboard settings" aria-haspopup="true" aria-expanded="false">
+                    <span aria-hidden="true">&#9881;</span><span class="sr-only">Dashboard settings</span>
+                </button>
+                <div class="dashboard-settings-menu" id="dashboard-settings-menu" role="dialog" aria-label="Dashboard settings">
+                    <h3>Dashboard Settings</h3>
+                    <p>Reload this dashboard after code changes and choose which tabs appear in the top and mobile navigation. Tab visibility is saved in this browser.</p>
+                    <div class="dashboard-settings-actions">
+                        <button class="btn" type="button" onclick="hardRefreshDashboard()">Reload Dashboard</button>
+                        <button class="btn" type="button" onclick="resetDashboardTabs()">Show All Tabs</button>
+                    </div>
+                    <h3>Visible Tabs</h3>
+                    <p>Chat stays visible so there is always a safe fallback tab.</p>
+                    <div class="dashboard-tab-settings" id="dashboard-tab-settings"></div>
+                </div>
+            </div>
             <div class="status-bar">
                 <span><span class="dot"></span> <span id="current-model">Loading...</span></span>
                 <span id="current-personality">Personality: --</span>
@@ -4243,11 +4526,15 @@
         <button class="tab" data-panel="config">Config</button>
         <button class="tab" data-panel="secrets">Secrets</button>
         <button class="tab" data-panel="sessions">Sessions</button>
+        <button class="tab" data-panel="agent-observability">Agent Ops</button>
         <button class="tab" data-panel="memory">Memory</button>
         <button class="tab" data-panel="skills">Skills</button>
         <button class="tab" data-panel="games">Games</button>
+        <button class="tab" data-panel="diagnostics">Diagnostics</button>
+        <button class="tab" data-panel="dnd">Campaigns</button>
         <button class="tab" data-panel="self-improvement">Self-Improvement</button>
         <button class="tab" data-panel="autonomous-development">Autonomous Development</button>
+        <button class="tab" data-panel="scrolls">Vesuvius AutoResearch</button>
         <button class="tab" data-panel="cron">Cron</button>
         <button class="tab" data-panel="schedule">Schedule</button>
         <button class="tab" data-panel="graph">Graph</button>
@@ -4262,11 +4549,15 @@
         <button class="mobile-tab" data-panel="config" onclick="navigateTo('config')">Config</button>
         <button class="mobile-tab" data-panel="secrets" onclick="navigateTo('secrets')">Secrets</button>
         <button class="mobile-tab" data-panel="sessions" onclick="navigateTo('sessions')">Sessions</button>
+        <button class="mobile-tab" data-panel="agent-observability" onclick="navigateTo('agent-observability')">Agent Ops</button>
         <button class="mobile-tab" data-panel="memory" onclick="navigateTo('memory')">Memory</button>
         <button class="mobile-tab" data-panel="skills" onclick="navigateTo('skills')">Skills</button>
         <button class="mobile-tab" data-panel="games" onclick="navigateTo('games')">Games</button>
+        <button class="mobile-tab" data-panel="diagnostics" onclick="navigateTo('diagnostics')">Diagnostics</button>
+        <button class="mobile-tab" data-panel="dnd" onclick="navigateTo('dnd')">Campaigns</button>
         <button class="mobile-tab" data-panel="self-improvement" onclick="navigateTo('self-improvement')">Self-Improvement</button>
         <button class="mobile-tab" data-panel="autonomous-development" onclick="navigateTo('autonomous-development')">Autonomous Development</button>
+        <button class="mobile-tab" data-panel="scrolls" onclick="navigateTo('scrolls')">Vesuvius AutoResearch</button>
         <button class="mobile-tab" data-panel="cron" onclick="navigateTo('cron')">Cron</button>
         <button class="mobile-tab" data-panel="schedule" onclick="navigateTo('schedule')">Schedule</button>
         <button class="mobile-tab" data-panel="graph" onclick="navigateTo('graph')">Graph</button>
@@ -4419,6 +4710,33 @@
             <div class="sessions-pagination" id="sessions-pagination"></div>
         </div>
 
+        <!-- Agent Observability Panel -->
+        <div class="panel" id="agent-observability-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Agent Ops Radar</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Online research pointed to the best agent dashboards: aggregate health plus trace-level failure exemplars. This radar turns local Hermes sessions into that cockpit.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <select id="agent-observability-window" onchange="loadAgentObservability()">
+                        <option value="6">6h</option>
+                        <option value="24" selected>24h</option>
+                        <option value="72">72h</option>
+                        <option value="168">7d</option>
+                    </select>
+                    <button class="btn" onclick="loadAgentObservability()">Refresh</button>
+                </div>
+            </div>
+            <div class="stats" id="agent-observability-stats"></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,0.9fr);gap:1rem;margin-top:1rem;align-items:start;">
+                <div class="card" id="agent-observability-alerts"><h4>Signals</h4><p style="color:var(--text-dim);">Loading telemetry...</p></div>
+                <div class="card" id="agent-observability-research"><h4>Research Basis</h4><p style="color:var(--text-dim);">Loading...</p></div>
+                <div class="card" id="agent-observability-tools" style="overflow:auto;"><h4>Top Tools</h4><p style="color:var(--text-dim);">Loading tools...</p></div>
+                <div class="card" id="agent-observability-mix" style="overflow:auto;"><h4>Source / Model Mix</h4><p style="color:var(--text-dim);">Loading mix...</p></div>
+                <div class="card" id="agent-observability-traces" style="grid-column:1 / -1;overflow:auto;"><h4>Recent Trace Exemplars</h4><p style="color:var(--text-dim);">Loading traces...</p></div>
+            </div>
+        </div>
+
         <!-- Memory Panel -->
         <div class="panel" id="memory-panel">
             <div class="memory-editor">
@@ -4468,13 +4786,91 @@
                     <h3 style="margin-bottom:0.35rem;">Games</h3>
                     <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Gaming launchpads and play/run skills installed in Hermes.</p>
                 </div>
-                <button class="btn" onclick="loadGames()">Refresh</button>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadGames()">Refresh</button>
+                    <button class="btn danger" id="pokemon-restart-btn" onclick="restartPokemonAgent()">Restart Pokémon Agent</button>
+                </div>
             </div>
             <div class="stats" id="games-stats"></div>
             <div class="skills-list" id="games-list">
                 <div style="color:var(--text-dim);">Loading games...</div>
             </div>
             <iframe id="games-watch-frame" title="Game Watch" style="display:none;width:100%;min-height:640px;border:1px solid var(--border);border-radius:12px;margin-top:1rem;background:#050505;"></iframe>
+        </div>
+
+        <!-- Diagnostics Panel -->
+        <div class="panel" id="diagnostics-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Diagnostics Agent</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Ask Hermes to inspect the live dashboard/Pokemon context, explain failures, and propose safe fixes. Fixes should stay proposal-only until you explicitly approve them.</p>
+                </div>
+                <div class="diagnostics-toolbar">
+                    <button class="btn" onclick="loadDiagnosticsContext()">Gather Context</button>
+                    <button class="btn" onclick="fillDiagnosticsPrompt('stuck')">Stuck Bot</button>
+                    <button class="btn" onclick="fillDiagnosticsPrompt('dashboard')">Dashboard Issue</button>
+                    <button class="btn" onclick="fillDiagnosticsPrompt('fix')">Propose Fix</button>
+                </div>
+            </div>
+            <div class="diagnostics-grid" style="margin-top:1rem;">
+                <div class="card diagnostics-form">
+                    <h4>Ask</h4>
+                    <select id="diagnostics-target">
+                        <option value="pokemon" selected>Pokemon + Hermes Dashboard</option>
+                    </select>
+                    <textarea id="diagnostics-input" placeholder="Example: The bot looks stuck. Diagnose the likely blocker, cite status fields, and propose the safest next action without changing files yet."></textarea>
+                    <button class="btn primary" id="diagnostics-send" onclick="sendDiagnosticsMessage()">Ask Diagnostics Agent</button>
+                    <p style="color:var(--text-dim);font-size:0.8rem;margin:0;">Safety default: observe and propose. Do not ask it to edit, restart, or run commands unless you are ready to approve a specific plan.</p>
+                </div>
+                <div class="card">
+                    <h4>Agent Response</h4>
+                    <div class="diagnostics-output" id="diagnostics-output">No diagnostic run yet.</div>
+                </div>
+                <div class="card" style="grid-column:1 / -1;">
+                    <h4>Latest Context Snapshot</h4>
+                    <div class="diagnostics-context" id="diagnostics-context">Click Gather Context.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- D&D Campaigns Panel -->
+        <div class="panel" id="dnd-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Campaigns</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Dashboard-native D&amp;D campaign control: roster, scene state, narration log, and autonomous turns.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadDndCampaigns()">Refresh</button>
+                    <button class="btn primary" id="dnd-popout-btn" onclick="openDndPopout()">Open D&amp;D Pop-out</button>
+                </div>
+            </div>
+            <div class="stats" id="dnd-stats"></div>
+            <div style="display:grid;grid-template-columns:minmax(280px,0.75fr) minmax(0,1.25fr);gap:1rem;margin-top:1rem;min-height:0;">
+                <div style="display:flex;flex-direction:column;gap:1rem;min-height:0;">
+                    <div class="card">
+                        <h4>Create Campaign</h4>
+                        <form class="message-board-form" id="dnd-create-form" onsubmit="createDndCampaign(event)">
+                            <input id="dnd-campaign-name" type="text" placeholder="Campaign name" required>
+                            <textarea id="dnd-campaign-premise" placeholder="Premise, setting, or opening scene"></textarea>
+                            <input id="dnd-campaign-tone" type="text" placeholder="Tone / genre, e.g. gothic frontier, mythic heist">
+                            <select id="dnd-campaign-system"><option value="dnd5e">D&amp;D 5e / SRD-safe</option><option value="fantasy_core">Fantasy core pack</option></select>
+                            <button class="btn primary" id="dnd-create-submit" type="submit">Create Campaign</button>
+                        </form>
+                    </div>
+                    <div class="card" style="overflow:auto;min-height:220px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
+                            <h4>Campaign List</h4>
+                            <button class="btn" onclick="loadDndCampaigns()">Reload</button>
+                        </div>
+                        <div id="dnd-campaign-list" style="margin-top:0.75rem;color:var(--text-dim);">Loading campaigns...</div>
+                    </div>
+                </div>
+                <div class="card" id="dnd-campaign-detail" style="overflow:auto;min-height:520px;">
+                    <h4>Selected Campaign</h4>
+                    <p style="color:var(--text-dim);">Select a campaign or create a new one to manage the scene, roster, and turn log.</p>
+                </div>
+            </div>
         </div>
 
         <!-- Self-Improvement Panel -->
@@ -4497,6 +4893,9 @@
                 <div class="card" id="self-improvement-supervisor"><h4>Supervisor</h4><p style="color:var(--text-dim);">Loading...</p></div>
                 <div class="card" id="self-improvement-cron-mesh"><h4>Cron Wiring</h4><p style="color:var(--text-dim);">Loading cron mesh...</p></div>
                 <div class="card" id="self-improvement-drift"><h4>Drift / Guardrails</h4><p style="color:var(--text-dim);">Loading drift status...</p></div>
+                <div class="card" id="self-improvement-outbox"><h4>Becomussy Outbox</h4><p style="color:var(--text-dim);">Loading outbox health...</p></div>
+                <div class="card" id="self-improvement-event-coverage"><h4>Queue Event Coverage</h4><p style="color:var(--text-dim);">Loading event coverage...</p></div>
+                <div class="card" id="self-improvement-resume-packet"><h4>Becomussy Resume Packet</h4><p style="color:var(--text-dim);">Loading resume state...</p></div>
                 <div class="card">
                     <h4>Add Evidence-Gated Candidate</h4>
                     <form class="message-board-form" onsubmit="submitSelfImprovementCandidate(event)">
@@ -4573,6 +4972,24 @@
                 </div>
                 <pre id="skill-modal-content" style="white-space:pre-wrap;font-size:0.85rem;background:var(--input-bg);padding:1rem;border-radius:8px;max-height:60vh;overflow:auto;"></pre>
                 <div id="skill-modal-files" style="margin-top:0.75rem;font-size:0.8rem;color:var(--text-dim);"></div>
+            </div>
+        </div>
+
+
+        <!-- Vesuvius AutoResearch Panel -->
+        <div class="panel" id="scrolls-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h2 style="margin-bottom:0.35rem;">Vesuvius AutoResearch</h2>
+                    <p style="color:var(--text-dim);font-size:0.9rem;max-width:760px;">Vesuvius ink-detection AutoResearch loop: data inventory, cross-scroll experiment leaderboard, configs, cron status, and log tail.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadScrollsResearch()">Refresh</button>
+                    <button class="btn primary" id="scrolls-autoresearch-btn" onclick="triggerScrollsAutoresearch()">Run AutoResearch</button>
+                </div>
+            </div>
+            <div id="scrolls-container">
+                <div style="text-align:center;color:var(--text-dim);padding:2rem;">Loading Vesuvius AutoResearch...</div>
             </div>
         </div>
 
@@ -4919,6 +5336,104 @@
             setTheme(next);
         }
 
+        function getHiddenDashboardTabs() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(DASHBOARD_TAB_SETTINGS_KEY) || '[]');
+                return new Set(Array.isArray(parsed) ? parsed.filter(id => id !== 'chat') : []);
+            } catch (error) {
+                console.warn('Failed to parse dashboard tab settings:', error);
+                return new Set();
+            }
+        }
+
+        function saveHiddenDashboardTabs(hiddenTabs) {
+            const values = Array.from(hiddenTabs).filter(id => id !== 'chat');
+            localStorage.setItem(DASHBOARD_TAB_SETTINGS_KEY, JSON.stringify(values));
+        }
+
+        function isDashboardTabVisible(panel) {
+            return !getHiddenDashboardTabs().has(panel);
+        }
+
+        function applyDashboardTabSettings() {
+            const hiddenTabs = getHiddenDashboardTabs();
+            DASHBOARD_TABS.forEach(tab => {
+                document.querySelectorAll(`[data-panel="${tab.id}"]`).forEach(el => {
+                    el.classList.toggle('dashboard-tab-hidden', hiddenTabs.has(tab.id));
+                });
+            });
+            const activePanel = document.querySelector('.panel.active');
+            if (activePanel) {
+                const activeId = activePanel.id.replace(/-panel$/, '');
+                if (hiddenTabs.has(activeId)) navigateTo('chat');
+            }
+        }
+
+        function renderDashboardTabSettings() {
+            const container = document.getElementById('dashboard-tab-settings');
+            if (!container) return;
+            const hiddenTabs = getHiddenDashboardTabs();
+            container.innerHTML = DASHBOARD_TABS.map(tab => `
+                <label class="dashboard-tab-setting" for="dashboard-tab-${tab.id}">
+                    <span>${escapeHtml(tab.label)}</span>
+                    <input id="dashboard-tab-${tab.id}" type="checkbox" ${hiddenTabs.has(tab.id) ? '' : 'checked'} ${tab.locked ? 'disabled' : ''} onchange="setDashboardTabVisible('${tab.id}', this.checked)">
+                </label>
+            `).join('');
+        }
+
+        function setDashboardTabVisible(panel, visible) {
+            if (panel === 'chat') return;
+            const hiddenTabs = getHiddenDashboardTabs();
+            if (visible) hiddenTabs.delete(panel);
+            else hiddenTabs.add(panel);
+            saveHiddenDashboardTabs(hiddenTabs);
+            applyDashboardTabSettings();
+            renderDashboardTabSettings();
+        }
+
+        function resetDashboardTabs() {
+            localStorage.removeItem(DASHBOARD_TAB_SETTINGS_KEY);
+            applyDashboardTabSettings();
+            renderDashboardTabSettings();
+            showToast('All dashboard tabs are visible again');
+        }
+
+        async function hardRefreshDashboard() {
+            try {
+                invalidateCache();
+                if ('caches' in window) {
+                    const names = await caches.keys();
+                    await Promise.all(names.map(name => caches.delete(name)));
+                }
+            } catch (error) {
+                console.warn('Dashboard cache cleanup failed:', error);
+            }
+            const url = new URL(window.location.href);
+            url.searchParams.set('dashboard_reload', Date.now().toString());
+            window.location.replace(url.toString());
+        }
+
+        function toggleDashboardSettings(event) {
+            if (event) event.stopPropagation();
+            const menu = document.getElementById('dashboard-settings-menu');
+            const button = document.getElementById('dashboard-settings-button');
+            if (!menu || !button) return;
+            const open = !menu.classList.contains('open');
+            menu.classList.toggle('open', open);
+            button.classList.toggle('active', open);
+            button.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) renderDashboardTabSettings();
+        }
+
+        function closeDashboardSettings() {
+            const menu = document.getElementById('dashboard-settings-menu');
+            const button = document.getElementById('dashboard-settings-button');
+            if (!menu || !button) return;
+            menu.classList.remove('open');
+            button.classList.remove('active');
+            button.setAttribute('aria-expanded', 'false');
+        }
+
         // Initialize theme immediately to avoid flash
         initTheme();
 
@@ -4996,8 +5511,32 @@
             }
         }
 
+        const DASHBOARD_TABS = [
+            { id: 'chat', label: 'Chat', locked: true },
+            { id: 'message-board', label: 'Message Board' },
+            { id: 'config', label: 'Config' },
+            { id: 'secrets', label: 'Secrets' },
+            { id: 'sessions', label: 'Sessions' },
+            { id: 'agent-observability', label: 'Agent Ops' },
+            { id: 'memory', label: 'Memory' },
+            { id: 'skills', label: 'Skills' },
+            { id: 'games', label: 'Games' },
+            { id: 'diagnostics', label: 'Diagnostics' },
+            { id: 'dnd', label: 'Campaigns' },
+            { id: 'self-improvement', label: 'Self-Improvement' },
+            { id: 'autonomous-development', label: 'Autonomous Development' },
+            { id: 'scrolls', label: 'Vesuvius AutoResearch' },
+            { id: 'cron', label: 'Cron' },
+            { id: 'schedule', label: 'Schedule' },
+            { id: 'graph', label: 'Graph' },
+        ];
+        const DASHBOARD_TAB_SETTINGS_KEY = 'hermes_dashboard_hidden_tabs_v1';
+
         // Lazy loading: track which tabs have been loaded
-        const tabLoaded = { chat: true, config: false, secrets: false, sessions: false, memory: false, skills: false, cron: false, schedule: false, graph: false };
+        const tabLoaded = DASHBOARD_TABS.reduce((acc, tab) => {
+            acc[tab.id] = tab.id === 'chat';
+            return acc;
+        }, {});
 
         // Sessions pagination state
         let sessionsPage = 0;
@@ -5030,59 +5569,121 @@
         let activeChatSessionId = null;
         let streamResumeInFlight = false;
 
-        // LocalStorage persistence
-        // Version the cache key so stale chat history from older dashboard
-        // builds cannot keep steering new conversations unexpectedly.
+        // Dashboard state persistence
+        // Legacy localStorage keys are read once for migration only. Rich chat/run
+        // payloads now live server-side in ~/.hermes/dashboard_state.db so long
+        // tool outputs/traces cannot exhaust the browser's tiny localStorage quota.
         const STORAGE_KEY = 'hermes_dashboard_conversation_v2';
         const ACTIVE_RUN_KEY = 'hermes_dashboard_active_run_v1';
         const ACTIVE_CHAT_SESSION_KEY = 'hermes_dashboard_active_chat_session_v1';
+        const DASHBOARD_STATE_ENDPOINT = '/api/dashboard-state';
+        const dashboardStateSaveTimers = new Map();
 
-        function saveConversation() {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(conversation));
-            } catch (e) {
-                console.warn('Failed to save conversation:', e);
-                log('warn', 'Failed to save conversation: ' + e.message);
+        async function saveDashboardState(key, value, options = {}) {
+            const immediate = Boolean(options.immediate);
+            const delay = Number.isFinite(options.delay) ? options.delay : 350;
+            if (dashboardStateSaveTimers.has(key)) {
+                clearTimeout(dashboardStateSaveTimers.get(key));
+                dashboardStateSaveTimers.delete(key);
+            }
+            const write = async () => {
+                try {
+                    const response = await fetch(`${DASHBOARD_STATE_ENDPOINT}/${encodeURIComponent(key)}`, {
+                        method: value === null || typeof value === 'undefined' ? 'DELETE' : 'PUT',
+                        headers: value === null || typeof value === 'undefined' ? {} : { 'Content-Type': 'application/json' },
+                        body: value === null || typeof value === 'undefined' ? undefined : JSON.stringify({ value }),
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (e) {
+                    console.warn(`Failed to save dashboard state ${key}:`, e);
+                    log('warn', `Failed to save dashboard state ${key}: ${e.message}`);
+                }
+            };
+            if (immediate) {
+                await write();
+            } else {
+                dashboardStateSaveTimers.set(key, setTimeout(write, delay));
             }
         }
 
-        function loadConversation() {
+        async function loadDashboardState(key) {
             try {
-                const saved = localStorage.getItem(STORAGE_KEY);
-                if (saved) {
-                    conversation = JSON.parse(saved);
-                    return true;
+                const response = await fetch(`${DASHBOARD_STATE_ENDPOINT}/${encodeURIComponent(key)}`, {
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                if (data && data.found) {
+                    return { found: true, value: data.value };
                 }
             } catch (e) {
-                console.warn('Failed to load conversation:', e);
-                log('warn', 'Failed to load conversation: ' + e.message);
+                console.warn(`Failed to load dashboard state ${key}:`, e);
+                log('warn', `Failed to load dashboard state ${key}: ${e.message}`);
+            }
+            return { found: false, value: null };
+        }
+
+        function loadLegacyLocalStorageValue(storageKey) {
+            try {
+                const saved = localStorage.getItem(storageKey);
+                return saved ? JSON.parse(saved) : null;
+            } catch (e) {
+                console.warn(`Failed to load legacy localStorage ${storageKey}:`, e);
+                log('warn', `Failed to load legacy localStorage ${storageKey}: ${e.message}`);
+                return null;
+            }
+        }
+
+        function removeLegacyLocalStorageValue(storageKey) {
+            try {
+                localStorage.removeItem(storageKey);
+            } catch (e) {
+                console.warn(`Failed to remove legacy localStorage ${storageKey}:`, e);
+            }
+        }
+
+        function saveConversation() {
+            void saveDashboardState('conversation', conversation);
+        }
+
+        async function loadConversation() {
+            const serverState = await loadDashboardState('conversation');
+            if (serverState.found && Array.isArray(serverState.value)) {
+                conversation = serverState.value;
+                removeLegacyLocalStorageValue(STORAGE_KEY);
+                return true;
+            }
+            const legacyConversation = loadLegacyLocalStorageValue(STORAGE_KEY);
+            if (Array.isArray(legacyConversation)) {
+                conversation = legacyConversation;
+                void saveDashboardState('conversation', conversation, { immediate: true });
+                removeLegacyLocalStorageValue(STORAGE_KEY);
+                return true;
             }
             return false;
         }
 
         function saveActiveRun() {
-            try {
-                if (activeRun) {
-                    localStorage.setItem(ACTIVE_RUN_KEY, JSON.stringify(activeRun));
-                } else {
-                    localStorage.removeItem(ACTIVE_RUN_KEY);
-                }
-            } catch (e) {
-                console.warn('Failed to save active run:', e);
-                log('warn', 'Failed to save active run: ' + e.message);
-            }
+            void saveDashboardState('active_run', activeRun || null, { delay: 500 });
         }
 
-        function loadActiveRun() {
-            try {
-                const saved = localStorage.getItem(ACTIVE_RUN_KEY);
-                if (saved) {
-                    activeRun = JSON.parse(saved);
-                    return true;
-                }
-            } catch (e) {
-                console.warn('Failed to load active run:', e);
-                log('warn', 'Failed to load active run: ' + e.message);
+        async function loadActiveRun() {
+            const serverState = await loadDashboardState('active_run');
+            if (serverState.found && serverState.value && typeof serverState.value === 'object') {
+                activeRun = serverState.value;
+                removeLegacyLocalStorageValue(ACTIVE_RUN_KEY);
+                return true;
+            }
+            const legacyActiveRun = loadLegacyLocalStorageValue(ACTIVE_RUN_KEY);
+            if (legacyActiveRun && typeof legacyActiveRun === 'object') {
+                activeRun = legacyActiveRun;
+                void saveDashboardState('active_run', activeRun, { immediate: true });
+                removeLegacyLocalStorageValue(ACTIVE_RUN_KEY);
+                return true;
             }
             activeRun = null;
             return false;
@@ -5090,7 +5691,7 @@
 
         function clearActiveRun() {
             activeRun = null;
-            saveActiveRun();
+            void saveDashboardState('active_run', null, { immediate: true });
             updateActiveRunBanner();
         }
 
@@ -8217,6 +8818,10 @@
 
         // Navigation & hash routing
         function navigateTo(hash) {
+            const requestedPanel = String(hash || '').split('/')[0];
+            if (requestedPanel && !isDashboardTabVisible(requestedPanel)) {
+                hash = 'chat';
+            }
             log('inf', 'Navigate to: #' + hash);
             const mobileMenu = document.getElementById('mobile-menu');
             if (mobileMenu) mobileMenu.classList.remove('open');
@@ -8227,6 +8832,9 @@
         }
 
         function switchToPanel(panel) {
+            if (panel !== 'scrolls' && typeof stopScrollsResearchAutoRefresh === 'function') {
+                stopScrollsResearchAutoRefresh();
+            }
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
             const tab = document.querySelector(`.tab[data-panel="${panel}"]`);
@@ -8248,25 +8856,34 @@
                     case 'config': loadSettings(); break;
                     case 'secrets': loadSecrets(); break;
                     case 'sessions': loadSessions(); loadSessionSources(); break;
+                    case 'agent-observability': loadAgentObservability(); break;
                     case 'memory': loadMemory(); break;
                     case 'skills': loadSkills(); break;
                     case 'games': loadGames(); break;
+                    case 'dnd': loadDndCampaigns(); break;
                     case 'self-improvement': loadSelfImprovement(); break;
                     case 'autonomous-development': loadAutonomousDevelopment(); break;
+                    case 'scrolls': loadScrollsResearch(); break;
                     case 'cron': loadCronJobs(); break;
                     case 'schedule': loadSchedulePanel(); break;
                     case 'graph': loadGraph(); break;
                 }
             } else if (panel === 'sessions') {
                 loadSessions();
+            } else if (panel === 'agent-observability') {
+                loadAgentObservability();
             } else if (panel === 'message-board') {
                 loadMessageBoardPosts();
             } else if (panel === 'games') {
                 loadGames();
+            } else if (panel === 'dnd') {
+                loadDndCampaigns();
             } else if (panel === 'self-improvement') {
                 loadSelfImprovement();
             } else if (panel === 'autonomous-development') {
                 loadAutonomousDevelopment();
+            } else if (panel === 'scrolls') {
+                loadScrollsResearch();
             } else if (panel === 'graph') {
                 loadGraph();
             }
@@ -8293,8 +8910,8 @@
             const parts = hash.split('/');
             const panel = parts[0];
 
-            const validPanels = ['chat','message-board','config','secrets','sessions','memory','skills','games','self-improvement','autonomous-development','cron','schedule','graph'];
-            if (!validPanels.includes(panel)) {
+            const validPanels = ['chat','message-board','config','secrets','sessions','agent-observability','memory','skills','games','diagnostics','dnd','self-improvement','autonomous-development','scrolls','cron','schedule','graph'];
+            if (!validPanels.includes(panel) || !isDashboardTabVisible(panel)) {
                 switchToPanel('chat');
                 return;
             }
@@ -8314,7 +8931,7 @@
             const bc = document.getElementById('breadcrumbs');
             if (!bc) return;
 
-            const names = { chat:'Chat', 'message-board':'Message Board', config:'Config', secrets:'Secrets', sessions:'Sessions', memory:'Memory', skills:'Skills', games:'Games', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', cron:'Cron', schedule:'Schedule', graph:'Graph' };
+            const names = { chat:'Chat', 'message-board':'Message Board', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
 
             if (detail) {
                 bc.className = 'breadcrumbs visible';
@@ -8789,7 +9406,14 @@
             });
         });
 
-        // Listen for hash changes (browser back/forward)
+        // Listen for hash changes (browser back/forward) and close settings on outside click/Escape
+        document.addEventListener('click', (event) => {
+            const wrapper = document.querySelector('.dashboard-settings-wrapper');
+            if (wrapper && !wrapper.contains(event.target)) closeDashboardSettings();
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeDashboardSettings();
+        });
         window.addEventListener('hashchange', handleHashChange);
 
         // Toast notifications
@@ -9931,6 +10555,38 @@
             frame.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
+        async function restartPokemonAgent() {
+            const btn = document.getElementById('pokemon-restart-btn');
+            const previousText = btn ? btn.textContent : '';
+            if (!confirm('Restart the local Pokémon agent and autoplayer? This briefly interrupts the live game dashboard.')) return;
+            try {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = 'Restarting…';
+                }
+                log('req', 'POST /api/pokemon/restart');
+                const data = await fetchJsonOrThrow('/api/pokemon/restart', { method: 'POST' });
+                const serverPid = data.started && data.started.server_pid ? ` server pid ${data.started.server_pid}` : '';
+                showToast(`Pokémon restart requested${serverPid}`);
+                log('res', `Pokémon restart requested: ${JSON.stringify(data.started || {})}`);
+                setTimeout(() => {
+                    const frame = document.getElementById('games-watch-frame');
+                    if (frame && frame.style.display !== 'none' && frame.src && frame.src.includes('/pokemon/')) {
+                        frame.src = frame.src;
+                    }
+                    loadGames();
+                }, 2500);
+            } catch (e) {
+                showToast(`Pokémon restart failed: ${e.message}`, true);
+                log('err', `Pokémon restart failed: ${e.message}`, true);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = previousText || 'Restart Pokémon Agent';
+                }
+            }
+        }
+
         function renderGames(games) {
             const list = document.getElementById('games-list');
             if (!list) return;
@@ -9983,6 +10639,879 @@
             }).join('');
         }
 
+        let dndCampaigns = [];
+        let selectedDndCampaignId = null;
+        let selectedDndCampaign = null;
+        let selectedDndEvents = [];
+        let selectedDndEventFilter = '';
+        let selectedDndEventOrder = 'asc';
+        let dndAutoTurnJobId = null;
+        let dndAutoTurnJobCampaignId = null;
+        let dndAutoTurnPollTimer = null;
+        let dndTurnProgress = [];
+
+        function openDndPopout() {
+            const suffix = selectedDndCampaignId ? `?campaign=${encodeURIComponent(selectedDndCampaignId)}&popout=1#dnd` : '?popout=1#dnd';
+            window.open('/dnd/popout' + suffix, 'hermes-dnd-dashboard', 'popup,width=1500,height=940,noopener,noreferrer');
+        }
+
+        function applyDndPopoutMode() {
+            const params = new URLSearchParams(window.location.search || '');
+            const path = window.location.pathname || '';
+            const isPopout = params.get('popout') === '1' || path.startsWith('/dnd/popout');
+            if (!isPopout) return;
+            document.body.classList.add('dnd-popout-mode');
+            if (location.hash !== '#dnd') history.replaceState(null, '', window.location.pathname + window.location.search + '#dnd');
+            const campaignId = params.get('campaign');
+            setTimeout(async () => {
+                await loadDndCampaigns();
+                if (campaignId) await selectDndCampaign(encodeURIComponent(campaignId));
+            }, 50);
+        }
+
+        function dndAttr(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function dndEncodedId(value) {
+            return encodeURIComponent(String(value ?? '')).replace(/'/g, '%27');
+        }
+
+        function dndArrayFromResponse(data, key) {
+            if (Array.isArray(data)) return data;
+            if (Array.isArray(data?.[key])) return data[key];
+            if (Array.isArray(data?.items)) return data.items;
+            return [];
+        }
+
+        function dndCampaignFromResponse(data) {
+            return data?.campaign || data?.item || data || null;
+        }
+
+        function dndCampaignId(campaign) {
+            return campaign?.id || campaign?.campaign_id || campaign?.uuid || '';
+        }
+
+        function dndCampaignEvents(campaign, explicitEvents = []) {
+            if (Array.isArray(explicitEvents) && explicitEvents.length) return explicitEvents;
+            if (Array.isArray(campaign?.events)) return campaign.events;
+            if (Array.isArray(campaign?.action_log)) return campaign.action_log;
+            if (Array.isArray(campaign?.log)) return campaign.log;
+            return [];
+        }
+
+        function dndSceneSummary(campaign) {
+            const scene = campaign?.current_scene || campaign?.scene || campaign?.scene_summary;
+            if (!scene) return 'No scene established yet.';
+            if (typeof scene === 'string') return scene;
+            return [
+                scene.summary || '',
+                scene.location ? `Location: ${scene.location}` : '',
+                scene.mood ? `Mood: ${scene.mood}` : '',
+                Array.isArray(scene.visible_threats) && scene.visible_threats.length ? `Visible threats: ${scene.visible_threats.join(', ')}` : '',
+                Array.isArray(scene.open_questions) && scene.open_questions.length ? `Open questions: ${scene.open_questions.join('; ')}` : '',
+            ].filter(Boolean).join('\n') || 'No scene established yet.';
+        }
+
+        function dndEventType(event) {
+            return event?.event_type || event?.type || event?.kind || 'event';
+        }
+
+        function dndEventClass(event) {
+            const type = dndEventType(event);
+            if (type === 'dm_narration') return 'dnd-event-narration';
+            if (type === 'player_action') return 'dnd-event-action';
+            if (type === 'dice_roll') return 'dnd-event-dice';
+            if (type === 'scene_update') return 'dnd-event-scene';
+            if (type === 'subagent_status') return 'dnd-event-subagent';
+            return 'dnd-event-generic';
+        }
+
+        function dndEventBody(event) {
+            return (event && event.body) || event?.narration || event?.action || event?.content || event?.message || event?.summary || JSON.stringify(event || {});
+        }
+
+        function dndDicePayload(event) {
+            return event?.payload || event?.roll || event?.details || {};
+        }
+
+        async function loadDndCampaigns() {
+            const list = document.getElementById('dnd-campaign-list');
+            const stats = document.getElementById('dnd-stats');
+            try {
+                if (list) list.innerHTML = '<div style="color:var(--text-dim);">Loading campaigns...</div>';
+                log('req', 'GET /api/dnd/campaigns');
+                const data = await fetchJsonOrThrow('/api/dnd/campaigns');
+                dndCampaigns = dndArrayFromResponse(data, 'campaigns');
+                if (stats) stats.textContent = `${dndCampaigns.length} campaign${dndCampaigns.length === 1 ? '' : 's'}`;
+                renderDndCampaignList();
+                if (!selectedDndCampaignId && dndCampaigns.length) {
+                    await selectDndCampaign(encodeURIComponent(dndCampaignId(dndCampaigns[0])));
+                } else if (selectedDndCampaignId && dndCampaigns.some(c => dndCampaignId(c) === selectedDndCampaignId)) {
+                    renderDndCampaignList();
+                }
+                log('res', `Loaded ${dndCampaigns.length} D&D campaigns`);
+                return dndCampaigns;
+            } catch (e) {
+                if (stats) stats.textContent = '';
+                if (list) list.innerHTML = `<div style="color:var(--error);padding:1rem;">Failed to load campaigns: ${escapeHtml(e.message)}</div>`;
+                showToast(`Campaigns load failed: ${e.message}`, true);
+                log('err', `Campaigns load failed: ${e.message}`, true);
+                return [];
+            }
+        }
+
+        function renderDndCampaignList() {
+            const list = document.getElementById('dnd-campaign-list');
+            if (!list) return;
+            if (!dndCampaigns.length) {
+                list.innerHTML = '<div style="color:var(--text-dim);padding:1rem 0;">No campaigns yet. Create one above.</div>';
+                return;
+            }
+            list.innerHTML = dndCampaigns.map(campaign => {
+                const id = dndCampaignId(campaign);
+                const turn = campaign.turn_number ?? campaign.turn_index ?? campaign.turn ?? campaign.current_turn ?? 0;
+                const playerCount = (campaign.players || campaign.roster || []).length || campaign.player_count || 0;
+                return `
+                    <div class="message-board-post-card ${id === selectedDndCampaignId ? 'active' : ''}" onclick="selectDndCampaign('${dndEncodedId(id)}')">
+                        <h4>${escapeHtml(campaign.name || campaign.title || id || 'Untitled Campaign')}</h4>
+                        <div class="message-board-meta">
+                            <span>turn ${escapeHtml(String(turn))}</span>
+                            <span>${escapeHtml(String(playerCount))} players</span>
+                            <span>${escapeHtml(campaign.status || campaign.phase || 'active')}</span>
+                        </div>
+                        ${campaign.current_scene || campaign.scene ? `<p style="color:var(--text-dim);font-size:0.82rem;margin-top:0.45rem;">${escapeHtml(dndSceneSummary(campaign))}</p>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function createDndCampaign(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            const nameEl = document.getElementById('dnd-campaign-name');
+            const premiseEl = document.getElementById('dnd-campaign-premise');
+            const submitEl = document.getElementById('dnd-create-submit');
+            const toneEl = document.getElementById('dnd-campaign-tone');
+            const systemEl = document.getElementById('dnd-campaign-system');
+            const name = nameEl?.value?.trim() || '';
+            const premise = premiseEl?.value?.trim() || '';
+            const tone = toneEl?.value?.trim() || '';
+            const system = systemEl?.value || 'dnd5e';
+            if (!name) {
+                showToast('Campaign name is required', true);
+                return;
+            }
+            if (submitEl) {
+                submitEl.disabled = true;
+                submitEl.textContent = 'Creating...';
+            }
+            try {
+                const payload = { name, premise, description: premise, tone, system, world_metadata: { tone, rules_profile_id: system } };
+                log('req', 'POST /api/dnd/campaigns');
+                const data = await fetchJsonOrThrow('/api/dnd/campaigns', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const campaign = dndCampaignFromResponse(data);
+                selectedDndCampaignId = dndCampaignId(campaign);
+                if (nameEl) nameEl.value = '';
+                if (premiseEl) premiseEl.value = '';
+                if (toneEl) toneEl.value = '';
+                showToast('Campaign created');
+                await loadDndCampaigns();
+                if (selectedDndCampaignId) await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) {
+                showToast(`Campaign create failed: ${e.message}`, true);
+                log('err', `Campaign create failed: ${e.message}`, true);
+            } finally {
+                if (submitEl) {
+                    submitEl.disabled = false;
+                    submitEl.textContent = 'Create Campaign';
+                }
+            }
+        }
+
+        async function selectDndCampaign(encodedCampaignId) {
+            const campaignId = decodeURIComponent(encodedCampaignId || '');
+            if (!campaignId) return;
+            selectedDndCampaignId = campaignId;
+            renderDndCampaignList();
+            const detail = document.getElementById('dnd-campaign-detail');
+            if (detail) detail.innerHTML = '<h4>Selected Campaign</h4><p style="color:var(--text-dim);">Loading campaign...</p>';
+            try {
+                log('req', `GET /api/dnd/campaigns/${campaignId}`);
+                const data = await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(campaignId)}`);
+                selectedDndCampaign = {
+                    ...dndCampaignFromResponse(data),
+                    players: dndArrayFromResponse(data, 'players'),
+                    characters: dndArrayFromResponse(data, 'characters'),
+                };
+                selectedDndEvents = dndCampaignEvents(selectedDndCampaign, dndArrayFromResponse(data, 'events'));
+                try {
+                    const eventData = await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(campaignId)}/events`);
+                    selectedDndEvents = dndArrayFromResponse(eventData, 'events');
+                } catch (eventError) {
+                    log('warn', `Campaign events fetch skipped/failed: ${eventError.message}`);
+                }
+                try {
+                    const worldData = await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(campaignId)}/world/entities`);
+                    selectedDndCampaign.world_entities = dndArrayFromResponse(worldData, 'entities');
+                } catch (worldError) {
+                    selectedDndCampaign.world_entities = selectedDndCampaign.world_entities || [];
+                    log('warn', `Campaign world entities fetch skipped/failed: ${worldError.message}`);
+                }
+                renderDndCampaign(selectedDndCampaign);
+                log('res', `Loaded D&D campaign ${campaignId}`);
+            } catch (e) {
+                if (detail) detail.innerHTML = `<h4>Selected Campaign</h4><p style="color:var(--error);">Failed to load campaign: ${escapeHtml(e.message)}</p>`;
+                showToast(`Campaign load failed: ${e.message}`, true);
+                log('err', `Campaign load failed: ${e.message}`, true);
+            }
+        }
+
+        function renderDndTurnProgress(job = null) {
+            const container = document.getElementById('dnd-turn-progress-list');
+            const summary = document.getElementById('dnd-turn-progress-summary');
+            const pollStatus = document.getElementById('dnd-turn-poll-status');
+            if (!container || !summary) return;
+            const events = Array.isArray(job?.events) ? job.events : dndTurnProgress;
+            dndTurnProgress = events;
+            const phase = job?.progress?.phase || (dndAutoTurnJobId ? 'queued' : 'idle');
+            const percent = job?.progress?.percent ?? (dndAutoTurnJobId ? 0 : 0);
+            const terminalStatus = job?.status === 'completed' ? 'Turn complete' : (job?.status === 'failed' ? 'Turn failed' : '');
+            summary.textContent = terminalStatus
+                ? `${terminalStatus} — ${phase} (${percent}%)`
+                : (dndAutoTurnJobId
+                    ? `Polling live turn... ${phase} (${percent}%)`
+                    : 'No live auto turn is currently running.');
+            if (pollStatus) pollStatus.textContent = dndAutoTurnJobId ? `job ${dndAutoTurnJobId}` : 'idle';
+            const subagentEvents = events.filter(event => event.type === 'subagent_status');
+            const latestByPlayer = {};
+            subagentEvents.forEach(event => {
+                const key = event.player_id || event.player_name || event.index;
+                latestByPlayer[key] = event;
+            });
+            const rows = Object.values(latestByPlayer);
+            if (!rows.length) {
+                container.innerHTML = dndAutoTurnJobId
+                    ? '<p style="color:var(--text-dim);">Thinking — waiting for subagent progress events...</p>'
+                    : '<p style="color:var(--text-dim);">Start a live auto turn to see Thinking → JSON received → Committed progress.</p>';
+                return;
+            }
+            const labelFor = (status) => ({
+                thinking: 'Thinking',
+                json_received: 'JSON received',
+                validated: 'Validated',
+                committed: 'Committed',
+                fallback_used: 'Fallback used',
+            }[status] || status || 'Running');
+            container.innerHTML = rows.map(event => `
+                <div class="dnd-subagent-progress-row" data-player-id="${dndAttr(event.player_id || '')}" style="padding:0.55rem;border:1px solid var(--border-subtle);border-radius:9px;margin:0.4rem 0;background:rgba(255,255,255,0.03);">
+                    <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+                        <strong class="dnd-subagent-progress-name">${escapeHtml(event.player_name || event.player_id || 'Subagent')}</strong>
+                        <span class="tag dnd-progress-stage" data-stage="${dndAttr(event.status || '')}">${escapeHtml(labelFor(event.status))}</span>
+                    </div>
+                    ${event.error ? `<div class="dnd-subagent-progress-error" style="color:var(--error);font-size:0.8rem;margin-top:0.35rem;">${escapeHtml(event.error)}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function updateDndAutoTurnButton(running) {
+            const button = document.getElementById('dnd-auto-turn-btn');
+            if (!button) return;
+            button.disabled = Boolean(running);
+            button.textContent = running ? 'Polling live turn...' : 'Run Live Auto Turn';
+        }
+
+        function stopDndAutoTurnPolling() {
+            if (dndAutoTurnPollTimer) {
+                clearTimeout(dndAutoTurnPollTimer);
+                dndAutoTurnPollTimer = null;
+            }
+        }
+
+        async function pollDndAutoTurnJob(campaignId = dndAutoTurnJobCampaignId, jobId = dndAutoTurnJobId) {
+            if (!campaignId || !jobId) return;
+            try {
+                const data = await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(campaignId)}/turns/auto/jobs/${encodeURIComponent(jobId)}`);
+                const job = data.job || data;
+                renderDndTurnProgress(job);
+                if (job.status === 'completed') {
+                    stopDndAutoTurnPolling();
+                    renderDndTurnProgress(job);
+                    dndAutoTurnJobId = null;
+                    dndAutoTurnJobCampaignId = null;
+                    updateDndAutoTurnButton(false);
+                    showToast('Live auto turn complete');
+                    if (selectedDndCampaignId === campaignId) {
+                        await selectDndCampaign(encodeURIComponent(campaignId));
+                    }
+                    await loadDndCampaigns();
+                    return;
+                }
+                if (job.status === 'failed') {
+                    stopDndAutoTurnPolling();
+                    renderDndTurnProgress(job);
+                    dndAutoTurnJobId = null;
+                    dndAutoTurnJobCampaignId = null;
+                    updateDndAutoTurnButton(false);
+                    showToast(`Auto turn failed: ${job.error || 'unknown error'}`, true);
+                    return;
+                }
+                dndAutoTurnPollTimer = setTimeout(() => pollDndAutoTurnJob(campaignId, jobId), 900);
+            } catch (e) {
+                stopDndAutoTurnPolling();
+                dndAutoTurnJobId = null;
+                dndAutoTurnJobCampaignId = null;
+                updateDndAutoTurnButton(false);
+                showToast(`Auto turn polling failed: ${e.message}`, true);
+                log('err', `D&D auto turn polling failed: ${e.message}`, true);
+            }
+        }
+
+        function startDndAutoTurnPolling(campaignId, jobId, initialJob = null) {
+            stopDndAutoTurnPolling();
+            dndAutoTurnJobCampaignId = campaignId;
+            dndAutoTurnJobId = jobId;
+            dndTurnProgress = Array.isArray(initialJob?.events) ? initialJob.events : [];
+            updateDndAutoTurnButton(true);
+            renderDndTurnProgress(initialJob || { status: 'queued', progress: { phase: 'queued', percent: 0 }, events: dndTurnProgress });
+            dndAutoTurnPollTimer = setTimeout(() => pollDndAutoTurnJob(campaignId, jobId), 250);
+        }
+
+        function renderDndCampaign(campaign) {
+            const detail = document.getElementById('dnd-campaign-detail');
+            if (!detail) return;
+            if (!campaign) {
+                detail.innerHTML = '<h4>Selected Campaign</h4><p style="color:var(--text-dim);">Select a campaign or create a new one.</p>';
+                return;
+            }
+            const id = dndCampaignId(campaign);
+            const players = campaign.players || campaign.roster || [];
+            const characters = campaign.characters || [];
+            const worldEntities = campaign.world_entities || campaign.entities || [];
+            const worldState = campaign.world_state || {};
+            const rawEvents = dndCampaignEvents(campaign, selectedDndEvents);
+            const orderedEvents = selectedDndEventOrder === 'desc' ? [...rawEvents] : [...rawEvents].reverse();
+            const events = selectedDndEventFilter ? orderedEvents.filter(event => dndEventType(event) === selectedDndEventFilter) : orderedEvents;
+            const diceEvents = orderedEvents.filter(event => dndEventType(event) === 'dice_roll');
+            const scene = dndSceneSummary(campaign);
+            const turn = campaign.turn_number ?? campaign.turn_index ?? campaign.turn ?? campaign.current_turn ?? 0;
+            const roster = players.length ? players.map(player => {
+                const controller = player.controller_type || player.controller || (player.subagent_id ? 'subagent' : 'human');
+                const badgeColor = controller === 'subagent' ? 'var(--purple)' : 'var(--info)';
+                const status = player.status || player.last_action_source || (controller === 'subagent' ? 'idle/fallback-ready' : 'human');
+                const prompt = player.agent_prompt || player.role || player.class_name || player.notes || player.description || '';
+                const humanActionInput = controller === 'human' ? `
+                        <textarea class="dnd-human-action" data-player-id="${dndAttr(player.id || '')}" placeholder="Optional action for this human player before auto turn" style="margin-top:0.5rem;min-height:64px;"></textarea>
+                    ` : '';
+                const subagentPrompt = controller === 'subagent' ? `
+                        <div class="dnd-subagent-status" style="color:var(--text-dim);font-size:0.8rem;margin-top:0.35rem;">Status: ${escapeHtml(status)}</div>
+                        <details class="dnd-subagent-prompt" style="margin-top:0.35rem;color:var(--text-dim);font-size:0.8rem;"><summary>Prompt</summary><div>${escapeHtml(prompt || 'No persona prompt yet.')}</div></details>
+                    ` : '';
+                return `
+                    <div style="padding:0.65rem;border:1px solid var(--border-subtle);border-radius:10px;margin:0.45rem 0;background:rgba(255,255,255,0.03);">
+                        <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+                            <strong>${escapeHtml(player.name || player.character_name || player.id || 'Unnamed player')}</strong>
+                            <span class="tag" style="border-color:${badgeColor};color:${badgeColor};">${escapeHtml(controller)}</span>
+                        </div>
+                        <div style="color:var(--text-dim);font-size:0.82rem;margin-top:0.25rem;">${escapeHtml(prompt)}</div>
+                        ${humanActionInput}
+                        ${subagentPrompt}
+                    </div>
+                `;
+            }).join('') : '<p style="color:var(--text-dim);">No players yet. Add a human or subagent controller below.</p>';
+            const pendingRows = players.length ? players.map(player => {
+                const controller = player.controller_type || player.controller || 'human';
+                return `<li>${escapeHtml(player.name || 'Player')}: ${controller === 'human' ? 'waiting for optional human action' : 'subagent will choose an action'}</li>`;
+            }).join('') : '<li>Add players to start a turn.</li>';
+            const characterPlayerOptions = ['<option value="">No linked player</option>'].concat(players.map(player => `<option value="${dndAttr(player.id || '')}">${escapeHtml(player.name || player.id || 'Player')}</option>`)).join('');
+            const characterRows = characters.length ? characters.map(character => {
+                const sheet = character.character_sheet || {};
+                const bits = [sheet.ancestry || sheet.race || sheet.species || '', sheet.class_name || sheet.class || '', sheet.level ? `level ${sheet.level}` : ''].filter(Boolean).join(' · ');
+                return `<div class="dnd-character-sheet" data-character-id="${dndAttr(character.id || '')}"><div style="display:flex;justify-content:space-between;gap:0.5rem;"><strong>${escapeHtml(character.name || 'Unnamed character')}</strong><span class="tag">${escapeHtml(character.kind || sheet.kind || 'pc')}</span></div><div style="color:var(--text-dim);font-size:0.82rem;margin-top:0.25rem;">${escapeHtml(bits || 'No class/species set')}</div><details style="margin-top:0.35rem;color:var(--text-dim);font-size:0.8rem;"><summary>Character sheet</summary><pre style="white-space:pre-wrap;">${escapeHtml(JSON.stringify(sheet, null, 2))}</pre></details></div>`;
+            }).join('') : '<p style="color:var(--text-dim);">No characters yet. Use manual create or AI forge below.</p>';
+            const worldRows = worldEntities.length ? worldEntities.map(entity => `<div class="dnd-world-entity" data-entity-id="${dndAttr(entity.id || '')}"><div style="display:flex;justify-content:space-between;gap:0.5rem;"><strong>${escapeHtml(entity.name || 'World entity')}</strong><span class="tag">${escapeHtml(entity.entity_type || entity.type || 'lore')}</span></div><div style="color:var(--text-dim);font-size:0.82rem;margin-top:0.25rem;">${escapeHtml(entity.summary || entity.description || '')}</div></div>`).join('') : '<p style="color:var(--text-dim);">No structured world entities yet. Generate a world seed or add lore below.</p>';
+            const diceActorOptions = ['<option value="">No actor</option>'].concat(players.map(player => `<option value="${dndAttr(player.name || player.id || '')}">${escapeHtml(player.name || player.id || 'Player')}</option>`)).concat(characters.map(character => `<option value="${dndAttr(character.name || character.id || '')}">${escapeHtml(character.name || character.id || 'Character')}</option>`)).join('');
+            const mechanicsRows = diceEvents.length ? diceEvents.map(event => {
+                const payload = dndDicePayload(event);
+                return `
+                    <div class="message-board-message dnd-event-dice" style="margin:0.45rem 0;">
+                        <div class="message-board-meta"><strong>${escapeHtml(payload.label || 'Dice')}</strong>${event.actor ? `<span>${escapeHtml(event.actor)}</span>` : ''}</div>
+                        <div><strong>${escapeHtml(String(payload.total ?? ''))}</strong> · ${escapeHtml(payload.expression || '')} · ${escapeHtml(JSON.stringify(payload.rolls || []))}</div>
+                    </div>
+                `;
+            }).join('') : '<p style="color:var(--text-dim);">No dice or mechanics yet.</p>';
+            const logRows = events.length ? events.map(event => {
+                const label = dndEventType(event);
+                const actor = event.actor || event.player_name || event.source || '';
+                const body = dndEventBody(event);
+                const stamp = event.created_at || event.timestamp || event.time || '';
+                const payload = event.payload || {};
+                const actionSource = payload.action_source || payload.resolution_source || '';
+                const status = payload.status || '';
+                const detailBits = [
+                    actionSource ? `source: ${actionSource}` : '',
+                    status ? `status: ${status}` : '',
+                    payload.error ? `error: ${payload.error}` : '',
+                ].filter(Boolean);
+                const structuredAction = payload.action && Object.keys(payload.action).length ? `
+                        <details style="margin-top:0.4rem;color:var(--text-dim);font-size:0.82rem;"><summary>Structured action</summary><pre style="white-space:pre-wrap;">${escapeHtml(JSON.stringify(payload.action, null, 2))}</pre></details>
+                    ` : '';
+                return `
+                    <div class="message-board-message ${dndEventClass(event)}" style="margin:0.6rem 0;">
+                        <div class="message-board-meta" style="margin-bottom:0.35rem;">
+                            <strong>${escapeHtml(label)}</strong>
+                            ${actor ? `<span>${escapeHtml(actor)}</span>` : ''}
+                            ${stamp ? `<span>${escapeHtml(stamp)}</span>` : ''}
+                        </div>
+                        <div>${escapeHtml(body)}</div>
+                        ${detailBits.length ? `<div style="color:var(--text-dim);font-size:0.78rem;margin-top:0.35rem;">${escapeHtml(detailBits.join(' · '))}</div>` : ''}
+                        ${structuredAction}
+                    </div>
+                `;
+            }).join('') : '<p style="color:var(--text-dim);">No matching action or narration events yet.</p>';
+            detail.innerHTML = `
+                <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                    <div>
+                        <h3>${escapeHtml(campaign.name || campaign.title || id || 'Untitled Campaign')}</h3>
+                        <div class="message-board-meta">
+                            <span>turn ${escapeHtml(String(turn))}</span>
+                            <span>${escapeHtml(players.length)} players</span>
+                            <span>${escapeHtml(campaign.status || campaign.phase || 'active')}</span>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        <button class="btn primary" id="dnd-auto-turn-btn" onclick="runDndAutoTurn()">Run Live Auto Turn</button>
+                        <span class="tag" title="Subagent controllers call Hermes live, emit player_action/subagent_status events, and show fallback_used when JSON or gateway calls fail.">Live autonomous subagents</span>
+                        <button class="btn" onclick="selectDndCampaign('${dndEncodedId(id)}')">Refresh</button>
+                    </div>
+                </div>
+                <div id="dnd-scene-card" style="margin-top:1rem;padding:0.85rem;border:1px solid var(--border-subtle);border-radius:12px;background:rgba(255,255,255,0.03);">
+                    <h4>Current Scene</h4>
+                    <p style="color:var(--text-dim);margin-top:0.4rem;white-space:pre-wrap;">${escapeHtml(scene)}</p>
+                </div>
+                <div class="dnd-dashboard-grid" id="dnd-dashboard-shell" style="margin-top:1rem;">
+                    <div id="dnd-left-rail">
+                        <h4>Player Roster</h4>
+                        <div style="margin-top:0.45rem;">${roster}</div>
+                        <form class="message-board-form" style="margin-top:0.75rem;" onsubmit="addDndPlayer(event)">
+                            <input id="dnd-player-name" type="text" placeholder="Player / character name" required>
+                            <select id="dnd-player-controller" required>
+                                <option value="human">human</option>
+                                <option value="subagent">subagent</option>
+                            </select>
+                            <input id="dnd-player-notes" type="text" placeholder="Subagent prompt / personality / goals, or human character notes">
+                            <button class="btn" id="dnd-add-player-submit" type="submit">Add Player</button>
+                        </form>
+                        <div id="dnd-pending-turn" style="margin-top:1rem;padding:0.75rem;border:1px solid var(--border-subtle);border-radius:10px;">
+                            <h4>Pending Turn</h4>
+                            <ul style="color:var(--text-dim);margin-left:1.1rem;">${pendingRows}</ul>
+                        </div>
+                        <div id="dnd-turn-progress" style="margin-top:1rem;padding:0.75rem;border:1px solid var(--border-subtle);border-radius:10px;background:rgba(255,255,255,0.025);">
+                            <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+                                <h4>Live turn progress</h4>
+                                <span class="tag" id="dnd-turn-poll-status">idle</span>
+                            </div>
+                            <p id="dnd-turn-progress-summary" style="color:var(--text-dim);font-size:0.84rem;margin-top:0.35rem;">No live auto turn is currently running.</p>
+                            <div id="dnd-turn-progress-list" style="margin-top:0.45rem;"><p style="color:var(--text-dim);">Start a live auto turn to see Thinking → JSON received → Committed progress.</p></div>
+                        </div>
+                    </div>
+                    <div id="dnd-main-stage">
+                        <div class="dnd-cockpit-card" id="dnd-character-card">
+                            <h4>Character Builder</h4>
+                            <div id="dnd-character-list">${characterRows}</div>
+                            <form class="message-board-form" id="dnd-character-create-form" style="margin-top:0.75rem;" onsubmit="createDndCharacter(event)">
+                                <input id="dnd-character-name" type="text" placeholder="Character name" required>
+                                <select id="dnd-character-player-id">${characterPlayerOptions}</select>
+                                <input id="dnd-character-ancestry" type="text" placeholder="Species / ancestry">
+                                <input id="dnd-character-class" type="text" placeholder="Class / subclass">
+                                <input id="dnd-character-background" type="text" placeholder="Background">
+                                <input id="dnd-character-level" type="number" min="1" max="20" value="1" placeholder="Level">
+                                <button class="btn" id="dnd-character-create-submit" type="submit">Create Character</button>
+                            </form>
+                            <form class="message-board-form" id="dnd-character-ai-form" style="margin-top:0.75rem;" onsubmit="generateDndCharacter(event)">
+                                <textarea id="dnd-character-ai-brief" placeholder="AI character brief: haunted tiefling warlock, optimistic dwarf medic, etc." style="min-height:70px;"></textarea>
+                                <button class="btn primary" id="dnd-character-generate-btn" type="submit">AI Generate Character</button>
+                            </form>
+                        </div>
+                        <div class="dnd-cockpit-card" id="dnd-world-builder-card">
+                            <h4>World Builder</h4>
+                            <div class="message-board-meta"><span>Schema: dnd.world_generation.v1</span><span>${escapeHtml(worldState?.source || 'manual/world forge')}</span></div>
+                            <textarea id="dnd-world-summary" placeholder="Scene summary / world premise" style="margin-top:0.5rem;min-height:70px;">${escapeHtml((campaign.current_scene && campaign.current_scene.summary) || campaign.description || '')}</textarea>
+                            <input id="dnd-world-location" type="text" placeholder="Current location" value="${dndAttr((campaign.current_scene && campaign.current_scene.location) || '')}">
+                            <input id="dnd-world-mood" type="text" placeholder="Mood / tone" value="${dndAttr((campaign.current_scene && campaign.current_scene.mood) || '')}">
+                            <textarea id="dnd-world-open-questions" placeholder="Open questions, one per line" style="min-height:58px;">${escapeHtml(((campaign.current_scene && campaign.current_scene.open_questions) || []).join('\n'))}</textarea>
+                            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0;"><button class="btn" onclick="saveDndWorldScene()">Save Scene</button><button class="btn primary" id="dnd-world-generate-btn" onclick="generateDndWorld()">AI Generate World</button></div>
+                            <h4 style="margin-top:0.75rem;">World Entities</h4>
+                            <div id="dnd-world-entities">${worldRows}</div>
+                            <form class="message-board-form" id="dnd-world-entity-form" style="margin-top:0.75rem;" onsubmit="createDndWorldEntity(event)">
+                                <select id="dnd-world-entity-type"><option value="location">location</option><option value="npc">npc</option><option value="faction">faction</option><option value="quest">quest</option><option value="encounter">encounter</option><option value="lore">lore</option></select>
+                                <input id="dnd-world-entity-name" type="text" placeholder="Name" required>
+                                <input id="dnd-world-entity-summary" type="text" placeholder="Summary / hook">
+                                <button class="btn" type="submit">Add World Entity</button>
+                            </form>
+                        </div>
+                        <h4>Mechanics & Dice</h4>
+                        <form id="dnd-dice-form" class="message-board-form" onsubmit="rollDndDice(event)">
+                            <input id="dnd-dice-expression" type="text" placeholder="1d20+5" required>
+                            <input id="dnd-dice-label" type="text" placeholder="Stealth check / attack / damage">
+                            <select id="dnd-dice-actor">${diceActorOptions}</select>
+                            <button class="btn" type="submit">Roll</button>
+                        </form>
+                        <div id="dnd-mechanics-log" style="margin-top:0.6rem;max-height:220px;overflow:auto;">${mechanicsRows}</div>
+                        <form id="dnd-manual-event-form" class="message-board-form" style="margin-top:1rem;" onsubmit="submitDndEvent(event)">
+                            <select id="dnd-event-type"><option value="dm_narration">DM narration</option><option value="scene_update">Scene update</option><option value="rules_note">Rules note</option></select>
+                            <textarea id="dnd-event-body" placeholder="Add DM narration, rules note, or scene update" style="min-height:70px;"></textarea>
+                            <button class="btn" type="submit">Add Event</button>
+                        </form>
+                    </div>
+                    <div id="dnd-right-rail">
+                        <div class="dnd-cockpit-card" id="dnd-dm-tools-card">
+                            <h4>DM Tools</h4>
+                            <p style="color:var(--text-dim);font-size:0.84rem;">rpg-dm-bot inspired cockpit: batched turns, server dice, editable world memory, and visible mechanics.</p>
+                            <button class="btn" onclick="document.getElementById('dnd-event-type').value='dm_narration';document.getElementById('dnd-event-body').focus();">Inject DM Event</button>
+                            <button class="btn" onclick="document.getElementById('dnd-event-type').value='rules_note';document.getElementById('dnd-event-body').focus();">Add Rules Note</button>
+                        </div>
+                        <h4>Action / Narration Log</h4>
+                        <div style="display:flex;gap:0.5rem;margin-top:0.4rem;flex-wrap:wrap;">
+                            <select id="dnd-event-filter" onchange="selectedDndEventFilter=this.value; renderDndCampaign(selectedDndCampaign);">
+                                <option value="" ${selectedDndEventFilter === '' ? 'selected' : ''}>All events</option>
+                                <option value="dm_narration" ${selectedDndEventFilter === 'dm_narration' ? 'selected' : ''}>Narration</option>
+                                <option value="player_action" ${selectedDndEventFilter === 'player_action' ? 'selected' : ''}>Player actions</option>
+                                <option value="subagent_status" ${selectedDndEventFilter === 'subagent_status' ? 'selected' : ''}>Subagent status</option>
+                                <option value="dice_roll" ${selectedDndEventFilter === 'dice_roll' ? 'selected' : ''}>Dice</option>
+                                <option value="scene_update" ${selectedDndEventFilter === 'scene_update' ? 'selected' : ''}>Scene</option>
+                                <option value="rules_note" ${selectedDndEventFilter === 'rules_note' ? 'selected' : ''}>Rules</option>
+                            </select>
+                            <select id="dnd-event-order" onchange="selectedDndEventOrder=this.value; renderDndCampaign(selectedDndCampaign);">
+                                <option value="asc" ${selectedDndEventOrder === 'asc' ? 'selected' : ''}>Oldest first</option>
+                                <option value="desc" ${selectedDndEventOrder === 'desc' ? 'selected' : ''}>Newest first</option>
+                            </select>
+                        </div>
+                        <div style="margin-top:0.45rem;max-height:520px;overflow:auto;">${logRows}</div>
+                    </div>
+                </div>
+            `;
+            updateDndAutoTurnButton(Boolean(dndAutoTurnJobId));
+            renderDndTurnProgress();
+        }
+
+
+        async function createDndCharacter(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (!selectedDndCampaignId) { showToast('Select a campaign first', true); return; }
+            const name = document.getElementById('dnd-character-name')?.value?.trim() || '';
+            const player_id = document.getElementById('dnd-character-player-id')?.value || null;
+            const sheet = {
+                ancestry: document.getElementById('dnd-character-ancestry')?.value?.trim() || '',
+                class_name: document.getElementById('dnd-character-class')?.value?.trim() || '',
+                background: document.getElementById('dnd-character-background')?.value?.trim() || '',
+                level: Number(document.getElementById('dnd-character-level')?.value || 1),
+                kind: 'pc',
+            };
+            if (!name) { showToast('Character name is required', true); return; }
+            try {
+                await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/characters`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, player_id, character_sheet: sheet })
+                });
+                showToast('Character created');
+                await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) { showToast(`Character create failed: ${e.message}`, true); log('err', `D&D character create failed: ${e.message}`, true); }
+        }
+
+        async function generateDndCharacter(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (!selectedDndCampaignId) { showToast('Select a campaign first', true); return; }
+            const brief = document.getElementById('dnd-character-ai-brief')?.value?.trim() || '';
+            const player_id = document.getElementById('dnd-character-player-id')?.value || null;
+            const btn = document.getElementById('dnd-character-generate-btn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+            try {
+                await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/characters/generate`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: brief, player_id, constraints: { level: 1, rules_profile_id: 'dnd5e' } })
+                });
+                showToast('AI character generated');
+                await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) { showToast(`AI character failed: ${e.message}`, true); log('err', `D&D AI character failed: ${e.message}`, true); }
+            finally { if (btn) { btn.disabled = false; btn.textContent = 'AI Generate Character'; } }
+        }
+
+        async function saveDndWorldScene() {
+            if (!selectedDndCampaignId) { showToast('Select a campaign first', true); return; }
+            const current_scene = {
+                summary: document.getElementById('dnd-world-summary')?.value?.trim() || '',
+                location: document.getElementById('dnd-world-location')?.value?.trim() || '',
+                mood: document.getElementById('dnd-world-mood')?.value?.trim() || '',
+                visible_threats: [],
+                open_questions: (document.getElementById('dnd-world-open-questions')?.value || '').split('\n').map(s => s.trim()).filter(Boolean),
+            };
+            try {
+                await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/scene`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current_scene })
+                });
+                showToast('World scene saved');
+                await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) { showToast(`Scene save failed: ${e.message}`, true); log('err', `D&D scene save failed: ${e.message}`, true); }
+        }
+
+        async function generateDndWorld() {
+            if (!selectedDndCampaignId) { showToast('Select a campaign first', true); return; }
+            const btn = document.getElementById('dnd-world-generate-btn');
+            const brief = document.getElementById('dnd-world-summary')?.value?.trim() || selectedDndCampaign?.description || '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Forging world...'; }
+            try {
+                await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/world/generate`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brief, parameters: { tone: document.getElementById('dnd-world-mood')?.value?.trim() || '', rules_profile_id: 'dnd5e', content_pack_id: 'fantasy_core' } })
+                });
+                showToast('AI world generated');
+                await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) { showToast(`World generation failed: ${e.message}`, true); log('err', `D&D world generation failed: ${e.message}`, true); }
+            finally { if (btn) { btn.disabled = false; btn.textContent = 'AI Generate World'; } }
+        }
+
+        async function createDndWorldEntity(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (!selectedDndCampaignId) { showToast('Select a campaign first', true); return; }
+            const entity_type = document.getElementById('dnd-world-entity-type')?.value || 'lore';
+            const name = document.getElementById('dnd-world-entity-name')?.value?.trim() || '';
+            const summary = document.getElementById('dnd-world-entity-summary')?.value?.trim() || '';
+            if (!name) { showToast('World entity name is required', true); return; }
+            try {
+                await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/world/entities`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity_type, name, summary })
+                });
+                showToast('World entity added');
+                await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) { showToast(`World entity failed: ${e.message}`, true); log('err', `D&D world entity failed: ${e.message}`, true); }
+        }
+
+        async function addDndPlayer(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (!selectedDndCampaignId) {
+                showToast('Select a campaign first', true);
+                return;
+            }
+            const nameEl = document.getElementById('dnd-player-name');
+            const controllerEl = document.getElementById('dnd-player-controller');
+            const notesEl = document.getElementById('dnd-player-notes');
+            const submitEl = document.getElementById('dnd-add-player-submit');
+            const name = nameEl?.value?.trim() || '';
+            const controller_type = controllerEl?.value || 'human';
+            const notes = notesEl?.value?.trim() || '';
+            if (!name) {
+                showToast('Player name is required', true);
+                return;
+            }
+            if (submitEl) {
+                submitEl.disabled = true;
+                submitEl.textContent = 'Adding...';
+            }
+            try {
+                log('req', `POST /api/dnd/campaigns/${selectedDndCampaignId}/players`);
+                await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/players`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, controller_type, notes, role: notes, agent_prompt: controller_type === 'subagent' ? notes : undefined }),
+                });
+                if (nameEl) nameEl.value = '';
+                if (notesEl) notesEl.value = '';
+                showToast('Player added');
+                await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) {
+                showToast(`Add player failed: ${e.message}`, true);
+                log('err', `Add D&D player failed: ${e.message}`, true);
+            } finally {
+                if (submitEl) {
+                    submitEl.disabled = false;
+                    submitEl.textContent = 'Add Player';
+                }
+            }
+        }
+
+        async function runDndAutoTurn() {
+            if (!selectedDndCampaignId) {
+                showToast('Select a campaign first', true);
+                return;
+            }
+            if (dndAutoTurnJobId) {
+                showToast('A live auto turn is already running', true);
+                return;
+            }
+            updateDndAutoTurnButton(true);
+            try {
+                const human_actions = {};
+                document.querySelectorAll('.dnd-human-action').forEach(input => {
+                    const playerId = input.dataset.playerId;
+                    const action = input.value.trim();
+                    if (playerId && action) human_actions[playerId] = action;
+                });
+                log('req', `POST /api/dnd/campaigns/${selectedDndCampaignId}/turns/auto/jobs`);
+                const data = await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/turns/auto/jobs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ human_actions }),
+                });
+                const job = data.job || data;
+                startDndAutoTurnPolling(selectedDndCampaignId, job.id, job);
+                showToast('Live auto turn started');
+            } catch (e) {
+                updateDndAutoTurnButton(false);
+                showToast(`Auto turn failed: ${e.message}`, true);
+                log('err', `D&D auto turn failed: ${e.message}`, true);
+            }
+        }
+
+        async function rollDndDice(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (!selectedDndCampaignId) {
+                showToast('Select a campaign first', true);
+                return;
+            }
+            const expression = document.getElementById('dnd-dice-expression')?.value?.trim() || '';
+            const label = document.getElementById('dnd-dice-label')?.value?.trim() || '';
+            const actor = document.getElementById('dnd-dice-actor')?.value || '';
+            if (!expression) {
+                showToast('Dice expression is required', true);
+                return;
+            }
+            try {
+                log('req', `POST /api/dnd/campaigns/${selectedDndCampaignId}/dice`);
+                await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/dice`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ expression, label, actor }),
+                });
+                showToast('Dice rolled');
+                await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) {
+                showToast(`Dice roll failed: ${e.message}`, true);
+                log('err', `D&D dice roll failed: ${e.message}`, true);
+            }
+        }
+
+        async function submitDndEvent(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (!selectedDndCampaignId) {
+                showToast('Select a campaign first', true);
+                return;
+            }
+            const type = document.getElementById('dnd-event-type')?.value || 'dm_narration';
+            const bodyEl = document.getElementById('dnd-event-body');
+            const body = bodyEl?.value?.trim() || '';
+            if (!body) {
+                showToast('Event body is required', true);
+                return;
+            }
+            try {
+                log('req', `POST /api/dnd/campaigns/${selectedDndCampaignId}/events`);
+                await fetchJsonOrThrow(`/api/dnd/campaigns/${encodeURIComponent(selectedDndCampaignId)}/events`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event_type: type, body, actor: 'DM' }),
+                });
+                if (bodyEl) bodyEl.value = '';
+                showToast('Event added');
+                await selectDndCampaign(encodeURIComponent(selectedDndCampaignId));
+            } catch (e) {
+                showToast(`Event add failed: ${e.message}`, true);
+                log('err', `D&D event add failed: ${e.message}`, true);
+            }
+        }
+
+        async function loadAgentObservability() {
+            const stats = document.getElementById('agent-observability-stats');
+            const windowHours = document.getElementById('agent-observability-window')?.value || '24';
+            try {
+                log('req', `GET /api/agent-observability?window_hours=${windowHours}`);
+                const data = await fetchJsonOrThrow(`/api/agent-observability?window_hours=${encodeURIComponent(windowHours)}&trace_limit=8`);
+                renderAgentObservability(data);
+                const summary = data.summary || {};
+                if (stats) {
+                    const failurePct = Math.round((summary.tool_failure_rate || 0) * 100);
+                    stats.textContent = `${summary.sessions || 0} sessions · ${summary.tool_calls || 0} tool events · ${failurePct}% tool failure rate · ${summary.running_sessions || 0} running`;
+                }
+                log('res', 'Loaded agent ops radar');
+            } catch (e) {
+                if (stats) stats.textContent = '';
+                const alerts = document.getElementById('agent-observability-alerts');
+                if (alerts) alerts.innerHTML = `<h4>Signals</h4><p style="color:var(--error);">Failed to load agent ops telemetry: ${escapeHtml(e.message)}</p>`;
+                showToast(`Agent ops load failed: ${e.message}`, true);
+                log('err', `Agent ops load failed: ${e.message}`, true);
+            }
+        }
+
+        function renderAgentObservability(data) {
+            const summary = data?.summary || {};
+            const metricCards = [
+                ['Sessions', summary.sessions || 0],
+                ['Completed', summary.completed_sessions || 0],
+                ['Running', summary.running_sessions || 0],
+                ['Errors', summary.error_sessions || 0],
+                ['Messages', summary.messages || 0],
+                ['Tool failures', summary.tool_failures || 0],
+                ['Missing summaries', summary.missing_summaries || 0],
+                ['Stale runs', summary.stale_running_sessions || 0],
+            ].map(([label, value]) => `<span class="meta-pill"><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join(' ');
+
+            const alerts = document.getElementById('agent-observability-alerts');
+            if (alerts) {
+                const rows = (data.alerts || []).map(alert => `
+                    <div style="padding:0.65rem;border:1px solid var(--border-subtle);border-radius:10px;margin:0.5rem 0;background:rgba(255,255,255,0.03);">
+                        <div style="font-weight:700;">${escapeHtml(alert.title || 'Signal')} <span class="tag">${escapeHtml(alert.severity || 'info')}</span></div>
+                        <div style="color:var(--text-dim);font-size:0.84rem;margin-top:0.25rem;">${escapeHtml(alert.detail || '')}</div>
+                    </div>
+                `).join('') || '<p style="color:var(--text-dim);">No signals.</p>';
+                const recommendations = (data.recommendations || []).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+                alerts.innerHTML = `<h4>Signals</h4><div class="message-meta" style="margin:0.5rem 0;">${metricCards}</div>${rows}<h4 style="margin-top:1rem;">Operator Moves</h4><ul style="color:var(--text-dim);font-size:0.84rem;line-height:1.45;">${recommendations}</ul>`;
+            }
+
+            const research = document.getElementById('agent-observability-research');
+            if (research) {
+                const basis = (data.research_basis || []).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+                research.innerHTML = `<h4>Research Basis</h4><p style="color:var(--text-dim);font-size:0.84rem;">Inspired by current agent-observability guidance: combine aggregate monitoring with trace-level debugging.</p><ul style="color:var(--text-dim);font-size:0.84rem;line-height:1.45;">${basis}</ul>`;
+            }
+
+            const tools = document.getElementById('agent-observability-tools');
+            if (tools) {
+                const topTools = data.top_tools || [];
+                tools.innerHTML = `<h4>Top Tools</h4>` + (topTools.length ? `
+                    <table class="sessions-table"><thead><tr><th>Tool</th><th>Events</th></tr></thead><tbody>
+                        ${topTools.map(tool => `<tr><td>${escapeHtml(tool.name || 'tool')}</td><td>${escapeHtml(tool.count ?? 0)}</td></tr>`).join('')}
+                    </tbody></table>
+                ` : '<p style="color:var(--text-dim);">No tool activity in this window.</p>');
+            }
+
+            const mix = document.getElementById('agent-observability-mix');
+            if (mix) {
+                const renderMix = (title, rows) => `<h4 style="margin-top:0.75rem;">${title}</h4><div class="message-meta">${(rows || []).map(row => `<span class="meta-pill">${escapeHtml(row.name || 'unknown')}: ${escapeHtml(row.count ?? 0)}</span>`).join(' ') || '<span class="meta-pill">none</span>'}</div>`;
+                mix.innerHTML = `<h4>Source / Model Mix</h4>${renderMix('Sources', data.source_mix)}${renderMix('Models', data.model_mix)}`;
+            }
+
+            const traces = document.getElementById('agent-observability-traces');
+            if (traces) {
+                const traceRows = data.recent_traces || [];
+                traces.innerHTML = `<h4>Recent Trace Exemplars</h4>` + (traceRows.length ? `
+                    <table class="sessions-table"><thead><tr><th>Session</th><th>Status</th><th>Source</th><th>Model</th><th>Messages</th><th>Tool Events</th></tr></thead><tbody>
+                        ${traceRows.map(trace => `<tr>
+                            <td><a href="#sessions/${escapeHtml(trace.id || '')}">${escapeHtml(trace.title || trace.id || 'Session')}</a><div style="color:var(--text-dim);font-size:0.76rem;">${escapeHtml(trace.started_at || '')}</div></td>
+                            <td><span class="tag">${escapeHtml(trace.status || 'unknown')}</span></td>
+                            <td>${escapeHtml(trace.source || 'unknown')}</td>
+                            <td>${escapeHtml(trace.model || 'unknown')}</td>
+                            <td>${escapeHtml(trace.messages ?? 0)}</td>
+                            <td>${escapeHtml(trace.tool_events ?? 0)}</td>
+                        </tr>`).join('')}
+                    </tbody></table>
+                ` : '<p style="color:var(--text-dim);">No traces in this window.</p>');
+            }
+        }
+
         async function loadSelfImprovement() {
             const stats = document.getElementById('self-improvement-stats');
             try {
@@ -10022,6 +11551,9 @@
             }
             renderSelfImprovementCronMesh(data?.cron_mesh || {});
             renderSelfImprovementDrift(data?.drift || {}, data?.policy || {});
+            renderBecomussyOutboxHealth(data?.becomussy_outbox || {});
+            renderSelfImprovementEventCoverage(data?.candidate_event_coverage || {});
+            renderBecomussyResumePacket(data?.becomussy_resume_packet || {});
             renderSelfImprovementRuns(data?.ledger?.runs || []);
             renderSelfImprovementQueue(data?.queue || {});
         }
@@ -10072,6 +11604,79 @@
             `;
         }
 
+        function renderBecomussyOutboxHealth(outbox) {
+            const el = document.getElementById('self-improvement-outbox');
+            if (!el) return;
+            const errors = outbox.recent_errors || [];
+            const invalidRecords = outbox.invalid_records || [];
+            const oldest = outbox.oldest_pending || {};
+            const status = outbox.invalid_count ? 'preflight attention' : (outbox.replay_needed ? 'replay needed' : (outbox.exists ? 'clear' : 'no outbox'));
+            el.innerHTML = `
+                <h4>Becomussy Outbox</h4>
+                <div class="message-meta" style="margin:0.5rem 0;">
+                    <span class="meta-pill">${escapeHtml(status)}</span>
+                    <span class="meta-pill">pending: ${escapeHtml(String(outbox.pending_count ?? 0))}</span>
+                    <span class="meta-pill">valid pending: ${escapeHtml(String(outbox.valid_pending_count ?? 0))}</span>
+                    <span class="meta-pill">invalid: ${escapeHtml(String(outbox.invalid_count ?? 0))}</span>
+                    <span class="meta-pill">done: ${escapeHtml(String(outbox.done_count ?? 0))}</span>
+                    <span class="meta-pill">malformed: ${escapeHtml(String(outbox.malformed_count ?? 0))}</span>
+                </div>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Oldest pending: ${escapeHtml(oldest.id || 'none')} ${outbox.oldest_pending_age_hours !== null && outbox.oldest_pending_age_hours !== undefined ? `· ${escapeHtml(String(outbox.oldest_pending_age_hours))}h old` : ''}</p>
+                ${invalidRecords.length ? `<p style="color:var(--warning);font-size:0.82rem;margin:0.35rem 0;">Preflight invalid_records:</p><ul style="color:var(--warning);font-size:0.82rem;margin:0.2rem 0 0 1rem;">${invalidRecords.map(rec => `<li>${escapeHtml(rec.path || 'unknown path')}: ${escapeHtml((rec.issues || []).join('; '))}</li>`).join('')}</ul>` : ''}
+                ${errors.length ? `<ul style="color:var(--warning);font-size:0.82rem;margin:0.4rem 0 0 1rem;">${errors.map(err => `<li>${escapeHtml(err.path || 'unknown path')}: ${escapeHtml(err.last_error || '')}</li>`).join('')}</ul>` : '<p style="color:var(--text-dim);font-size:0.82rem;margin:0.35rem 0;">No recent outbox errors.</p>'}
+            `;
+        }
+
+        function renderSelfImprovementEventCoverage(coverage) {
+            const el = document.getElementById('self-improvement-event-coverage');
+            if (!el) return;
+            const missing = coverage.missing_event_coverage || {};
+            const severity = coverage.missing_event_coverage_severity || {};
+            const statusCounts = missing.status_counts || {};
+            const statusSummary = Object.keys(statusCounts).length
+                ? Object.entries(statusCounts).map(([k, v]) => `${k}:${v}`).join(' · ')
+                : 'none';
+            const missingPreview = (missing.candidates || [])
+                .slice(0, 4)
+                .map(candidate => candidate.id || candidate.candidate_id || candidate.title || '')
+                .filter(Boolean);
+            const status = coverage.coverage_ok === false ? 'coverage gaps' : (coverage.coverage_ok === true ? 'covered' : 'unknown');
+            el.innerHTML = `
+                <h4>Queue Event Coverage</h4>
+                <div class="message-meta" style="margin:0.5rem 0;">
+                    <span class="meta-pill">${escapeHtml(status)}</span>
+                    <span class="meta-pill">level: ${escapeHtml(severity.level || 'unknown')}</span>
+                    <span class="meta-pill">events: ${escapeHtml(String(coverage.event_count ?? '—'))}</span>
+                    <span class="meta-pill">missing: ${escapeHtml(String(missing.count ?? severity.missing_count ?? '—'))}</span>
+                </div>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Missing by status: ${escapeHtml(statusSummary)}</p>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Source: ${escapeHtml(coverage.source || coverage.event_ledger_path || 'waiting for replay summary')}</p>
+                ${missingPreview.length ? `<ul style="color:var(--warning);font-size:0.82rem;margin:0.4rem 0 0 1rem;">${missingPreview.map(id => `<li>${escapeHtml(id)}</li>`).join('')}</ul>` : '<p style="color:var(--text-dim);font-size:0.82rem;margin:0.35rem 0;">No missing candidate coverage preview.</p>'}
+            `;
+        }
+
+        function renderBecomussyResumePacket(packet) {
+            const el = document.getElementById('self-improvement-resume-packet');
+            if (!el) return;
+            const featureResume = packet.feature_resume || {};
+            const queue = featureResume.queue || {};
+            const ledger = featureResume.ledger || {};
+            const actions = packet.next_actions || [];
+            const generated = packet.generated_at || 'not generated';
+            const status = packet.exists === false ? 'missing' : (packet.ok === false ? 'attention' : 'ready');
+            el.innerHTML = `
+                <h4>Becomussy Resume Packet</h4>
+                <div class="message-meta" style="margin:0.5rem 0;">
+                    <span class="meta-pill">${escapeHtml(status)}</span>
+                    <span class="meta-pill">resumable: ${escapeHtml(String(queue.resumable_count ?? 0))}</span>
+                    <span class="meta-pill">recoverable runs: ${escapeHtml(String(ledger.recoverable_run_count ?? 0))}</span>
+                </div>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Generated: ${escapeHtml(generated)}</p>
+                <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Source: ${escapeHtml(packet.source || packet?.sources?.self_improvement_home || 'waiting for packet')}</p>
+                ${actions.length ? `<ul style="color:var(--warning);font-size:0.82rem;margin:0.4rem 0 0 1rem;">${actions.slice(0, 4).map(action => `<li>${escapeHtml(action)}</li>`).join('')}</ul>` : '<p style="color:var(--text-dim);font-size:0.82rem;margin:0.35rem 0;">No resume actions recorded.</p>'}
+            `;
+        }
+
         function renderSelfImprovementRuns(runs) {
             const el = document.getElementById('self-improvement-runs');
             if (!el) return;
@@ -10079,7 +11684,17 @@
                 el.innerHTML = '<p style="color:var(--text-dim);">No self-improvement runs recorded yet.</p>';
                 return;
             }
-            el.innerHTML = runs.map(run => `
+            el.innerHTML = runs.map(run => {
+                const stepSummary = run.step_journal_summary || {};
+                const recoverable = Number(run.recoverable_step_count || stepSummary.recoverable_step_count || 0);
+                const latestStepStatus = run.latest_step_status || stepSummary.latest_step_status || '—';
+                const latestStep = stepSummary.latest_step || {};
+                const recoverableSteps = Array.isArray(stepSummary.recoverable_steps) ? stepSummary.recoverable_steps : [];
+                const recoveryHints = recoverableSteps
+                    .map(step => step.recovery_hint || step.step_name || '')
+                    .filter(Boolean)
+                    .slice(0, 2);
+                return `
                 <div class="activity-item" style="margin:0.75rem 0;">
                     <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
                         <strong>${escapeHtml(run.run_id || 'unknown run')}</strong>
@@ -10090,9 +11705,13 @@
                         <span>${escapeHtml(run.selected_layer || 'no layer')}</span>
                         <span>${escapeHtml((run.verification_commands || []).join(', ') || 'no verification')}</span>
                         <span>${escapeHtml((run.artifacts || []).join(', ') || 'no artifacts')}</span>
+                        <span class="meta-pill">steps: ${escapeHtml(String(stepSummary.count ?? 0))} · latest ${escapeHtml(String(latestStepStatus))}</span>
+                        <span class="meta-pill">recoverable steps: ${escapeHtml(String(recoverable))}</span>
                     </div>
+                    ${(recoverable || latestStep.step_name) ? `<p style="color:${recoverable ? 'var(--warning)' : 'var(--text-dim)'};font-size:0.82rem;margin:0.4rem 0 0;">Latest step: ${escapeHtml(latestStep.step_name || 'unknown')} ${recoveryHints.length ? `· recovery: ${escapeHtml(recoveryHints.join(' · '))}` : ''}</p>` : ''}
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function renderSelfImprovementQueue(queue) {
@@ -11107,7 +12726,8 @@
         function clearChat() {
             chat.innerHTML = '';
             conversation = [];
-            localStorage.removeItem(STORAGE_KEY);
+            void saveDashboardState('conversation', null, { immediate: true });
+            removeLegacyLocalStorageValue(STORAGE_KEY);
             clearActiveRun();
             activeChatSessionId = null;
             saveActiveChatSession();
@@ -11136,6 +12756,101 @@
             userInput.style.height = 'auto';
             userInput.style.height = Math.min(userInput.scrollHeight, 150) + 'px';
         });
+
+        let diagnosticsContextCache = null;
+
+        async function loadDiagnosticsContext() {
+            const output = document.getElementById('diagnostics-context');
+            const target = document.getElementById('diagnostics-target')?.value || 'pokemon';
+            if (output) output.textContent = 'Gathering live context...';
+            try {
+                const response = await fetch('/api/diagnostics/context?target=' + encodeURIComponent(target));
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || data.detail || 'HTTP ' + response.status);
+                diagnosticsContextCache = data;
+                if (output) output.textContent = JSON.stringify(data, null, 2);
+                return data;
+            } catch (error) {
+                if (output) output.textContent = 'Failed to gather context: ' + error.message;
+                throw error;
+            }
+        }
+
+        function fillDiagnosticsPrompt(kind) {
+            const input = document.getElementById('diagnostics-input');
+            if (!input) return;
+            const prompts = {
+                stuck: 'The Pokemon autoplayer appears stuck or not making progress. Diagnose the likely blocker from the live context, cite the exact status/readiness fields that matter, and give the safest next action. Do not edit files or restart services unless I explicitly approve a specific plan.',
+                dashboard: 'Something in the dashboard, WebRTC/watch page, WebSocket proxy, or ROM onboarding may be broken. Diagnose it from the live context and propose a minimal verification checklist before any fix.',
+                fix: 'Propose a safe fix plan for the current issue. Include files likely touched, commands to verify, risk level, and the approval you need before making changes. Do not perform the fix yet.'
+            };
+            input.value = prompts[kind] || prompts.stuck;
+            input.focus();
+        }
+
+        async function sendDiagnosticsMessage() {
+            const input = document.getElementById('diagnostics-input');
+            const output = document.getElementById('diagnostics-output');
+            const button = document.getElementById('diagnostics-send');
+            const question = (input?.value || '').trim();
+            if (!question) return;
+            if (button) button.disabled = true;
+            if (output) output.textContent = 'Gathering context and starting Diagnostics Agent...\n\n';
+            try {
+                const context = diagnosticsContextCache || await loadDiagnosticsContext();
+                const system = 'You are the Hermes Dashboard Diagnostics Agent. You may diagnose live dashboard and Pokemon-agent problems from provided context. Default to observe/propose mode. Do not claim you changed files, ran commands, restarted services, or approved a fix unless the user explicitly asks and the tool system actually does it. If a fix is needed, return a concise plan with risk, files, commands, and approval request. Prefer using subagents/delegation for nontrivial investigation when available.';
+                const messages = [
+                    { role: 'system', content: system },
+                    { role: 'user', content: question + '\n\nLive diagnostics context:\n```json\n' + JSON.stringify(context, null, 2).slice(0, 26000) + '\n```' }
+                ];
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        run_id: 'diag_' + Date.now() + '_' + Math.random().toString(16).slice(2),
+                        messages: messages,
+                    }),
+                });
+                if (!response.ok || !response.body) throw new Error('HTTP ' + response.status);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let content = '';
+                while (true) {
+                    const chunk = await reader.read();
+                    buffer += decoder.decode(chunk.value || new Uint8Array(), { stream: !chunk.done });
+                    const events = buffer.split(/\r?\n\r?\n/);
+                    if (!chunk.done) buffer = events.pop() || '';
+                    else buffer = '';
+                    for (const rawEvent of events) {
+                        const line = rawEvent.split(/\r?\n/).find(part => part.startsWith('data: '));
+                        if (!line) continue;
+                        const data = line.slice(6);
+                        if (data === '[DONE]') break;
+                        try {
+                            const parsed = JSON.parse(data);
+                            if (parsed.type === 'content' && parsed.content) {
+                                content += parsed.content;
+                                if (output) output.textContent = content;
+                            } else if (parsed.type === 'tool_progress') {
+                                const label = parsed.name || parsed.tool || 'tool';
+                                if (output) output.textContent = content + '\n\n[tool] ' + label;
+                            }
+                        } catch (_) {}
+                    }
+                    if (chunk.done) break;
+                }
+                if (output && !content) output.textContent = 'Diagnostics Agent completed without text output.';
+            } catch (error) {
+                if (output) output.textContent += 'Error: ' + error.message;
+            } finally {
+                if (button) button.disabled = false;
+            }
+        }
+
+        window.loadDiagnosticsContext = loadDiagnosticsContext;
+        window.fillDiagnosticsPrompt = fillDiagnosticsPrompt;
+        window.sendDiagnosticsMessage = sendDiagnosticsMessage;
 
         // GRAPH_RUNTIME_START
 
@@ -13099,30 +14814,35 @@
         loadStatus();
         loadModels();
 
-        const hadActiveRun = loadActiveRun();
+        async function initializeDashboardChatState() {
+            const hadActiveRun = await loadActiveRun();
 
-        // Restore conversation from localStorage
-        if (loadConversation() && conversation.length > 0) {
-            renderConversation();
-            const lastAssistant = [...conversation].reverse().find(msg => msg.role === 'assistant');
-            if (lastAssistant) {
-                updateContextDisplay(normalizeAssistantMessage(lastAssistant));
+            // Restore conversation from server-side dashboard state, migrating legacy localStorage if present.
+            if (await loadConversation() && conversation.length > 0) {
+                renderConversation();
+                const lastAssistant = [...conversation].reverse().find(msg => msg.role === 'assistant');
+                if (lastAssistant) {
+                    updateContextDisplay(normalizeAssistantMessage(lastAssistant));
+                }
+            } else {
+                updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
             }
-        } else {
-            updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
-        }
 
-        if (hadActiveRun && activeRun && activeRun.runId) {
-            log('inf', 'Recovered in-flight chat after refresh; waiting for manual resume or reattach');
+            if (hadActiveRun && activeRun && activeRun.runId) {
+                log('inf', 'Recovered in-flight chat after refresh; waiting for manual resume or reattach');
+                updateActiveRunBanner();
+            }
+
+            updateActiveChatBanner();
             updateActiveRunBanner();
         }
 
-        updateActiveChatBanner();
-        updateActiveRunBanner();
+        void initializeDashboardChatState();
 
         userInput.focus();
 
         // Initialize hash routing
+        applyDndPopoutMode();
         handleHashChange();
 
         // === TRACK E: CommandPalette ===
@@ -13458,6 +15178,695 @@
                     ${lastRun ? `<div style="font-size:0.78rem;color:var(--text-dim);margin-top:0.2rem;">Last run: ${escapeHtml(formatSessionDate(lastRun.started_at) || '—')}</div>` : ''}
                 </div>
             `;
+        }
+
+
+        var scrollsConsoleTimer = null;
+        var scrollsResearchTimer = null;
+        var scrollsResearchLoading = false;
+        var scrollsLastRunId = null;
+
+        function scrollsFmtNumber(value, digits = 4) {
+            const n = Number(value);
+            return Number.isFinite(n) ? n.toFixed(digits) : '—';
+        }
+
+        function scrollsGet(obj, path) {
+            let cur = obj;
+            for (const part of path) {
+                if (!cur || typeof cur !== 'object') return undefined;
+                cur = cur[part];
+            }
+            return cur;
+        }
+
+        function scrollsFmtTime(value) {
+            if (!value) return '—';
+            const d = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
+            return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+        }
+
+        function scrollsFmtBytes(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return '—';
+            if (n < 1024) return `${n} B`;
+            if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+            return `${(n / 1024 / 1024).toFixed(1)} MB`;
+        }
+
+        function scrollsFmtDuration(seconds) {
+            const n = Number(seconds);
+            if (!Number.isFinite(n)) return '—';
+            if (n < 60) return `${Math.round(n)}s`;
+            if (n < 3600) return `${Math.round(n / 60)}m`;
+            return `${(n / 3600).toFixed(1)}h`;
+        }
+
+        function renderScrollsLoopPills(loop) {
+            const state = loop || {};
+            const active = !!state.active;
+            return `
+                <span class="meta-pill" style="color:${active ? 'var(--success)' : 'var(--text-dim)'};">loop ${escapeHtml(state.status || 'idle')}</span>
+                <span class="meta-pill">remaining ${scrollsFmtDuration(state.remaining_seconds)}</span>
+                <span class="meta-pill">iterations ${escapeHtml(String(state.iterations ?? 0))}</span>
+                ${state.current_pid ? `<span class="meta-pill">pid ${escapeHtml(String(state.current_pid))}</span>` : ''}
+            `;
+        }
+
+        function scrollsCompactJson(value) {
+            if (value === undefined) return '—';
+            if (value === null) return 'null';
+            if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+            try { return JSON.stringify(value); } catch (_) { return String(value); }
+        }
+
+        function scrollsMetricDirection(run) {
+            const metric = String(scrollsGet(run?.config || {}, ['evaluation', 'main_metric']) || 'val_loss').toLowerCase();
+            return metric.includes('loss') ? 1 : -1;
+        }
+
+        function scrollsMetricName(run) {
+            return String(scrollsGet(run?.config || {}, ['evaluation', 'main_metric']) || 'val_loss');
+        }
+
+        function scrollsMetricDelta(current, previous, run = null) {
+            const cur = Number(current);
+            const prev = Number(previous);
+            if (!Number.isFinite(cur) || !Number.isFinite(prev)) return { text: '—', tone: 'neutral' };
+            const delta = cur - prev;
+            if (Math.abs(delta) < 1e-12) return { text: '±0.0000', tone: 'neutral' };
+            const direction = scrollsMetricDirection(run);
+            return { text: `${delta > 0 ? '+' : ''}${scrollsFmtNumber(delta)}`, tone: direction * delta < 0 ? 'good' : 'bad' };
+        }
+
+        function scrollsProgressTone(status) {
+            if (status === 'improving' || status === 'done' || status === 'ok') return 'var(--success)';
+            if (status === 'regressing' || status === 'blocked') return 'var(--error)';
+            if (status === 'warning' || status === 'noisy' || status === 'active') return 'var(--warning)';
+            return 'var(--text-dim)';
+        }
+
+        function scrollsPct(value) {
+            const n = Number(value);
+            return Number.isFinite(n) ? `${Math.round(n * 100)}%` : '—';
+        }
+
+        function renderScrollsProgressTracker(tracker) {
+            const summary = tracker?.summary || {};
+            const score = tracker?.scorecard || {};
+            const sanity = tracker?.sanity || {};
+            const signals = tracker?.signals || {};
+            const percent = Math.max(0, Math.min(100, Number(summary.percent || 0)));
+            const target = Number(summary.progress_target || 0.02);
+            const foundationReadiness = Number(summary.foundation_readiness);
+            const relativeGain = score.relative_gain_vs_baseline == null ? '—' : `${Number(score.relative_gain_vs_baseline) >= 0 ? '+' : ''}${scrollsPct(score.relative_gain_vs_baseline)}`;
+            const apGain = score.average_precision_gain == null ? '—' : `${Number(score.average_precision_gain) >= 0 ? '+' : ''}${scrollsFmtNumber(score.average_precision_gain)}`;
+            const modelMix = Object.entries(score.model_family_mix || {}).map(([family, count]) => `${family} ${count}`).join(' · ') || 'unknown mix';
+            const milestones = (tracker?.milestones || []).map(item => `
+                <div class="activity-item" style="padding:0.55rem 0.65rem;border-left:3px solid ${scrollsProgressTone(item.state)};">
+                    <div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:center;">
+                        <strong style="font-size:0.82rem;">${escapeHtml(item.label || '')}</strong>
+                        <span class="meta-pill" style="color:${scrollsProgressTone(item.state)};">${escapeHtml(item.state || 'unknown')}</span>
+                    </div>
+                    <div style="color:var(--text-dim);font-size:0.75rem;margin-top:0.25rem;">${escapeHtml(item.detail || '')}</div>
+                </div>
+            `).join('') || '<p style="color:var(--text-dim);">No progress milestones available.</p>';
+            const sanityText = (sanity.warnings || []).length ? sanity.warnings.join(' · ') : 'precision/recall nonzero';
+            return `
+                <div class="card scrolls-card-tight" style="margin-bottom:0.75rem;border-color:var(--primary-border);">
+                    <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                        <div style="min-width:240px;flex:1;">
+                            <div style="color:var(--text-dim);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;">Research Progress Tracker</div>
+                            <h3 style="margin:0.25rem 0;color:${scrollsProgressTone(summary.status)};">${escapeHtml(summary.label || 'Unknown progress')}</h3>
+                            <p style="color:var(--text-dim);font-size:0.84rem;line-height:1.35;max-width:820px;">${escapeHtml(summary.current_step || '')}</p>
+                            <p style="color:var(--text);font-size:0.86rem;line-height:1.35;margin-top:0.35rem;"><strong>Next:</strong> ${escapeHtml(summary.next_action || '')}</p>
+                        </div>
+                        <div style="min-width:220px;">
+                            <div style="font-size:1.65rem;font-weight:800;color:var(--primary);">${escapeHtml(String(Math.round(percent)))}%</div>
+                            <div style="height:9px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;margin-top:0.35rem;"><div style="width:${percent}%;height:100%;background:linear-gradient(90deg,var(--primary),var(--success));"></div></div>
+                            <div style="color:var(--text-dim);font-size:0.74rem;margin-top:0.3rem;">of first +${scrollsFmtNumber(target)} F1 improvement target</div>
+                            <div style="color:var(--text-dim);font-size:0.72rem;margin-top:0.2rem;">setup confidence ${Number.isFinite(foundationReadiness) ? `${Math.round(foundationReadiness)}%` : '—'}</div>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.55rem;margin-top:0.75rem;">
+                        <div class="stat-card"><div class="stat-value">${scrollsFmtNumber(score.best)}</div><div class="stat-label">Best held-out F1</div></div>
+                        <div class="stat-card"><div class="stat-value" title="${escapeHtml(score.best_model_name || '')}">${escapeHtml(score.best_model_name || '—')}</div><div class="stat-label">Best model</div></div>
+                        <div class="stat-card"><div class="stat-value">${scrollsFmtNumber(score.best_pytorch_f1)}</div><div class="stat-label">Best PyTorch F1</div></div>
+                        <div class="stat-card"><div class="stat-value">${scrollsFmtNumber(score.best_pytorch_ap)}</div><div class="stat-label">Best PyTorch AP</div></div>
+                        <div class="stat-card"><div class="stat-value" style="color:${Number(score.gain_vs_baseline) > 0 ? 'var(--success)' : 'var(--text)'};">${score.gain_vs_baseline == null ? '—' : `${Number(score.gain_vs_baseline) >= 0 ? '+' : ''}${scrollsFmtNumber(score.gain_vs_baseline)}`}</div><div class="stat-label">Gain vs baseline</div></div>
+                        <div class="stat-card"><div class="stat-value" style="color:${Number(score.average_precision_gain) > 0 ? 'var(--success)' : 'var(--text)'};">${apGain}</div><div class="stat-label">AP/ranking gain</div></div>
+                        <div class="stat-card"><div class="stat-value" style="color:${scrollsProgressTone(score.trend)};">${escapeHtml(score.trend || 'unknown')}</div><div class="stat-label">Recent direction</div></div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:minmax(0,1.05fr) minmax(290px,0.95fr);gap:0.75rem;margin-top:0.75rem;align-items:start;">
+                        <div>
+                            <h5>Evidence Checklist</h5>
+                            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.45rem;margin-top:0.45rem;">${milestones}</div>
+                        </div>
+                        <div>
+                            <h5>What This Means</h5>
+                            <div class="activity-item" style="margin-top:0.45rem;padding:0.7rem;">
+                                <p style="color:var(--text-dim);font-size:0.82rem;line-height:1.4;">The big percent is not setup completion. It is actual score lift: best held-out val_f1 minus the first comparable baseline, measured against an initial +${scrollsFmtNumber(target)} F1 target. Right now, the important question is whether that lift keeps increasing or has plateaued.</p>
+                                <div class="message-meta" style="margin-top:0.55rem;">
+                                    <span class="meta-pill">runs ${escapeHtml(String(score.comparable_run_count ?? 0))}</span>
+                                    <span class="meta-pill">models ${escapeHtml(modelMix)}</span>
+                                    <span class="meta-pill">idea success ${scrollsPct(score.hypothesis_yield)}</span>
+                                    <span class="meta-pill">best AP ${scrollsFmtNumber(score.best_average_precision)}</span>
+                                    <span class="meta-pill">${escapeHtml(signals.validation_mode || 'unknown')}</span>
+                                    <span class="meta-pill">${escapeHtml(signals.train || '?')} → ${escapeHtml(signals.val || '?')}</span>
+                                </div>
+                                <p style="color:${scrollsProgressTone(sanity.status)};font-size:0.8rem;margin-top:0.5rem;">Prediction sanity: ${escapeHtml(sanityText)} · precision ${scrollsFmtNumber(sanity.precision)} · recall ${scrollsFmtNumber(sanity.recall)}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function scrollsRunLabel(run) {
+            if (!run) return '—';
+            const setup = run.validation_setup || {};
+            const train = setup.train_segment_id || scrollsGet(run.config || {}, ['dataset', 'train_scroll_id']) || '?';
+            const val = setup.val_segment_id || scrollsGet(run.config || {}, ['dataset', 'val_scroll_id']) || '?';
+            return `${train}→${val}`;
+        }
+
+        function scrollsRunValidationMode(run) {
+            return run?.validation_setup?.mode || scrollsGet(run?.config || {}, ['dataset', 'validation_mode']) || 'unknown';
+        }
+
+        function scrollsRecommendation(data, latest, previous, best) {
+            if (data.lock_active) {
+                return { title: 'AutoResearch is running', body: 'Wait for the current run to finish, then inspect the new metrics and artifacts before changing configs.', action: 'Refresh status', run: latest?.run_id || '—' };
+            }
+            if (!latest) {
+                return { title: 'Start a baseline run', body: 'No experiment ledger entries are available yet. Run AutoResearch or a baseline config to create the first comparable artifact set.', action: 'Run AutoResearch', run: 'none' };
+            }
+            const latestHypothesis = (data.experiments?.hypotheses || [])[0];
+            const delta = scrollsMetricDelta(latest.main_metric, previous?.main_metric, latest);
+            if (latestHypothesis?.status === 'improved') {
+                return { title: 'Exploit the latest improvement', body: `Latest run improved by ${delta.text}. Inspect its artifacts, then run a small follow-up around the changed paths: ${(latestHypothesis.changed_paths || []).slice(0, 3).join(', ') || 'config changes'}.`, action: 'Inspect artifacts', run: latest.run_id };
+            }
+            if (latestHypothesis?.status === 'regressed') {
+                return { title: 'Backtrack the last change', body: `Latest run regressed by ${delta.text}. Compare latest vs best and prefer configs closer to ${best?.run_id || 'the best run'} before launching another sweep.`, action: 'Compare latest vs best', run: latest.run_id };
+            }
+            return { title: 'Tighten the next hypothesis', body: 'Review the latest config diff and artifact metrics, then run one interpretable change instead of a broad sweep.', action: 'Review evidence', run: latest.run_id };
+        }
+
+        function scrollsArtifactRow(artifact) {
+            const encodedPath = encodeURIComponent(artifact.path || '');
+            return `
+                <button class="activity-item" style="width:100%;text-align:left;display:flex;justify-content:space-between;gap:0.75rem;align-items:center;cursor:pointer;" onclick="loadScrollsArtifact('${encodedPath}')">
+                    <span style="min-width:0;"><span style="display:block;font-family:monospace;font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(artifact.name || '')}</span><span style="display:block;font-size:0.72rem;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(artifact.path || '')}</span></span>
+                    <span class="meta-pill">${escapeHtml(artifact.kind || 'file')} · ${scrollsFmtBytes(artifact.size_bytes)}</span>
+                </button>
+            `;
+        }
+
+        function renderScrollsFeatureInventory(inventory) {
+            const features = Array.isArray(inventory?.features) ? inventory.features : [];
+            const warnings = Array.isArray(inventory?.warnings) ? inventory.warnings : [];
+            const champions = Array.isArray(inventory?.champion_configs) ? inventory.champion_configs : [];
+            const featureCards = features.map((item) => `
+                <div class="activity-item" style="padding:0.65rem 0.75rem;">
+                    <div style="display:flex;justify-content:space-between;gap:0.65rem;align-items:flex-start;flex-wrap:wrap;">
+                        <strong>${escapeHtml(item.title || '')}</strong>
+                        <span class="meta-pill">${item.available ? 'available' : 'check files'}</span>
+                    </div>
+                    <p style="color:var(--text-dim);font-size:0.78rem;line-height:1.35;margin-top:0.25rem;">${escapeHtml(item.detail || '')}</p>
+                    <pre style="white-space:pre-wrap;color:var(--text-dim);font-size:0.72rem;margin-top:0.45rem;overflow:auto;">${escapeHtml(item.command || '')}</pre>
+                </div>
+            `).join('') || '<p style="color:var(--text-dim);">No Vesuvius AutoResearch feature inventory returned.</p>';
+            const championPills = champions.map((cfg) => `<span class="meta-pill" title="${escapeHtml(cfg.path || '')}">${escapeHtml(cfg.name || '')}${cfg.available ? '' : ' missing'}</span>`).join('') || '<span style="color:var(--text-dim);font-size:0.78rem;">No champion configs listed.</span>';
+            const warningRows = warnings.map((warning) => `<p style="color:var(--warning);font-size:0.78rem;line-height:1.35;margin-top:0.35rem;">${escapeHtml(warning)}</p>`).join('');
+            return `
+                <div id="scrolls-autoresearch-features" class="card scrolls-card-tight" style="margin-top:0.75rem;">
+                    <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;flex-wrap:wrap;">
+                        <div>
+                            <h4>Vesuvius AutoResearch Feature Inventory</h4>
+                            <p style="color:var(--text-dim);font-size:0.82rem;line-height:1.35;margin-top:0.35rem;">Safe recommended commands are shown for terminal review from the project root; the dashboard does not execute these commands.</p>
+                        </div>
+                        <div class="message-meta" style="max-width:520px;justify-content:flex-end;">${championPills}</div>
+                    </div>
+                    ${warningRows}
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.55rem;margin-top:0.75rem;">${featureCards}</div>
+                </div>
+            `;
+        }
+
+        async function scrollsFetchJson(url, options = {}) {
+            const resp = await fetch(url, options);
+            let data = null;
+            try { data = await resp.json(); } catch (_) { data = {}; }
+            if (!resp.ok) throw new Error(data.error || data.detail || resp.statusText || 'request failed');
+            return data;
+        }
+
+        function renderScrollsProcessPills(processes) {
+            const rows = Array.isArray(processes) ? processes : [];
+            if (!rows.length) return '<span class="meta-pill">no live process</span>';
+            return rows.map(proc => `<span class="meta-pill" title="${escapeHtml(proc.command || '')}">pid ${escapeHtml(proc.pid || '?')} · ${scrollsFmtDuration(proc.age_seconds)}</span>`).join('');
+        }
+
+        function updateScrollsConsole(data) {
+            const consoleEl = document.getElementById('scrolls-live-console');
+            const statusEl = document.getElementById('scrolls-console-status');
+            const cronEl = document.getElementById('scrolls-console-cron');
+            const loopEl = document.getElementById('scrolls-improvement-loop');
+            const timedLoopEl = document.getElementById('scrolls-timed-loop-status');
+            const lines = data?.logs?.lines || [];
+            if (consoleEl) {
+                consoleEl.textContent = lines.join('\n') || 'No AutoResearch log lines yet. Start a supervised run or wait for cron fallback.';
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+            if (statusEl) {
+                statusEl.innerHTML = `
+                    <span class="meta-pill">${data?.lock_active ? 'running' : 'idle'}</span>
+                    ${renderScrollsProcessPills(data?.processes)}
+                    ${renderScrollsLoopPills(data?.timed_loop)}
+                    <span class="meta-pill">updated ${escapeHtml(scrollsFmtTime(data?.generated_at))}</span>
+                `;
+            }
+            if (timedLoopEl) timedLoopEl.innerHTML = renderScrollsLoopPills(data?.timed_loop);
+            if (cronEl) {
+                cronEl.innerHTML = `
+                    <span class="meta-pill">fallback cron ${data?.cron?.installed ? 'installed' : 'missing'}</span>
+                    <span class="meta-pill">log ${escapeHtml(scrollsFmtBytes(data?.logs?.stat?.size_bytes))}</span>
+                `;
+            }
+            if (loopEl) {
+                const loop = data?.improvement_loop || {};
+                const job = loop.primary_job || {};
+                const blockers = loop.blockers || [];
+                loopEl.innerHTML = `
+                    <h4>Daily Hermes Improvement Loop</h4>
+                    <div class="message-meta" style="margin:0.5rem 0;">
+                        <span class="meta-pill">${loop.ok ? 'wired' : 'attention'}</span>
+                        <span class="meta-pill">jobs ${escapeHtml(String(loop.job_count ?? '—'))}</span>
+                        <span class="meta-pill">legacy active ${escapeHtml(String(loop.active_legacy_count ?? '—'))}</span>
+                    </div>
+                    <p style="color:var(--text-dim);font-size:0.82rem;line-height:1.35;margin-top:0.4rem;">Once a day, Hermes should review Vesuvius AutoResearch results, Becomussy continuity notes, cron outputs, and dashboard friction to propose small efficiency improvements. Manual supervised runs stay primary; cron is the fallback.</p>
+                    <p style="color:var(--text-dim);font-size:0.8rem;margin-top:0.45rem;">Primary: ${escapeHtml(job.name || 'self-improvement-loop not found')} · next ${escapeHtml(job.next_run_at || '—')}</p>
+                    ${blockers.length ? `<p style="color:var(--warning);font-size:0.8rem;margin-top:0.4rem;">${escapeHtml(blockers.join(' · '))}</p>` : ''}
+                `;
+            }
+            const topBtn = document.getElementById('scrolls-autoresearch-btn');
+            if (topBtn) topBtn.disabled = !!data?.lock_active;
+        }
+
+        async function refreshScrollsConsole() {
+            try {
+                const data = await scrollsFetchJson('/api/scrolls/console');
+                updateScrollsConsole(data);
+            } catch (err) {
+                const statusEl = document.getElementById('scrolls-console-status');
+                if (statusEl) statusEl.innerHTML = `<span style="color:var(--error);">Console refresh failed: ${escapeHtml(String(err))}</span>`;
+            }
+        }
+
+        function toggleScrollsConsoleAutoRefresh() {
+            const enabled = !!document.getElementById('scrolls-console-autorefresh')?.checked;
+            if (scrollsConsoleTimer) {
+                clearInterval(scrollsConsoleTimer);
+                scrollsConsoleTimer = null;
+            }
+            if (enabled) {
+                refreshScrollsConsole();
+                scrollsConsoleTimer = setInterval(refreshScrollsConsole, 5000);
+            }
+        }
+
+        function startScrollsResearchAutoRefresh() {
+            if (scrollsResearchTimer) clearInterval(scrollsResearchTimer);
+            scrollsResearchTimer = setInterval(() => {
+                const panel = document.getElementById('scrolls-panel');
+                if (panel && panel.classList.contains('active')) loadScrollsResearch({ silent: true });
+            }, 10000);
+        }
+
+        function stopScrollsResearchAutoRefresh() {
+            if (scrollsResearchTimer) {
+                clearInterval(scrollsResearchTimer);
+                scrollsResearchTimer = null;
+            }
+        }
+
+        async function loadScrollsResearch(options = {}) {
+            const container = document.getElementById('scrolls-container');
+            if (!container) return;
+            if (scrollsResearchLoading) return;
+            scrollsResearchLoading = true;
+            const silent = !!options.silent;
+            const previousScrollTop = container.scrollTop;
+            if (!silent) container.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:2rem;">Loading Vesuvius AutoResearch...</div>';
+            try {
+                const data = await scrollsFetchJson('/api/scrolls/research');
+                const best = data.experiments?.best || null;
+                const recent = data.experiments?.recent || [];
+                const configs = data.configs || [];
+                const scrolls = Array.isArray(data.data_summary?.scrolls) ? data.data_summary.scrolls : [];
+                const prepared = data.prepared_datasets || [];
+                const latest = data.experiments?.latest || recent[0] || null;
+                const latestRunId = latest?.run_id || null;
+                if (silent && latestRunId && scrollsLastRunId && latestRunId !== scrollsLastRunId) {
+                    showToast(`New Vesuvius AutoResearch result logged: ${latestRunId}`);
+                }
+                scrollsLastRunId = latestRunId;
+                const previous = recent[1] || null;
+                const logLines = data.logs?.lines || [];
+                const metricLabel = scrollsMetricName(best || latest);
+                const metricValue = best ? scrollsFmtNumber(best.main_metric) : '—';
+                const cronText = data.cron?.installed ? 'Installed' : 'Missing';
+                const lockText = data.lock_active ? 'Running' : 'Idle';
+                const latestArtifacts = latest?.artifacts || [];
+                const bestArtifacts = data.experiments?.best?.artifacts || [];
+                const latestDelta = scrollsMetricDelta(latest?.main_metric, previous?.main_metric, latest);
+                const bestGap = scrollsMetricDelta(latest?.main_metric, best?.main_metric, latest);
+                const recommendation = scrollsRecommendation(data, latest, previous, best);
+                const progressHtml = renderScrollsProgressTracker(data.progress_tracker || {});
+                const latestHypothesis = (data.experiments?.hypotheses || [])[0] || null;
+                const weakestPair = (data.experiments?.validation_matrix || []).slice().sort((a, b) => Number(b.best_main_metric ?? -Infinity) - Number(a.best_main_metric ?? -Infinity))[0] || null;
+                const validationMode = scrollsRunValidationMode(latest);
+                const validationWarning = latest?.validation_setup?.warning || data.data_summary?.validation_setup?.warning || (validationMode === 'cross-segment' || validationMode === 'cross-scroll' ? '' : 'Active validation is not cross-segment/cross-scroll.');
+                const consoleLines = data.logs?.lines || [];
+                const consoleStat = data.logs?.stat || {};
+                const featureInventoryHtml = renderScrollsFeatureInventory(data.autoresearch_inventory || {});
+                const processPills = renderScrollsProcessPills(data.processes);
+                const loop = data.improvement_loop || {};
+                const loopJob = loop.primary_job || {};
+                const loopBlockers = loop.blockers || [];
+                const timedLoop = data.timed_loop || {};
+                const diffRows = (data.experiments?.config_diffs?.latest_vs_previous || []).map((diff) => `
+                    <tr>
+                        <td style="padding:0.4rem 0.45rem;font-family:monospace;color:var(--primary);">${escapeHtml(diff.path || '')}</td>
+                        <td style="padding:0.4rem 0.45rem;font-family:monospace;color:var(--text-dim);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(scrollsCompactJson(diff.before))}">${escapeHtml(scrollsCompactJson(diff.before))}</td>
+                        <td style="padding:0.4rem 0.45rem;font-family:monospace;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(scrollsCompactJson(diff.after))}">${escapeHtml(scrollsCompactJson(diff.after))}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="3" style="padding:0.75rem;color:var(--text-dim);">No latest-vs-previous config changes.</td></tr>';
+                const hypothesisCards = (data.experiments?.hypotheses || []).slice(0, 6).map((item) => `
+                    <div class="activity-item">
+                        <div style="display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;margin-bottom:0.35rem;">
+                            <span class="meta-pill" style="font-family:monospace;">${escapeHtml(item.run_id || '')}</span>
+                            <span class="meta-pill">${escapeHtml(item.status || 'inconclusive')}</span>
+                            <span class="meta-pill">metric ${scrollsFmtNumber(item.metric)}</span>
+                            <span class="meta-pill">Δ prev ${item.metric_delta_vs_previous == null ? '—' : scrollsFmtNumber(item.metric_delta_vs_previous)}</span>
+                        </div>
+                        <p style="color:var(--text-dim);font-size:0.84rem;">${escapeHtml(item.reason || 'No hypothesis text recorded.')}</p>
+                        <div style="display:flex;gap:0.25rem;flex-wrap:wrap;margin-top:0.45rem;">${(item.changed_paths || []).slice(0,8).map(p => `<span class="meta-pill" style="font-family:monospace;font-size:0.7rem;">${escapeHtml(p)}</span>`).join('') || '<span style="color:var(--text-dim);font-size:0.75rem;">No config changes recorded.</span>'}</div>
+                    </div>
+                `).join('') || '<p style="color:var(--text-dim);">No AutoResearch hypotheses found.</p>';
+                const artifactRows = latestArtifacts.map(scrollsArtifactRow).join('') || '<p style="color:var(--text-dim);">No artifacts listed for latest run.</p>';
+                const bestArtifactRows = bestArtifacts.map(scrollsArtifactRow).join('') || '<p style="color:var(--text-dim);">No artifacts listed for best run.</p>';
+                const trendBars = (data.experiments?.metric_trends || []).map((point) => {
+                    const value = Number(point.main_metric ?? point.val_loss);
+                    return { point, value };
+                }).filter(x => Number.isFinite(x.value));
+                const trendMin = trendBars.length ? Math.min(...trendBars.map(x => x.value)) : 0;
+                const trendMax = trendBars.length ? Math.max(...trendBars.map(x => x.value)) : 1;
+                const trendHtml = trendBars.length ? trendBars.map(({point, value}) => {
+                    const norm = trendMax === trendMin ? 0.5 : (value - trendMin) / (trendMax - trendMin);
+                    const higherIsBetter = !metricLabel.toLowerCase().includes('loss');
+                    const height = 12 + (higherIsBetter ? norm : (1 - norm)) * 84;
+                    return `<div title="${escapeHtml(point.run_id)}: ${escapeHtml(metricLabel)} ${scrollsFmtNumber(value)} F1 ${scrollsFmtNumber(point.val_f1)}" style="flex:1;min-width:7px;height:${height}%;background:var(--primary);opacity:0.75;border-radius:4px 4px 0 0;"></div>`;
+                }).join('') : '<p style="color:var(--text-dim);">No metric trend data.</p>';
+                const matrixRows = (data.experiments?.validation_matrix || []).map((cell) => `
+                    <tr><td style="padding:0.4rem 0.45rem;font-family:monospace;">${escapeHtml(cell.train_segment_id || cell.train_scroll_id || '?')} → ${escapeHtml(cell.val_segment_id || cell.val_scroll_id || '?')}</td><td style="padding:0.4rem 0.45rem;">${escapeHtml(cell.validation_mode || 'unknown')}</td><td style="padding:0.4rem 0.45rem;text-align:right;">${scrollsFmtNumber(cell.best_main_metric)}</td><td style="padding:0.4rem 0.45rem;text-align:right;">${scrollsFmtNumber(cell.best_val_f1)}</td><td style="padding:0.4rem 0.45rem;text-align:right;">${escapeHtml(String(cell.run_count ?? '—'))}</td><td style="padding:0.4rem 0.45rem;font-family:monospace;color:var(--text-dim);">${escapeHtml(cell.best_run_id || '')}</td></tr>
+                `).join('') || '<tr><td colspan="6" style="padding:0.75rem;color:var(--text-dim);">No train/validation scroll pairs recorded.</td></tr>';
+                const configRows = configs.slice(0, 12).map((cfg) => `
+                    <div class="activity-item" style="display:flex;justify-content:space-between;gap:0.65rem;align-items:center;padding:0.55rem 0.65rem;">
+                        <div style="min-width:0;">
+                            <div style="font-family:monospace;font-size:0.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</div>
+                            <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.25rem;">
+                                lr ${scrollsFmtNumber(scrollsGet(cfg.summary, ['training','learning_rate']), 5)} · depth ${escapeHtml(String(scrollsGet(cfg.summary, ['model','depth']) ?? '—'))} · validation ${escapeHtml(String(scrollsGet(cfg.summary, ['dataset','validation_mode']) ?? 'unknown'))}
+                            </div>
+                        </div>
+                        <button class="btn" onclick="runScrollsConfig('${escapeHtml(cfg.name)}')">Run</button>
+                    </div>
+                `).join('') || '<p style="color:var(--text-dim);">No configs found.</p>';
+                const preparedRows = prepared.slice(0, 8).map((item) => {
+                    const meta = item.metadata || {};
+                    return `
+                        <div class="activity-item" style="padding:0.5rem 0.6rem;">
+                            <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+                                <strong style="font-size:0.78rem;">${escapeHtml(meta.split || 'dataset')}</strong>
+                                <span class="meta-pill">pos ${scrollsFmtNumber(meta.positive_rate ?? meta.label_positive_rate, 3)}</span>
+                            </div>
+                            <div style="font-size:0.72rem;color:var(--text-dim);font-family:monospace;margin-top:0.25rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(meta.segment_id || '?')} · ${escapeHtml(meta.source || 'unknown')} · ${escapeHtml(String(meta.samples ?? '—'))} samples</div>
+                        </div>
+                    `;
+                }).join('') || '<p style="color:var(--text-dim);font-size:0.82rem;">No prepared dataset metadata found.</p>';
+                const latestTrain = scrollsGet(latest?.config || {}, ['resolved_data', 'train', 'metadata']) || {};
+                const latestVal = scrollsGet(latest?.config || {}, ['resolved_data', 'val', 'metadata']) || {};
+                const runRows = recent.map((run) => `
+                    <tr>
+                        <td style="padding:0.45rem 0.5rem;font-family:monospace;font-size:0.75rem;">${escapeHtml(run.run_id)}</td>
+                        <td style="padding:0.45rem 0.5rem;text-align:right;">${scrollsFmtNumber(run.metrics?.val_loss ?? run.main_metric)}</td>
+                        <td style="padding:0.45rem 0.5rem;text-align:right;">${scrollsFmtNumber(run.metrics?.val_f1)}</td>
+                        <td style="padding:0.45rem 0.5rem;text-align:right;">${scrollsFmtNumber(scrollsGet(run.config, ['training','learning_rate']), 5)}</td>
+                        <td style="padding:0.45rem 0.5rem;text-align:right;">${escapeHtml(String(scrollsGet(run.config, ['model','depth']) ?? '—'))}</td>
+                        <td style="padding:0.45rem 0.5rem;text-align:right;">${escapeHtml(scrollsRunLabel(run))}</td>
+                        <td style="padding:0.45rem 0.5rem;text-align:right;color:var(--text-dim);">${escapeHtml(scrollsFmtTime(run.timestamp))}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="7" style="padding:1rem;color:var(--text-dim);">No experiments logged yet.</td></tr>';
+                container.innerHTML = `
+                    ${progressHtml}
+                    <div class="scrolls-hero">
+                        <div>
+                            <div class="card scrolls-card-tight" style="overflow:auto;">
+                                <h4>Latest Config Diff</h4>
+                                <p style="color:var(--text-dim);font-size:0.72rem;margin-top:0.2rem;">Latest ${escapeHtml(latest?.run_id || '—')} vs previous ${escapeHtml(previous?.run_id || '—')}.</p>
+                                <div style="max-height:235px;overflow:auto;margin-top:0.35rem;"><table style="width:100%;border-collapse:collapse;font-size:0.74rem;"><thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border-subtle);"><th style="text-align:left;padding:0.28rem 0.32rem;">Path</th><th style="text-align:left;padding:0.28rem 0.32rem;">Before</th><th style="text-align:left;padding:0.28rem 0.32rem;">After</th></tr></thead><tbody>${diffRows}</tbody></table></div>
+                            </div>
+                            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.55rem;align-items:center;">
+                                <span class="meta-pill">auto-refresh 10s</span>
+                                ${['runs','matrix','artifacts','hypotheses','logs'].map(id => `<a class="meta-pill" href="#scrolls-${id}" style="text-decoration:none;">${id[0].toUpperCase()}${id.slice(1)}</a>`).join('')}
+                            </div>
+                        </div>
+                        <div class="scrolls-hero-side">
+                            <div class="card scrolls-card-tight" style="border-color:var(--primary-border);background:linear-gradient(135deg,var(--primary-dim),rgba(255,255,255,0.02));">
+                                <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;">
+                                    <div style="min-width:0;">
+                                        <div style="color:var(--text-dim);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;">Next decision</div>
+                                        <strong style="display:block;margin-top:0.15rem;">${escapeHtml(recommendation.title)}</strong>
+                                        <p style="color:var(--text-dim);font-size:0.78rem;line-height:1.3;margin-top:0.25rem;">${escapeHtml(recommendation.body)}</p>
+                                    </div>
+                                    <button class="btn" onclick="triggerScrollsAutoresearch()">Run</button>
+                                </div>
+                            </div>
+                            <div class="card scrolls-card-tight">
+                                <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;"><h4>Validation Health</h4><span class="meta-pill">cron ${escapeHtml(cronText)}</span></div>
+                                <div class="scrolls-health-row">
+                                    <span class="meta-pill" title="${escapeHtml(latestTrain.segment_id || '')}">train ${escapeHtml(latestTrain.segment_id || latest?.validation_setup?.train_segment_id || '?')}</span>
+                                    <span class="meta-pill" title="${escapeHtml(latestVal.segment_id || '')}">val ${escapeHtml(latestVal.segment_id || latest?.validation_setup?.val_segment_id || '?')}</span>
+                                    <span class="meta-pill">train pos ${scrollsFmtNumber(latest?.metrics?.train_positive_rate, 3)}</span>
+                                    <span class="meta-pill">val pos ${scrollsFmtNumber(latest?.metrics?.val_positive_rate, 3)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ${!data.exists ? `<div class="card" style="border-color:var(--error);color:var(--error);margin-top:1rem;">Project root not found: ${escapeHtml(data.project_root || '')}</div>` : ''}
+                    ${validationWarning ? `<div class="card" style="border-color:var(--warning);color:var(--warning);margin-top:1rem;"><strong>Validation mode: ${escapeHtml(validationMode)}</strong><br>${escapeHtml(validationWarning)}</div>` : ''}
+                    ${featureInventoryHtml}
+                    <div class="scrolls-control-grid">
+                        <div class="card scrolls-card-tight">
+                            <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;flex-wrap:wrap;">
+                                <div>
+                                    <h4>Live Research Console</h4>
+                                    <p style="color:var(--text-dim);font-size:0.82rem;margin-top:0.25rem;">Supervise active runs from the log tail. Auto-refresh polls every 5s and disables manual launch while a lock is held.</p>
+                                </div>
+                                <div style="display:flex;gap:0.45rem;flex-wrap:wrap;align-items:center;">
+                                    <button class="btn" onclick="refreshScrollsConsole()">Refresh Console</button>
+                                    <button class="btn primary" onclick="triggerScrollsAutoresearch()">Run Supervised Step</button>
+                                    <label class="meta-pill" style="cursor:pointer;"><input id="scrolls-console-autorefresh" type="checkbox" checked onchange="toggleScrollsConsoleAutoRefresh()" style="vertical-align:middle;margin-right:0.25rem;">live</label>
+                                </div>
+                            </div>
+                            <div id="scrolls-console-status" class="message-meta" style="margin:0.55rem 0;"><span class="meta-pill">${data.lock_active ? 'running' : 'idle'}</span>${processPills}<span class="meta-pill">updated now</span></div>
+                            <pre id="scrolls-live-console" class="scrolls-console">${escapeHtml(consoleLines.join('\n') || 'No AutoResearch log lines yet. Start a supervised run or wait for cron fallback.')}</pre>
+                        </div>
+                        <div style="display:grid;gap:0.75rem;">
+                            <div class="card scrolls-card-tight">
+                                <h4>Continued Research Controls</h4>
+                                <p style="color:var(--text-dim);font-size:0.82rem;line-height:1.35;margin-top:0.35rem;">Run one interpretable AutoResearch step, inspect metrics/artifacts, then decide whether to exploit, backtrack, or prepare a new focused segment pair. PyTorch runs are CPU-only here; keep worker counts conservative and cron as the fallback, not the main driver.</p>
+                                <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.65rem;">
+                                    <button class="btn primary" onclick="triggerScrollsAutoresearch()">Run next step</button>
+                                    <button class="btn" onclick="runScrollsConfig('baseline.yaml')">Run baseline</button>
+                                    <a class="btn" href="#cron" onclick="navigateTo('cron')" style="text-decoration:none;">Cron jobs</a>
+                                    <a class="btn" href="#self-improvement" onclick="navigateTo('self-improvement')" style="text-decoration:none;">Hermes loop</a>
+                                </div>
+                                <div style="border-top:1px solid var(--border-subtle);margin-top:0.75rem;padding-top:0.75rem;">
+                                    <h5>Timed Autonomous Loop</h5>
+                                    <p style="color:var(--text-dim);font-size:0.78rem;line-height:1.35;margin-top:0.25rem;">Runs repeated AutoResearch iterations until the selected time budget expires. Live console and results update while it runs.</p>
+                                    <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.55rem;align-items:center;">
+                                        <select id="scrolls-loop-minutes" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border-subtle);border-radius:8px;padding:0.45rem;">
+                                            <option value="5">5 min</option>
+                                            <option value="15" selected>15 min</option>
+                                            <option value="30">30 min</option>
+                                            <option value="60">60 min</option>
+                                            <option value="120">120 min</option>
+                                        </select>
+                                        <button class="btn primary" id="scrolls-loop-start-btn" onclick="startScrollsTimedLoop()">Start timed loop</button>
+                                        <button class="btn" id="scrolls-loop-stop-btn" onclick="stopScrollsTimedLoop()">Stop after current run</button>
+                                    </div>
+                                    <div id="scrolls-timed-loop-status" class="message-meta" style="margin-top:0.55rem;">${renderScrollsLoopPills(timedLoop)}</div>
+                                </div>
+                                <div id="scrolls-console-cron" class="message-meta" style="margin-top:0.65rem;"><span class="meta-pill">fallback cron ${cronText.toLowerCase()}</span><span class="meta-pill">log ${escapeHtml(scrollsFmtBytes(consoleStat.size_bytes))}</span></div>
+                            </div>
+                            <div id="scrolls-improvement-loop" class="card scrolls-card-tight">
+                                <h4>Daily Hermes Improvement Loop</h4>
+                                <div class="message-meta" style="margin:0.5rem 0;">
+                                    <span class="meta-pill">${loop.ok ? 'wired' : 'attention'}</span>
+                                    <span class="meta-pill">jobs ${escapeHtml(String(loop.job_count ?? '—'))}</span>
+                                    <span class="meta-pill">legacy active ${escapeHtml(String(loop.active_legacy_count ?? '—'))}</span>
+                                </div>
+                                <p style="color:var(--text-dim);font-size:0.82rem;line-height:1.35;margin-top:0.4rem;">Once a day, Hermes should review Vesuvius AutoResearch results, Becomussy continuity notes, cron outputs, and dashboard friction to propose small efficiency improvements.</p>
+                                <p style="color:var(--text-dim);font-size:0.8rem;margin-top:0.45rem;">Primary: ${escapeHtml(loopJob.name || 'self-improvement-loop not found')} · next ${escapeHtml(loopJob.next_run_at || '—')}</p>
+                                ${loopBlockers.length ? `<p style="color:var(--warning);font-size:0.8rem;margin-top:0.4rem;">${escapeHtml(loopBlockers.join(' · '))}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div id="scrolls-runs" class="scrolls-grid" style="margin-top:0.75rem;">
+                        <div class="card scrolls-card-tight">
+                            <h4>Experiment Leaderboard</h4>
+                            <div class="scrolls-table-wrap">
+                                <table style="width:100%;border-collapse:collapse;font-size:0.82rem;margin-top:0.35rem;">
+                                    <thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border-subtle);"><th style="text-align:left;padding:0.38rem 0.45rem;">Run</th><th style="text-align:right;padding:0.38rem 0.45rem;">${escapeHtml(metricLabel)}</th><th style="text-align:right;padding:0.38rem 0.45rem;">F1</th><th style="text-align:right;padding:0.38rem 0.45rem;">LR</th><th style="text-align:right;padding:0.38rem 0.45rem;">Depth</th><th style="text-align:right;padding:0.38rem 0.45rem;">Train→Val</th><th style="text-align:right;padding:0.38rem 0.45rem;">Time</th></tr></thead>
+                                    <tbody>${runRows}</tbody>
+                                </table>
+                            </div>
+                            <div style="display:grid;grid-template-columns:minmax(0,0.7fr) minmax(280px,1.3fr);gap:0.7rem;margin-top:0.7rem;align-items:start;">
+                                <div>
+                                    <h5>Metric Trend</h5>
+                                    <div style="height:86px;display:flex;align-items:flex-end;gap:3px;border:1px solid var(--border-subtle);background:rgba(0,0,0,0.18);padding:0.55rem;margin-top:0.35rem;">${trendHtml}</div>
+                                    <p style="color:var(--text-dim);font-size:0.72rem;margin-top:0.35rem;">Taller means better ${escapeHtml(metricLabel)}.</p>
+                                </div>
+                                <div id="scrolls-matrix" style="overflow:auto;">
+                                    <h5>Validation Matrix</h5>
+                                    <table style="width:100%;border-collapse:collapse;font-size:0.76rem;margin-top:0.35rem;"><thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border-subtle);"><th style="text-align:left;padding:0.3rem 0.35rem;">Train → Val</th><th style="text-align:left;padding:0.3rem 0.35rem;">Mode</th><th style="text-align:right;padding:0.3rem 0.35rem;">F1</th><th style="text-align:right;padding:0.3rem 0.35rem;">Runs</th></tr></thead><tbody>${(data.experiments?.validation_matrix || []).map((cell) => `<tr><td style="padding:0.3rem 0.35rem;font-family:monospace;">${escapeHtml(cell.train_segment_id || cell.train_scroll_id || '?')} → ${escapeHtml(cell.val_segment_id || cell.val_scroll_id || '?')}</td><td style="padding:0.3rem 0.35rem;">${escapeHtml(cell.validation_mode || 'unknown')}</td><td style="padding:0.3rem 0.35rem;text-align:right;">${scrollsFmtNumber(cell.best_val_f1)}</td><td style="padding:0.3rem 0.35rem;text-align:right;">${escapeHtml(String(cell.run_count ?? '—'))}</td></tr>`).join('') || '<tr><td colspan="4" style="padding:0.5rem;color:var(--text-dim);">No validation matrix yet.</td></tr>'}</tbody></table>
+                                </div>
+                            </div>
+                            <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:0.7rem;margin-top:0.7rem;align-items:start;">
+                                <div>
+                                    <h5>Hypothesis Tracker</h5>
+                                    <div style="display:grid;gap:0.35rem;margin-top:0.4rem;max-height:250px;overflow:auto;">${hypothesisCards}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display:grid;gap:0.75rem;">
+                            <div class="card scrolls-card-tight"><h4>Configs</h4><div class="scrolls-micro-list">${configRows}</div></div>
+                            <div class="card scrolls-card-tight"><h4>Prepared Data</h4><div class="scrolls-micro-list">${preparedRows}</div></div>
+                            <div class="card scrolls-card-tight"><h4>Operations</h4><p style="color:var(--text-dim);font-size:0.8rem;line-height:1.35;margin-top:0.35rem;">Project: ${escapeHtml(data.project_root || '')}</p><pre style="white-space:pre-wrap;color:var(--text-dim);font-size:0.72rem;margin-top:0.45rem;max-height:90px;overflow:auto;">${escapeHtml(data.cron?.line || 'No Vesuvius cron line found')}</pre></div>
+                        </div>
+                    </div>
+                    <div id="scrolls-artifacts" class="card scrolls-card-tight" style="margin-top:0.75rem;">
+                        <h4>Artifact Library</h4>
+                        <p style="color:var(--text-dim);font-size:0.82rem;margin-top:0.35rem;">Click JSON, YAML, text, CSV, or log artifacts to preview them safely from the run directory.</p>
+                        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1rem;margin-top:0.75rem;align-items:start;">
+                            <div><h5 style="margin-bottom:0.5rem;">Latest artifacts</h5><div style="display:grid;gap:0.45rem;">${artifactRows}</div></div>
+                            <div><h5 style="margin-bottom:0.5rem;">Best-run artifacts</h5><div style="display:grid;gap:0.45rem;">${bestArtifactRows}</div></div>
+                        </div>
+                        <div id="scrolls-artifact-preview" class="activity-item" style="margin-top:1rem;min-height:4rem;color:var(--text-dim);">Select an artifact to preview metrics, configs, or logs here.</div>
+                    </div>
+                    <details id="scrolls-logs" class="card scrolls-card-tight" style="margin-top:0.75rem;"><summary style="cursor:pointer;"><strong>AutoResearch Log Tail</strong></summary><pre style="white-space:pre-wrap;max-height:260px;overflow:auto;font-size:0.78rem;color:var(--text-dim);margin-top:0.5rem;">${escapeHtml(logLines.join('\n') || 'No log lines yet.')}</pre></details>
+                `;
+                const btn = document.getElementById('scrolls-autoresearch-btn');
+                if (btn) btn.disabled = !!data.lock_active;
+                toggleScrollsConsoleAutoRefresh();
+                if (silent) container.scrollTop = previousScrollTop;
+                startScrollsResearchAutoRefresh();
+            } catch (err) {
+                if (!silent) container.innerHTML = `<div class="card" style="border-color:var(--error);color:var(--error);">Failed to load Vesuvius AutoResearch: ${escapeHtml(String(err))}</div>`;
+                else showToast(`Vesuvius AutoResearch refresh failed: ${err}`, true);
+            } finally {
+                scrollsResearchLoading = false;
+            }
+        }
+
+        async function triggerScrollsAutoresearch() {
+            const btn = document.getElementById('scrolls-autoresearch-btn');
+            if (btn) btn.disabled = true;
+            try {
+                const res = await scrollsFetchJson('/api/scrolls/autoresearch/trigger', { method: 'POST' });
+                showToast(`AutoResearch started (pid ${res.pid})`);
+                setTimeout(loadScrollsResearch, 1200);
+            } catch (err) {
+                showToast(`Could not start AutoResearch: ${err}`, true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function startScrollsTimedLoop() {
+            const minutes = Number(document.getElementById('scrolls-loop-minutes')?.value || 15);
+            const btn = document.getElementById('scrolls-loop-start-btn');
+            if (btn) btn.disabled = true;
+            try {
+                const res = await scrollsFetchJson('/api/scrolls/autoresearch/loop/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ minutes }),
+                });
+                showToast(`Timed AutoResearch loop started for ${minutes} min`);
+                const timedLoopEl = document.getElementById('scrolls-timed-loop-status');
+                if (timedLoopEl) timedLoopEl.innerHTML = renderScrollsLoopPills(res.timed_loop);
+                startScrollsResearchAutoRefresh();
+                setTimeout(() => loadScrollsResearch({ silent: true }), 800);
+            } catch (err) {
+                showToast(`Could not start timed loop: ${err}`, true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function stopScrollsTimedLoop() {
+            const btn = document.getElementById('scrolls-loop-stop-btn');
+            if (btn) btn.disabled = true;
+            try {
+                const res = await scrollsFetchJson('/api/scrolls/autoresearch/loop/stop', { method: 'POST' });
+                showToast('Timed loop will stop after the current run');
+                const timedLoopEl = document.getElementById('scrolls-timed-loop-status');
+                if (timedLoopEl) timedLoopEl.innerHTML = renderScrollsLoopPills(res.timed_loop);
+                setTimeout(() => loadScrollsResearch({ silent: true }), 800);
+            } catch (err) {
+                showToast(`Could not stop timed loop: ${err}`, true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function loadScrollsArtifact(encodedPath) {
+            const preview = document.getElementById('scrolls-artifact-preview');
+            if (!preview) return;
+            preview.innerHTML = '<span style="color:var(--text-dim);">Loading artifact...</span>';
+            try {
+                const data = await scrollsFetchJson(`/api/scrolls/artifact?path=${encodedPath}`);
+                const body = typeof data.preview === 'string'
+                    ? data.preview
+                    : data.preview !== null && data.preview !== undefined
+                        ? JSON.stringify(data.preview, null, 2)
+                        : (data.preview_error || 'No preview available.');
+                preview.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.6rem;">
+                        <div><strong>${escapeHtml(data.name || 'artifact')}</strong><div style="font-size:0.75rem;color:var(--text-dim);font-family:monospace;">${escapeHtml(data.path || '')}</div></div>
+                        <span class="meta-pill">${escapeHtml(data.kind || 'file')} · ${scrollsFmtBytes(data.size_bytes)}${data.truncated ? ' · truncated' : ''}</span>
+                    </div>
+                    <pre style="white-space:pre-wrap;max-height:420px;overflow:auto;font-size:0.78rem;color:var(--text);background:rgba(0,0,0,0.22);border:1px solid var(--border-subtle);border-radius:8px;padding:0.75rem;">${escapeHtml(body)}</pre>
+                `;
+            } catch (err) {
+                preview.innerHTML = `<span style="color:var(--error);">Could not load artifact: ${escapeHtml(String(err))}</span>`;
+            }
+        }
+
+        async function runScrollsConfig(name) {
+            try {
+                const res = await scrollsFetchJson('/api/scrolls/experiments/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config: name }),
+                });
+                showToast(`Experiment started (pid ${res.pid})`);
+                setTimeout(loadScrollsResearch, 1200);
+            } catch (err) {
+                showToast(`Could not start experiment: ${err}`, true);
+            }
         }
 
         async function loadSchedulePanel() {

@@ -7,6 +7,15 @@ This directory contains the local Hermes dashboard app and a helper for running 
 - `app.py`: Starlette dashboard backend
 - `templates/index.html`: single-file dashboard frontend
 - `run_api_server_only.py`: isolated Hermes API server launcher for dashboard chat
+- `docs/skills/`: vendored Hermes dashboard-editing skills/checklists for contributors
+
+## Dashboard Editing Skills
+
+Before adding or repairing dashboard tabs, read the relevant vendored skill:
+
+- `docs/skills/dashboard-add-tab.md` for brand-new tabs/panels
+- `docs/skills/dashboard-route-nav-patching.md` for route/nav/breadcrumb mismatches
+- `docs/skills/dashboard-games-watch-integration.md` for Games tab watch-server integrations
 
 ## Runtime Layout
 
