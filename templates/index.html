@@ -4555,6 +4555,7 @@
                     <div class="dashboard-settings-actions">
                         <button class="btn" type="button" onclick="hardRefreshDashboard()">Reload Dashboard</button>
                         <button class="btn" type="button" onclick="openUpdateInstructions()">Update Instructions</button>
+                        <button class="btn" type="button" onclick="startDashboardAutoUpdate()">Auto Update</button>
                         <button class="btn" type="button" onclick="resetDashboardTabs()">Show All Tabs</button>
                     </div>
                     <h3>Visible Tabs</h3>
@@ -4619,7 +4620,9 @@
             <div class="update-options">
                 <div class="update-option-card">
                     <h4>Dashboard helper</h4>
-                    <p>Use this screen from the gear menu when you forget the steps. It does not run code in the browser; it gives safe, copyable paths so you stay in control of file changes.</p>
+                    <p>Use this screen from the gear menu when you forget the steps. You can run a guarded auto-update, or use the copyable manual paths below when you want full control.</p>
+                    <button class="btn primary" id="dashboard-auto-update-button" type="button" onclick="startDashboardAutoUpdate()">Run Auto Update</button>
+                    <p class="message-meta" id="dashboard-auto-update-status">Checks for a clean git checkout, fetches origin, pulls with <code>--ff-only</code>, and installs requirements. It refuses to overwrite local changes.</p>
                 </div>
                 <div class="update-option-card">
                     <h4>GitHub Desktop or another Git GUI</h4>
@@ -5510,6 +5513,52 @@
             } catch (error) {
                 console.warn('Failed to copy update command:', error);
                 showToast(command);
+            }
+        }
+
+        function summarizeDashboardUpdateResult(data) {
+            const lines = [];
+            if (data.message) lines.push(data.message);
+            if (data.error) lines.push(data.error);
+            if (data.branch) lines.push(`Branch: ${data.branch}`);
+            if (data.before && data.after && data.before !== data.after) {
+                lines.push(`Commit: ${data.before.slice(0, 8)} → ${data.after.slice(0, 8)}`);
+            }
+            if (Array.isArray(data.dirty_files) && data.dirty_files.length) {
+                lines.push(`Local changes: ${data.dirty_files.slice(0, 5).join(', ')}${data.dirty_files.length > 5 ? '…' : ''}`);
+            }
+            if (data.restart_required) lines.push('Restart the dashboard process, then click Reload Dashboard.');
+            return lines.join('\n') || 'Update request finished.';
+        }
+
+        async function startDashboardAutoUpdate() {
+            closeDashboardSettings();
+            const modal = document.getElementById('update-instructions-modal');
+            if (modal) modal.classList.add('active');
+            const status = document.getElementById('dashboard-auto-update-status');
+            const button = document.getElementById('dashboard-auto-update-button');
+            if (!window.confirm('Run dashboard auto-update now? This will run git fetch, git pull --ff-only, and pip install requirements on the dashboard server. It refuses dirty local changes.')) {
+                if (status) status.textContent = 'Auto-update cancelled.';
+                return;
+            }
+            if (button) button.disabled = true;
+            if (status) status.textContent = 'Updating… checking git status, fetching origin, and applying fast-forward updates.';
+            try {
+                const response = await fetch('/api/dashboard/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ install_dependencies: true })
+                });
+                const data = await response.json().catch(() => ({}));
+                const summary = summarizeDashboardUpdateResult(data);
+                if (status) status.textContent = summary;
+                showToast(response.ok ? (data.updated ? 'Dashboard updated — restart required' : 'Dashboard already up to date') : 'Auto-update blocked');
+            } catch (error) {
+                console.error('Dashboard auto-update failed:', error);
+                if (status) status.textContent = `Auto-update failed: ${error.message || error}`;
+                showToast('Auto-update failed');
+            } finally {
+                if (button) button.disabled = false;
             }
         }
 

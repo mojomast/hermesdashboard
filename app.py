@@ -239,6 +239,9 @@ except Exception:
 
 HERMES_API = os.getenv("HERMES_API", "http://127.0.0.1:8642")
 HERMES_HOME = get_hermes_home()
+DASHBOARD_REPO_ROOT = Path(
+    os.getenv("DASHBOARD_UPDATE_ROOT", str(Path(__file__).resolve().parent))
+).expanduser().resolve()
 SELF_IMPROVEMENT_HOME = Path(
     os.getenv("SELF_IMPROVEMENT_HOME", str(Path.home() / "self-improvement"))
 ).expanduser().resolve()
@@ -9039,6 +9042,144 @@ async def run_scrolls_experiment_endpoint(request):
         return JSONResponse({"error": f"Config not found: {config_name}"}, status_code=404)
     return _scrolls_spawn([_scrolls_python(_SCROLLS_PROJECT_ROOT), "run_experiment.py", "--config", str(config_path)], _SCROLLS_PROJECT_ROOT)
 
+
+def _truncate_update_output(text: str, limit: int = 12000) -> str:
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[: limit // 2] + "\n... output truncated ...\n" + text[-limit // 2 :]
+
+
+def _run_dashboard_update_command(args: list[str], cwd: Path, timeout: int = 120) -> dict:
+    started = time.time()
+    try:
+        proc = subprocess.run(
+            args,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        return {
+            "command": " ".join(args),
+            "returncode": proc.returncode,
+            "stdout": _truncate_update_output(proc.stdout),
+            "stderr": _truncate_update_output(proc.stderr),
+            "duration_seconds": round(time.time() - started, 3),
+        }
+    except FileNotFoundError as exc:
+        return {
+            "command": " ".join(args),
+            "returncode": 127,
+            "stdout": "",
+            "stderr": str(exc),
+            "duration_seconds": round(time.time() - started, 3),
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "command": " ".join(args),
+            "returncode": 124,
+            "stdout": _truncate_update_output(exc.stdout or ""),
+            "stderr": _truncate_update_output(exc.stderr or f"Timed out after {timeout}s"),
+            "duration_seconds": round(time.time() - started, 3),
+        }
+
+
+def _dashboard_auto_update(allow_dirty: bool = False, install_dependencies: bool = True) -> tuple[int, dict]:
+    root = DASHBOARD_REPO_ROOT
+    if not root.exists():
+        return 404, {"ok": False, "error": f"Dashboard directory not found: {root}"}
+    if not (root / ".git").exists():
+        return 400, {"ok": False, "error": f"Dashboard directory is not a git checkout: {root}"}
+
+    steps: list[dict] = []
+
+    def run(args: list[str], timeout: int = 120) -> dict:
+        result = _run_dashboard_update_command(args, root, timeout=timeout)
+        steps.append(result)
+        return result
+
+    branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], timeout=15)
+    if branch["returncode"] != 0:
+        return 500, {"ok": False, "error": "Could not read dashboard git branch", "root": str(root), "steps": steps}
+
+    before = run(["git", "rev-parse", "HEAD"], timeout=15)
+    if before["returncode"] != 0:
+        return 500, {"ok": False, "error": "Could not read current dashboard commit", "root": str(root), "steps": steps}
+
+    status = run(["git", "status", "--porcelain"], timeout=15)
+    if status["returncode"] != 0:
+        return 500, {"ok": False, "error": "Could not check dashboard working tree status", "root": str(root), "steps": steps}
+    dirty_files = [line for line in status["stdout"].splitlines() if line.strip()]
+    if dirty_files and not allow_dirty:
+        return 409, {
+            "ok": False,
+            "error": "Dashboard has local changes; refusing to auto-update until they are committed, stashed, or discarded.",
+            "root": str(root),
+            "branch": branch["stdout"].strip(),
+            "dirty_files": dirty_files[:100],
+            "steps": steps,
+        }
+
+    fetch = run(["git", "fetch", "--prune", "origin"], timeout=60)
+    if fetch["returncode"] != 0:
+        return 502, {"ok": False, "error": "Could not fetch dashboard updates from origin", "root": str(root), "steps": steps}
+
+    pull = run(["git", "pull", "--ff-only"], timeout=120)
+    if pull["returncode"] != 0:
+        return 409, {
+            "ok": False,
+            "error": "Fast-forward update failed; manual merge/rebase is required.",
+            "root": str(root),
+            "steps": steps,
+        }
+
+    dependency_step = None
+    requirements = root / "requirements.txt"
+    if install_dependencies and requirements.exists():
+        dependency_step = run([sys.executable, "-m", "pip", "install", "-r", str(requirements)], timeout=240)
+        if dependency_step["returncode"] != 0:
+            return 500, {
+                "ok": False,
+                "error": "Dashboard code updated, but dependency installation failed.",
+                "root": str(root),
+                "steps": steps,
+                "restart_required": True,
+            }
+
+    after = run(["git", "rev-parse", "HEAD"], timeout=15)
+    if after["returncode"] != 0:
+        return 500, {"ok": False, "error": "Update finished but could not read new commit", "root": str(root), "steps": steps}
+
+    before_commit = before["stdout"].strip()
+    after_commit = after["stdout"].strip()
+    updated = before_commit != after_commit
+    return 200, {
+        "ok": True,
+        "root": str(root),
+        "branch": branch["stdout"].strip(),
+        "before": before_commit,
+        "after": after_commit,
+        "updated": updated,
+        "restart_required": updated,
+        "dependencies_installed": bool(dependency_step and dependency_step["returncode"] == 0),
+        "message": "Dashboard updated. Restart the dashboard process, then reload the page." if updated else "Dashboard is already up to date.",
+        "steps": steps,
+    }
+
+
+async def dashboard_auto_update_endpoint(request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    allow_dirty = bool(body.get("allow_dirty", False)) if isinstance(body, dict) else False
+    install_dependencies = bool(body.get("install_dependencies", True)) if isinstance(body, dict) else True
+    status_code, payload = await asyncio.to_thread(_dashboard_auto_update, allow_dirty, install_dependencies)
+    return JSONResponse(payload, status_code=status_code)
+
+
 routes = [
     Route("/", homepage),
     # Campaigns is implemented as a hash-routed dashboard panel (#dnd), but
@@ -9054,6 +9195,7 @@ routes = [
     Route("/api/dashboard-state/{key}", get_dashboard_state),
     Route("/api/dashboard-state/{key}", set_dashboard_state, methods=["PUT"]),
     Route("/api/dashboard-state/{key}", delete_dashboard_state, methods=["DELETE"]),
+    Route("/api/dashboard/update", dashboard_auto_update_endpoint, methods=["POST"]),
     Route("/health", health),
     Route("/api/status", get_status),
     Route("/api/config", get_config_endpoint),

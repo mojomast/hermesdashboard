@@ -18,6 +18,8 @@ def test_dashboard_settings_button_and_menu_are_rendered():
     assert 'hardRefreshDashboard()' in html
     assert 'Update Instructions' in html
     assert 'openUpdateInstructions()' in html
+    assert 'Auto Update' in html
+    assert 'startDashboardAutoUpdate()' in html
 
 
 def test_dashboard_update_instructions_cover_non_cli_paths():
@@ -29,6 +31,11 @@ def test_dashboard_update_instructions_cover_non_cli_paths():
     assert 'https://github.com/mojomast/hermesdashboard' in html
     assert 'id="dashboard-update-command"' in html
     assert 'git pull --ff-only' in html
+    assert 'id="dashboard-auto-update-button"' in html
+    assert 'id="dashboard-auto-update-status"' in html
+    assert "fetch('/api/dashboard/update'" in html
+    assert 'function startDashboardAutoUpdate()' in html
+    assert 'function summarizeDashboardUpdateResult(data)' in html
     assert 'function copyDashboardUpdateCommand()' in html
 
 
