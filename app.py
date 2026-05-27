@@ -25,7 +25,9 @@ from starlette.routing import Route
 try:
     from starlette.routing import WebSocketRoute
 except Exception:
-    WebSocketRoute = None
+    # Lightweight tests may stub only Route; use it as a structural fallback
+    # so websocket route wiring remains inspectable without a live ASGI stack.
+    WebSocketRoute = Route
 from starlette.templating import Jinja2Templates
 from starlette.responses import JSONResponse, PlainTextResponse
 try:
@@ -76,6 +78,15 @@ except Exception:
             "flush_min_turns": 6,
         },
         "display": {"personality": "helpful", "skin": "default"},
+        "dashboard_chat": {
+            "hosts": ["irc.ussyco.de", "irc.ussy.host"],
+            "port": 6697,
+            "tls": True,
+            "channel_key": "hermesdashboard",
+            "default_nick_prefix": "HermesDash",
+            "ident": "hermesdash",
+            "realname": "Hermes Dashboard",
+        },
         "browser": {
             "inactivity_timeout": 120,
             "command_timeout": 30,
@@ -271,6 +282,20 @@ DASHBOARD_STATE_DB_PATH = HERMES_HOME / "dashboard_state.db"
 DASHBOARD_STATE_KEYS = {"conversation", "active_run"}
 DASHBOARD_STATE_LOCK = threading.Lock()
 
+DASHBOARD_CHAT_IRC_HOSTS = [
+    host.strip()
+    for host in os.getenv("DASHBOARD_CHAT_IRC_HOSTS", "irc.ussyco.de,irc.ussy.host").split(",")
+    if host.strip()
+]
+DASHBOARD_CHAT_IRC_PORT = int(os.getenv("DASHBOARD_CHAT_IRC_PORT", "6697"))
+DASHBOARD_CHAT_IRC_TLS = os.getenv("DASHBOARD_CHAT_IRC_TLS", "1").lower() not in {"0", "false", "no", "off"}
+DASHBOARD_CHAT_CHANNEL = "#hermesdashboard"
+DASHBOARD_CHAT_CHANNEL_KEY = os.getenv("DASHBOARD_CHAT_CHANNEL_KEY", "hermesdashboard")
+DASHBOARD_CHAT_DEFAULT_NICK_PREFIX = "HermesDash"
+DASHBOARD_CHAT_DEFAULT_IDENT = "hermesdash"
+DASHBOARD_CHAT_DEFAULT_REALNAME = "Hermes Dashboard"
+DASHBOARD_CHAT_MAX_MESSAGE_CHARS = 500
+
 # Track D: Interrupt control for live runs.
 # NOTE: The actual agent (run_agent.py) must check check_interrupt_flag()
 # before each tool call. This endpoint only sets the flag.
@@ -419,7 +444,18 @@ def _sanitize_chat_messages(messages: list) -> list:
         if not isinstance(msg, dict):
             continue
         role = msg.get("role")
-        content = str(msg.get("content") or "")
+        content = msg.get("content")
+        # Preserve multimodal content arrays with valid text/image_url parts
+        if isinstance(content, list):
+            valid_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") in {"text", "image_url"}:
+                    valid_parts.append(part)
+            if valid_parts:
+                sanitized.append({"role": role, "content": valid_parts})
+            continue
+        # Fall back to string for everything else
+        content = str(content or "")
         if role not in {"system", "user", "assistant", "tool"}:
             continue
         if role == "assistant" and content.startswith("Error: Hermes gateway"):
@@ -1863,12 +1899,18 @@ async def chat_stream(request):
             if not isinstance(msg, dict):
                 continue
             role = str(msg.get("role", "?"))
-            content = str(msg.get("content", "") or "")
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                content_preview = "[multimodal]"
+                content_len = len(json.dumps(content))
+            else:
+                content_preview = str(content or "")[:120]
+                content_len = len(str(content or ""))
             preview.append(
                 {
                     "role": role,
-                    "content": content[:120],
-                    "len": len(content),
+                    "content": content_preview,
+                    "len": content_len,
                 }
             )
         print(
@@ -9180,6 +9222,326 @@ async def dashboard_auto_update_endpoint(request):
     return JSONResponse(payload, status_code=status_code)
 
 
+
+def _sanitize_dashboard_chat_identity_token(value: str | None, fallback: str, max_len: int = 32) -> str:
+    token = re.sub(r"[^A-Za-z0-9_`^{}\[\]|.-]", "", (value or "").strip())[:max_len]
+    if not token or not re.match(r"^[A-Za-z_`^{}\[\]|]", token):
+        token = fallback[:max_len]
+    return token
+
+
+def _dashboard_chat_runtime_config() -> dict[str, Any]:
+    effective_config = get_config()
+    cfg = (effective_config.get("dashboard_chat") or {}) if isinstance(effective_config, dict) else {}
+    hosts_value = os.getenv("DASHBOARD_CHAT_IRC_HOSTS") or cfg.get("hosts") or DASHBOARD_CHAT_IRC_HOSTS
+    if isinstance(hosts_value, str):
+        hosts = [host.strip() for host in hosts_value.split(",") if host.strip()]
+    elif isinstance(hosts_value, list):
+        hosts = [str(host).strip() for host in hosts_value if str(host).strip()]
+    else:
+        hosts = DASHBOARD_CHAT_IRC_HOSTS
+    port = int(os.getenv("DASHBOARD_CHAT_IRC_PORT") or cfg.get("port") or DASHBOARD_CHAT_IRC_PORT)
+    tls_raw = os.getenv("DASHBOARD_CHAT_IRC_TLS")
+    tls = DASHBOARD_CHAT_IRC_TLS if tls_raw is None else tls_raw.lower() not in {"0", "false", "no", "off"}
+    if tls_raw is None and "tls" in cfg:
+        tls = bool(cfg.get("tls"))
+    return {
+        "hosts": hosts or DASHBOARD_CHAT_IRC_HOSTS,
+        "port": port,
+        "tls": tls,
+        "channel": DASHBOARD_CHAT_CHANNEL,
+        "channel_key": os.getenv("DASHBOARD_CHAT_CHANNEL_KEY") or cfg.get("channel_key") or DASHBOARD_CHAT_CHANNEL_KEY,
+        "default_nick_prefix": _sanitize_dashboard_chat_identity_token(
+            cfg.get("default_nick_prefix"), DASHBOARD_CHAT_DEFAULT_NICK_PREFIX, 18
+        ),
+        "ident": _sanitize_dashboard_chat_identity_token(
+            cfg.get("ident"), DASHBOARD_CHAT_DEFAULT_IDENT, 16
+        ),
+        "realname": str(cfg.get("realname") or DASHBOARD_CHAT_DEFAULT_REALNAME).replace("\r", " ").replace("\n", " ")[:64],
+    }
+
+
+def _sanitize_dashboard_chat_nick(value: str | None, prefix: str | None = None) -> str:
+    nick = re.sub(r"[^A-Za-z0-9_`^{}\[\]|-]", "", (value or "").strip())[:24]
+    if not nick or not re.match(r"^[A-Za-z_`^{}\[\]|-]", nick):
+        safe_prefix = _sanitize_dashboard_chat_identity_token(prefix, DASHBOARD_CHAT_DEFAULT_NICK_PREFIX, 18)
+        nick = safe_prefix + uuid.uuid4().hex[:6]
+    return nick
+
+
+def _dashboard_chat_user_command(nick: str, config: dict[str, Any] | None = None) -> str:
+    cfg = config or _dashboard_chat_runtime_config()
+    ident = _sanitize_dashboard_chat_identity_token(cfg.get("ident"), DASHBOARD_CHAT_DEFAULT_IDENT, 16)
+    realname = str(cfg.get("realname") or DASHBOARD_CHAT_DEFAULT_REALNAME).replace("\r", " ").replace("\n", " ")[:64]
+    return f"USER {ident} 0 * :{realname}"
+
+
+def _dashboard_chat_truncate_message(value: str | None) -> str:
+    message = (value or "").replace("\r", " ").replace("\n", " ").strip()
+    return message[:DASHBOARD_CHAT_MAX_MESSAGE_CHARS]
+
+
+def _sanitize_dashboard_chat_pm_target(value: str | None) -> str:
+    return re.sub(r"[^A-Za-z0-9_`^{}\[\]|-]", "", (value or "").strip())[:24]
+
+
+def _parse_irc_prefix(line: str) -> tuple[str, str, str]:
+    prefix = ""
+    command = ""
+    rest = line
+    if rest.startswith(":"):
+        prefix, _, rest = rest[1:].partition(" ")
+    command, _, rest = rest.partition(" ")
+    return prefix, command.upper(), rest
+
+
+def _parse_irc_message(line: str, current_nick: str | None = None) -> dict[str, Any] | None:
+    prefix, command, rest = _parse_irc_prefix(line)
+    nick = prefix.split("!", 1)[0] if prefix else "server"
+    if command == "PRIVMSG":
+        target, _, body = rest.partition(" :")
+        if target == DASHBOARD_CHAT_CHANNEL:
+            return {"type": "message", "scope": "channel", "nick": nick, "text": body}
+        payload = {"type": "message", "scope": "pm", "nick": nick, "target": target, "text": body}
+        if current_nick and nick == current_nick:
+            payload["self"] = True
+        return payload
+    if command == "NOTICE":
+        _target, _, body = rest.partition(" :")
+        return {"type": "notice", "nick": nick, "text": body or rest}
+    if command == "JOIN":
+        channel = rest.lstrip(":").strip()
+        if channel == DASHBOARD_CHAT_CHANNEL:
+            return {"type": "presence", "action": "join", "nick": nick}
+    if command == "PART":
+        channel = rest.split(" ", 1)[0]
+        if channel == DASHBOARD_CHAT_CHANNEL:
+            return {"type": "presence", "action": "part", "nick": nick}
+    if command == "QUIT":
+        return {"type": "presence", "action": "quit", "nick": nick}
+    if command == "NICK":
+        new_nick = rest.lstrip(":").strip()
+        if new_nick:
+            return {"type": "presence", "action": "nick", "nick": nick, "new_nick": new_nick}
+    if command == "353":
+        _before, _, names = rest.partition(" :")
+        return {"type": "names", "names": [name.lstrip("@+%&~") for name in names.split() if name]}
+    if command == "433":
+        return {"type": "error", "text": "Nickname is already in use. Pick another nick and reconnect."}
+    if command in {"471", "473", "474", "475"}:
+        return {"type": "error", "text": "Unable to join #hermesdashboard with the dashboard channel key."}
+    return None
+
+
+def _dashboard_chat_status_payload() -> dict[str, Any]:
+    cfg = _dashboard_chat_runtime_config()
+    return {
+        "channel": cfg["channel"],
+        "hosts": cfg["hosts"],
+        "port": cfg["port"],
+        "tls": cfg["tls"],
+        "default_nick_prefix": cfg["default_nick_prefix"],
+        "ident": cfg["ident"],
+        "realname": cfg["realname"],
+        "channel_key_configured": bool(cfg["channel_key"]),
+        "jail": "channel-only plus PMs to users present in #hermesdashboard; arbitrary JOIN/RAW commands are blocked by the dashboard proxy",
+    }
+
+
+async def dashboard_chat_status_endpoint(request):
+    return JSONResponse(_dashboard_chat_status_payload())
+
+
+async def dashboard_chat_websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    chat_cfg = _dashboard_chat_runtime_config()
+    nick = _sanitize_dashboard_chat_nick(
+        websocket.query_params.get("nick") if hasattr(websocket, "query_params") else None,
+        chat_cfg["default_nick_prefix"],
+    )
+    reader = writer = None
+    connected_host = None
+
+    async def send_client(payload: dict[str, Any]) -> None:
+        try:
+            await websocket.send_text(json.dumps(payload))
+        except Exception:
+            pass
+
+    async def send_irc(command: str) -> None:
+        if writer is None:
+            return
+        writer.write((command + "\r\n").encode("utf-8", "ignore"))
+        await writer.drain()
+
+    try:
+        last_error = None
+        for host in chat_cfg["hosts"]:
+            try:
+                reader, writer = await asyncio.open_connection(
+                    host,
+                    chat_cfg["port"],
+                    ssl=chat_cfg["tls"],
+                )
+                connected_host = host
+                break
+            except Exception as exc:
+                last_error = exc
+        if reader is None or writer is None:
+            await send_client({"type": "error", "text": f"IRC connection failed: {last_error}"})
+            await websocket.close()
+            return
+
+        await send_client({"type": "status", "state": "connecting", "nick": nick, "channel": chat_cfg["channel"], "host": connected_host})
+        await send_irc(f"NICK {nick}")
+        await send_irc(_dashboard_chat_user_command(nick, chat_cfg))
+
+        registered = False
+        join_sent = False
+        joined = False
+        allowed_pm_targets: set[str] = set()
+
+        async def send_join_once() -> None:
+            nonlocal join_sent
+            if join_sent:
+                return
+            join_sent = True
+            if chat_cfg["channel_key"]:
+                await send_irc(f"JOIN {chat_cfg['channel']} {chat_cfg['channel_key']}")
+            else:
+                await send_irc(f"JOIN {chat_cfg['channel']}")
+            await send_client({"type": "status", "state": "joining", "nick": nick, "channel": chat_cfg["channel"], "host": connected_host})
+
+        async def mark_joined() -> None:
+            nonlocal joined
+            if joined:
+                return
+            joined = True
+            await send_client({"type": "status", "state": "joined", "nick": nick, "channel": chat_cfg["channel"], "host": connected_host, "text": f"Joined {chat_cfg['channel']}."})
+
+        async def irc_to_ws() -> None:
+            nonlocal registered, nick
+            while True:
+                raw = await reader.readline()
+                if not raw:
+                    await send_client({"type": "status", "state": "disconnected", "text": "IRC server closed the connection."})
+                    break
+                line = raw.decode("utf-8", "ignore").rstrip("\r\n")
+                if line.startswith("PING "):
+                    await send_irc("PONG " + line.split(" ", 1)[1])
+                    continue
+                prefix, command, rest = _parse_irc_prefix(line)
+                if command == "001":
+                    registered = True
+                    # 001 RPL_WELCOME means the NICK/USER registration handshake is complete.
+                    # Only now JOIN the keyed channel; do not pretend the browser joined until
+                    # the server sends our JOIN echo or end-of-NAMES (366).
+                    parts = rest.split(" ", 1)
+                    if parts and parts[0]:
+                        nick = parts[0]
+                    await send_client({"type": "status", "state": "registered", "nick": nick, "channel": chat_cfg["channel"], "host": connected_host})
+                    await send_join_once()
+                    continue
+                if command in {"376", "422"} and registered:
+                    await send_join_once()
+                if command == "366" and chat_cfg["channel"] in rest:
+                    await mark_joined()
+                parsed = _parse_irc_message(line, current_nick=nick)
+                if parsed:
+                    if parsed.get("type") == "names":
+                        allowed_pm_targets.clear()
+                        allowed_pm_targets.update(
+                            target for target in (_sanitize_dashboard_chat_pm_target(name) for name in parsed.get("names", []))
+                            if target and target != nick
+                        )
+                    elif parsed.get("type") == "presence":
+                        action = parsed.get("action")
+                        parsed_nick = _sanitize_dashboard_chat_pm_target(parsed.get("nick"))
+                        if action == "join":
+                            if parsed_nick == nick:
+                                await mark_joined()
+                            elif parsed_nick:
+                                allowed_pm_targets.add(parsed_nick)
+                        elif action in {"part", "quit"} and parsed_nick:
+                            allowed_pm_targets.discard(parsed_nick)
+                        elif action == "nick" and parsed_nick:
+                            new_target = _sanitize_dashboard_chat_pm_target(parsed.get("new_nick"))
+                            allowed_pm_targets.discard(parsed_nick)
+                            if parsed_nick == nick and new_target:
+                                nick = new_target
+                                await send_client({"type": "status", "state": "nick", "nick": nick})
+                            elif new_target:
+                                allowed_pm_targets.add(new_target)
+                    await send_client(parsed)
+
+        async def ws_to_irc() -> None:
+            nonlocal nick
+            while True:
+                text = await websocket.receive_text()
+                try:
+                    data = json.loads(text)
+                except Exception:
+                    data = {"type": "say", "text": text}
+                kind = data.get("type")
+                if kind == "say":
+                    message = _dashboard_chat_truncate_message(data.get("text"))
+                    if message:
+                        if not joined:
+                            await send_client({"type": "error", "text": "Still joining IRC; wait for the server-confirmed #hermesdashboard join."})
+                            continue
+                        await send_irc(f"PRIVMSG {chat_cfg['channel']} :{message}")
+                        # Most IRCds do not echo a channel PRIVMSG back to its sender, so
+                        # provide a local echo after writing the IRC command successfully.
+                        await send_client({"type": "message", "scope": "channel", "nick": nick, "text": message, "self": True})
+                elif kind == "selfpm":
+                    message = _dashboard_chat_truncate_message(data.get("text"))
+                    if message:
+                        if not registered:
+                            await send_client({"type": "error", "text": "Still registering with IRC; try again in a moment."})
+                            continue
+                        await send_irc(f"PRIVMSG {nick} :{message}")
+                        await send_client({"type": "message", "scope": "pm", "nick": nick, "target": nick, "text": message, "self": True})
+                elif kind == "pm":
+                    message = _dashboard_chat_truncate_message(data.get("text"))
+                    target = _sanitize_dashboard_chat_pm_target(data.get("target"))
+                    if message and target:
+                        if not joined:
+                            await send_client({"type": "error", "text": "Join #hermesdashboard before sending private messages."})
+                            continue
+                        if target != nick and target not in allowed_pm_targets:
+                            await send_client({"type": "error", "text": "PM target must be your own nick or a user currently visible in #hermesdashboard."})
+                            continue
+                        await send_irc(f"PRIVMSG {target} :{message}")
+                        await send_client({"type": "message", "scope": "pm", "nick": nick, "target": target, "text": message, "self": True})
+                elif kind == "nick":
+                    new_nick = _sanitize_dashboard_chat_nick(data.get("nick"))
+                    nick = new_nick
+                    await send_irc(f"NICK {new_nick}")
+                    await send_client({"type": "status", "state": "nick", "nick": new_nick})
+                elif kind == "ping":
+                    await send_client({"type": "pong"})
+                else:
+                    await send_client({"type": "error", "text": "Unsupported command. Dashboard chat is jailed to #hermesdashboard and self-PM only."})
+
+        tasks = [asyncio.create_task(irc_to_ws()), asyncio.create_task(ws_to_irc())]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        for task in done:
+            task.result()
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        await send_client({"type": "error", "text": str(exc)})
+    finally:
+        if writer is not None:
+            try:
+                await send_irc(f"PART {chat_cfg['channel']} :Hermes Dashboard disconnect")
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
 routes = [
     Route("/", homepage),
     # Campaigns is implemented as a hash-routed dashboard panel (#dnd), but
@@ -9196,6 +9558,7 @@ routes = [
     Route("/api/dashboard-state/{key}", set_dashboard_state, methods=["PUT"]),
     Route("/api/dashboard-state/{key}", delete_dashboard_state, methods=["DELETE"]),
     Route("/api/dashboard/update", dashboard_auto_update_endpoint, methods=["POST"]),
+    Route("/api/dashboard-chat/status", dashboard_chat_status_endpoint),
     Route("/health", health),
     Route("/api/status", get_status),
     Route("/api/config", get_config_endpoint),
@@ -9302,6 +9665,7 @@ routes = [
 ]
 
 if WebSocketRoute is not None:
+    routes.insert(-1, WebSocketRoute("/api/dashboard-chat/ws", dashboard_chat_websocket_endpoint, name="dashboard_chat_ws"))
     routes.insert(-1, WebSocketRoute("/pokemon/ws", pokemon_websocket_proxy_endpoint, name="pokemon_ws"))
     routes.insert(-1, WebSocketRoute("/pokemon/watch/ws", pokemon_websocket_proxy_endpoint, name="pokemon_watch_ws"))
 

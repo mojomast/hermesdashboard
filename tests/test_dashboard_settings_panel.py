@@ -55,7 +55,7 @@ def test_hidden_tabs_are_respected_by_hash_routing():
 
     assert "!isDashboardTabVisible(panel)" in html
     assert "navigateTo('chat')" in html
-    assert "const validPanels = ['chat','message-board'" in html
+    assert "const validPanels = ['chat','dashboard-chat','message-board'" in html
     assert "applyDashboardTabSettings();" in html
     assert "renderDashboardTabSettings();" in html
 
