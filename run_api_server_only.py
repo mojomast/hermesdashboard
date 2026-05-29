@@ -4,7 +4,16 @@ import signal
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "hermes-agent"))
+def _hermes_agent_path() -> Path:
+    configured = os.getenv("HERMES_AGENT_PATH")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path(__file__).parent.parent / "hermes-agent").resolve()
+
+
+HERMES_AGENT_PATH = _hermes_agent_path()
+if str(HERMES_AGENT_PATH) not in sys.path:
+    sys.path.insert(0, str(HERMES_AGENT_PATH))
 
 try:
     from gateway.config import PlatformConfig

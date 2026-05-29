@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import os
 import sqlite3
@@ -110,21 +111,21 @@ def _run_dashboard_trace_js(expression: str):
         + "process.stdout.write(JSON.stringify(__result));\n"
     )
     env = os.environ.copy()
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as f:
-        f.write(script)
-        tmp_path = f.name
+    with tempfile.NamedTemporaryFile("w", suffix=".cjs", delete=False) as script_file:
+        script_file.write(script)
+        script_path = script_file.name
     try:
         result = subprocess.run(
-            ["node", tmp_path],
+            ["node", script_path],
             cwd=Path(__file__).resolve().parent.parent,
             env=env,
             capture_output=True,
             text=True,
             check=True,
         )
-        return json.loads(result.stdout)
     finally:
-        os.unlink(tmp_path)
+        Path(script_path).unlink(missing_ok=True)
+    return json.loads(result.stdout)
 
 
 def _create_state_db(root: Path) -> Path:
@@ -957,6 +958,104 @@ return {
             result["itemKinds"], ["assistant_content", "tool_run", "tool_run"]
         )
         self.assertEqual(result["content"], "Intro")
+
+
+class DashboardReadmeFeatureWiringTests(unittest.TestCase):
+    def test_skill_listing_and_content_support_flat_and_categorized_layouts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            flat = root / "skills" / "flat-skill"
+            categorized = root / "skills" / "software-development" / "cat-skill"
+            flat.mkdir(parents=True)
+            categorized.mkdir(parents=True)
+            flat.joinpath("SKILL.md").write_text(
+                "---\nname: Flat Skill\ndescription: Flat description\n---\n# Flat\n"
+            )
+            categorized.joinpath("SKILL.md").write_text(
+                "---\nname: Cat Skill\ndescription: Cat description\n---\n# Cat\n"
+            )
+
+            with mock.patch.object(dashboard_app, "HERMES_HOME", root), mock.patch.object(
+                dashboard_app, "get_config", return_value={"skills": {"disabled": []}}
+            ):
+                response = asyncio.run(dashboard_app.get_skills(SimpleNamespace()))
+                payload = json.loads(response.body)
+                skills = {skill["id"]: skill for skill in payload["skills"]}
+                self.assertEqual(skills["flat-skill"]["name"], "Flat Skill")
+                self.assertEqual(skills["flat-skill"]["category"], "")
+                self.assertEqual(skills["cat-skill"]["name"], "Cat Skill")
+                self.assertEqual(
+                    skills["cat-skill"]["category"], "software-development"
+                )
+
+                content_response = asyncio.run(
+                    dashboard_app.get_skill_content(
+                        SimpleNamespace(path_params={"skill_id": "cat-skill"})
+                    )
+                )
+                content_payload = json.loads(content_response.body)
+                self.assertIn("# Cat", content_payload["content"])
+
+    def test_graph_time_filter_handles_iso_timestamps_and_flat_skills(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "skills" / "flat-skill").mkdir(parents=True)
+            (root / "skills" / "flat-skill" / "SKILL.md").write_text(
+                "---\nname: Flat Skill\ndescription: Flat graph skill\n---\n"
+            )
+            conn = sqlite3.connect(root / "state.db")
+            conn.execute(
+                """
+                CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY, title TEXT, source TEXT, model TEXT,
+                    parent_session_id TEXT, summary TEXT, started_at TEXT,
+                    ended_at TEXT, message_count INTEGER, tool_call_count INTEGER,
+                    input_tokens INTEGER, output_tokens INTEGER,
+                    estimated_cost_usd REAL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT,
+                    tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp TEXT
+                )
+                """
+            )
+            now = datetime.datetime.now(datetime.timezone.utc)
+            recent = now.isoformat()
+            old = (now - datetime.timedelta(days=3)).isoformat()
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("recent", "Recent", "cli", "model-a", None, "", recent, recent, 1, 0, 0, 0, 0.0),
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("old", "Old", "cli", "model-a", None, "", old, old, 1, 0, 0, 0, 0.0),
+            )
+            conn.commit()
+            conn.close()
+
+            request = SimpleNamespace(query_params={"depth": "full", "hours": "24"})
+            with mock.patch.object(dashboard_app, "HERMES_HOME", root), mock.patch.object(
+                dashboard_app, "get_config", return_value={"skills": {"disabled": []}}
+            ):
+                response = asyncio.run(dashboard_app.get_graph_data(request))
+                payload = json.loads(response.body)
+
+            node_ids = {node["id"] for node in payload["nodes"]}
+            self.assertIn("session:recent", node_ids)
+            self.assertNotIn("session:old", node_ids)
+            self.assertIn("skill:flat-skill", node_ids)
+            self.assertNotIn("error", payload)
+
+    def test_hermes_agent_path_uses_installer_env_override(self):
+        with tempfile.TemporaryDirectory() as td:
+            configured = Path(td)
+            with mock.patch.dict(os.environ, {"HERMES_AGENT_PATH": str(configured)}):
+                self.assertEqual(dashboard_app._hermes_agent_path(), configured.resolve())
+
 
 
 if __name__ == "__main__":
