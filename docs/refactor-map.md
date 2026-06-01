@@ -18,6 +18,12 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 4. Leave third-party CDN assets in the template for now.
 5. Update focused tests that inspect raw template/source text so they intentionally include extracted static assets where appropriate.
 
+## Backend extraction pass completed
+
+- `dashboard_backend/services/dashboard_state.py` now owns dashboard-state SQLite schema creation and load/save/delete persistence.
+- `app.py` keeps compatibility wrappers (`_load_dashboard_state`, `_save_dashboard_state`, etc.) that pass live `DASHBOARD_STATE_DB_PATH`, `DASHBOARD_STATE_LOCK`, and `DASHBOARD_STATE_KEYS` into the service so existing monkeypatch-based tests and callers keep working.
+- Targeted regression gate: `python -m pytest tests/test_dashboard_state_persistence.py`.
+
 ## Backend follow-up plan
 
 - Split `app.py` by stable bounded contexts without changing public API paths:

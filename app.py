@@ -56,6 +56,15 @@ except Exception:  # Lightweight test stubs may omit StreamingResponse.
     StreamingResponse = PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 
+from dashboard_backend.services.dashboard_state import (
+    dashboard_state_connect as _dashboard_state_connect_impl,
+    delete_dashboard_state as _delete_dashboard_state_impl,
+    load_dashboard_state as _load_dashboard_state_impl,
+    save_dashboard_state as _save_dashboard_state_impl,
+    validate_dashboard_state_key as _validate_dashboard_state_key_impl,
+)
+
+
 def _hermes_agent_path() -> Path:
     configured = os.getenv("HERMES_AGENT_PATH")
     if configured:
@@ -460,76 +469,39 @@ def _log_stream(run_id: str, message: str) -> None:
 
 
 def _dashboard_state_connect() -> sqlite3.Connection:
-    DASHBOARD_STATE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DASHBOARD_STATE_DB_PATH))
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS dashboard_state (
-            key TEXT PRIMARY KEY,
-            value_json TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    return conn
+    return _dashboard_state_connect_impl(DASHBOARD_STATE_DB_PATH)
 
 
 def _validate_dashboard_state_key(key: str) -> str:
-    normalized = str(key or "").strip()
-    if normalized not in DASHBOARD_STATE_KEYS:
-        raise ValueError(f"Unsupported dashboard state key: {normalized}")
-    return normalized
+    return _validate_dashboard_state_key_impl(key, DASHBOARD_STATE_KEYS)
 
 
 def _load_dashboard_state(key: str):
-    key = _validate_dashboard_state_key(key)
-    with DASHBOARD_STATE_LOCK:
-        conn = _dashboard_state_connect()
-        try:
-            row = conn.execute(
-                "SELECT value_json FROM dashboard_state WHERE key = ?", (key,)
-            ).fetchone()
-        finally:
-            conn.close()
-    if not row:
-        return False, None
-    try:
-        return True, json.loads(row[0])
-    except json.JSONDecodeError:
-        return False, None
+    return _load_dashboard_state_impl(
+        key,
+        db_path=DASHBOARD_STATE_DB_PATH,
+        lock=DASHBOARD_STATE_LOCK,
+        allowed_keys=DASHBOARD_STATE_KEYS,
+    )
 
 
 def _save_dashboard_state(key: str, value) -> None:
-    key = _validate_dashboard_state_key(key)
-    value_json = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    with DASHBOARD_STATE_LOCK:
-        conn = _dashboard_state_connect()
-        try:
-            conn.execute(
-                """
-                INSERT INTO dashboard_state(key, value_json, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value_json = excluded.value_json,
-                    updated_at = excluded.updated_at
-                """,
-                (key, value_json, updated_at),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+    _save_dashboard_state_impl(
+        key,
+        value,
+        db_path=DASHBOARD_STATE_DB_PATH,
+        lock=DASHBOARD_STATE_LOCK,
+        allowed_keys=DASHBOARD_STATE_KEYS,
+    )
 
 
 def _delete_dashboard_state(key: str) -> None:
-    key = _validate_dashboard_state_key(key)
-    with DASHBOARD_STATE_LOCK:
-        conn = _dashboard_state_connect()
-        try:
-            conn.execute("DELETE FROM dashboard_state WHERE key = ?", (key,))
-            conn.commit()
-        finally:
-            conn.close()
+    _delete_dashboard_state_impl(
+        key,
+        db_path=DASHBOARD_STATE_DB_PATH,
+        lock=DASHBOARD_STATE_LOCK,
+        allowed_keys=DASHBOARD_STATE_KEYS,
+    )
 
 
 async def get_dashboard_state(request):
