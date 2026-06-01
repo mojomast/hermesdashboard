@@ -75,6 +75,10 @@ from dashboard_backend.services.message_board import (
     get_message_board_post as _get_message_board_post_impl,
     list_message_board_posts as _list_message_board_posts_impl,
 )
+from dashboard_backend.services.scrolls import (
+    ScrollsSnapshotUnavailable,
+    build_scrolls_snapshot as _build_scrolls_snapshot_impl,
+)
 from dashboard_backend.services.token_usage import (
     TOKEN_USAGE_FIELDS as TOKEN_USAGE_FIELDS,
     _aggregate_token_usage_api_calls as _aggregate_token_usage_api_calls_impl,
@@ -9257,6 +9261,19 @@ async def get_scrolls_artifact_endpoint(request):
         return JSONResponse({"error": str(exc)}, status_code=400)
 
 
+async def get_scrolls_snapshot_endpoint(request):
+    try:
+        snapshot = await asyncio.to_thread(_build_scrolls_snapshot_impl, _SCROLLS_PROJECT_ROOT)
+        return JSONResponse(snapshot)
+    except ScrollsSnapshotUnavailable as exc:
+        return JSONResponse(
+            {"error": "research_dashboard not available", "detail": str(exc)},
+            status_code=503,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 def _scrolls_spawn(command: list[str], project_root: Path):
     if not project_root.exists():
         return JSONResponse({"error": f"Scrolls project not found: {project_root}"}, status_code=404)
@@ -9555,6 +9572,7 @@ routes = [
     Route("/api/scrolls/console", get_scrolls_console_endpoint),
     Route("/api/scrolls/loop/status", get_scrolls_loop_status_endpoint),
     Route("/api/scrolls/artifact", get_scrolls_artifact_endpoint),
+    Route("/api/scrolls/snapshot", get_scrolls_snapshot_endpoint),
     Route("/api/scrolls/autoresearch/trigger", trigger_scrolls_autoresearch_endpoint, methods=["POST"]),
     Route("/api/scrolls/autoresearch/loop/start", start_scrolls_timed_loop_endpoint, methods=["POST"]),
     Route("/api/scrolls/autoresearch/loop/stop", stop_scrolls_timed_loop_endpoint, methods=["POST"]),

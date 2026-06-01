@@ -95,7 +95,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | dashboard_backend/services/graph.py | graph node/edge/search projections | memory/skills/session stores | /api/graph* | graph/execution tests |
 | dashboard_backend/services/dnd.py | campaign/narrative state APIs | campaign JSON/files | /api/dnd* | DND tests if present/full pytest |
 | dashboard_backend/services/games.py | Pokemon/MiniHack/Doom proxy/status/save helpers | emulator/proxy process/files | /api/pokemon*, /minihack/*, /doom/* | Pokemon/game tests |
-| dashboard_backend/services/scrolls.py | Scrolls/Vesuvius autoresearch status/artifact proxy | scrolls files/scripts | /api/scrolls* | scrolls tests/full pytest |
+| dashboard_backend/services/scrolls.py | ✅ PARTIAL: read-only `/api/scrolls/snapshot` state projection delegation; broader Scrolls status/artifact/loop helpers remain in app.py | scrolls project root injected at call time | /api/scrolls/snapshot via app wrapper; other /api/scrolls* via app.py | tests/test_scrolls_snapshot.py, tests/test_scrolls_panel_navigation.py |
 | dashboard_backend/routes/*.py | route wrappers that parse Request and call services | imports services only | same public paths | route presence tests |
 
 ## Function registry
@@ -644,6 +644,35 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 - `dashboard_backend/services/dashboard_state.py`: dashboard-state SQLite ledger/projection persistence is extracted; app-level wrappers preserve `DASHBOARD_STATE_DB_PATH`, `DASHBOARD_STATE_KEYS`, and lock monkeypatch seams. Gate: `python -m pytest tests/test_dashboard_state_persistence.py`.
 - `dashboard_backend/services/token_usage.py`: token usage aggregation and projection helpers are extracted; `/api/token-usage` and app-level helper names remain as wrappers. Gate: `python -m pytest tests/test_token_usage_dashboard.py`.
 - `dashboard_backend/services/message_board.py`: message-board SQLite post/message persistence is extracted; `/api/message-board*` endpoint wrappers and `generate_message_board_agent_reply` remain in `app.py`. Gate: `python -m pytest tests/test_message_board.py`.
+- `dashboard_backend/services/scrolls.py`: read-only Scrolls snapshot projection delegation is extracted; `GET /api/scrolls/snapshot` is restored as a parity API route while app-owned `_SCROLLS_PROJECT_ROOT` remains injected by the wrapper. Gate: `python -m pytest tests/test_scrolls_snapshot.py tests/test_scrolls_panel_navigation.py`.
+
+## Scrolls snapshot parity pass
+
+### Task frame
+Restore the retained Vesuvius/Scrolls panel's missing read-only snapshot API route without changing existing Scrolls mutating routes, frontend tab visibility, or active loop state ownership.
+
+### Vocabulary map
+- **API route:** `GET /api/scrolls/snapshot`, the external HTTP contract added back to the refactor copy.
+- **Service:** `dashboard_backend/services/scrolls.py`, bounded read-only delegation logic that imports and calls the standalone `research_dashboard.snapshot.build_snapshot` implementation.
+- **State:** the snapshot response is a state projection derived by the Vesuvius research dashboard package from filesystem/database/artifact ledgers under the injected Scrolls project root.
+- **Workflow:** existing Scrolls operator workflow can read the snapshot projection; no repair, run, restart, or loop mutation is triggered by this route.
+
+### Structural model
+`app.py` imports `ScrollsSnapshotUnavailable` and `_build_scrolls_snapshot_impl`, keeps the route wrapper, injects `_SCROLLS_PROJECT_ROOT`, and returns parity status envelopes (`200`, `503` unavailable, `500` build failure). The service does not import `app.py`.
+
+### Change set
+- Added `dashboard_backend/services/scrolls.py` with `build_scrolls_snapshot(project_root)` and `ScrollsSnapshotUnavailable`.
+- Added `get_scrolls_snapshot_endpoint` and registered `Route("/api/scrolls/snapshot", ...)`.
+- Added `tests/test_scrolls_snapshot.py` for service delegation, object-shape guard, route registration, and wrapper error envelopes.
+
+### Drift audit
+- Fixed true retained-surface gap: `GET /api/scrolls/snapshot`.
+- Remaining true retained-surface gap: self-improvement repair/anomaly projection UI/tests.
+- Remaining side-effectful gated gaps: dashboard/backend restart routes.
+- Optional/reference-only gaps remain Dashboard Chat IRC bridge, Voice/OmniVoice, and Roguelike/Hermes Labyrinth.
+
+### Next step
+After this pass is committed and the tree is clean, the safest modular pass is dashboard-state route-wrapper extraction, followed by games catalog-only service extraction or self-improvement repair/anomaly read-only projection parity.
 
 ## Compatibility wrapper policy
 - Keep legacy `app.py` function names while tests or callers import/monkeypatch them directly.

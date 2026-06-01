@@ -208,6 +208,7 @@ Extracted backend modules so far:
 - `dashboard_backend/services/dashboard_state.py` owns SQLite persistence for browser/dashboard state projections; `app.py` keeps `_load_dashboard_state`, `_save_dashboard_state`, `_delete_dashboard_state`, and related private wrappers.
 - `dashboard_backend/services/token_usage.py` owns read-only token/cost aggregation ledgers and projections; `/api/token-usage` and app-level helper names remain stable.
 - `dashboard_backend/services/message_board.py` owns message-board SQLite post/message persistence; `/api/message-board*` route handlers and Hermes reply generation remain in `app.py` for compatibility.
+- `dashboard_backend/services/scrolls.py` owns read-only Scrolls snapshot projection delegation; `GET /api/scrolls/snapshot` remains wrapped in `app.py` and injects the configured Vesuvius project root at call time.
 
 Refactor passes follow `AUDIT -> MAP -> EXTRACT -> VERIFY -> DOCUMENT -> COMMIT`. For backend extraction passes, run the focused context tests first, then the full gate:
 

@@ -29,6 +29,9 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 - `dashboard_backend/services/message_board.py` owns message-board SQLite post/message persistence.
   - `app.py` keeps compatibility wrappers for public/private message-board helper names, plus the `/api/message-board*` route handlers and Hermes agent-reply generation.
   - Targeted regression gate: `python -m pytest tests/test_message_board.py`.
+- `dashboard_backend/services/scrolls.py` owns the read-only Scrolls snapshot state projection delegation to the standalone Vesuvius `research_dashboard` package.
+  - `app.py` keeps the `/api/scrolls/snapshot` route wrapper and passes `_SCROLLS_PROJECT_ROOT` into the service at call time.
+  - Targeted regression gate: `python -m pytest tests/test_scrolls_snapshot.py tests/test_scrolls_panel_navigation.py`.
 
 ## Backend follow-up plan
 
