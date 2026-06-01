@@ -71,7 +71,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 - **session:** A persisted or streamed dashboard conversation/execution unit; not the same as a browser tab or subprocess job.
 - **active run:** In-memory live chat/run execution state keyed by session/run identifiers, including interrupt/steer/stop coordination.
 - **child stream:** Subagent or child process event stream attached to an active run; child events are routed to projections consumed by the frontend.
-- **dashboard state:** SQLite-backed browser/dashboard projection state (conversation and active-run state) owned by `dashboard_backend/services/dashboard_state.py`.
+- **dashboard state:** SQLite-backed browser/dashboard projection state (conversation and active-run state); HTTP request parsing lives in `dashboard_backend/routes/dashboard_state.py` and persistence lives in `dashboard_backend/services/dashboard_state.py`.
 - **message board post/message:** Durable message-board database record rendered by the board API; distinct from chat messages and IRC/dashboard-chat messages.
 - **cron job:** Scheduled job definition or live trigger managed through Hermes cron APIs/files; mutating it has filesystem/scheduler side effects.
 - **self-improvement candidate/run/event:** Candidate = proposed self-improvement work item; run = execution cycle directory/projection; event = ledger row used to derive coverage/readiness/anomaly projections.
@@ -87,7 +87,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | dashboard_backend/services/token_usage.py | ✅ EXTRACTED: TOKEN_USAGE_FIELDS and token usage aggregation helpers; app wrappers remain | session DB/filesystem reads only | /api/token-usage via wrapper/route | tests/test_token_usage_dashboard.py |
 | dashboard_backend/services/message_board.py | ✅ EXTRACTED: message-board SQLite schema/read/write helpers; endpoint wrappers remain in app.py | message board sqlite path via HERMES_HOME | /api/message-board* via app wrappers | tests/test_message_board.py |
 | dashboard_backend/services/sessions.py | session listing, traces, transcript/history projections | session paths/caches | /api/sessions*, /api/traces* | session/execution trace tests |
-| dashboard_backend/services/dashboard_state.py | SQLite persistence for browser dashboard state | state sqlite path | /api/dashboard-state/* | tests/test_dashboard_state_persistence.py |
+| dashboard_backend/services/dashboard_state.py + dashboard_backend/routes/dashboard_state.py | ✅ ROUTE WRAPPER EXTRACTED: persistence service owns SQLite load/save/delete; route module owns Request parsing/JSON envelopes; app wrappers retain endpoint identity and monkeypatch seams | state sqlite path, lock, allowed keys injected by app wrappers | /api/dashboard-state/* via app-level delegates | tests/test_dashboard_state_persistence.py, tests/test_dashboard_state_routes.py |
 | dashboard_backend/services/active_runs.py + child_streams.py | live chat stream orchestration, active run state, child event routing | ACTIVE_RUNS, ACTIVE_CHILD_STREAMS, STEER_MESSAGES, INTERRUPT_FLAGS | /chat, /api/session/* stream/control | high-risk streaming tests + full pytest |
 | dashboard_backend/services/self_improvement.py | self-improvement status, candidates, event coverage, controls | SELF_IMPROVEMENT_HOME, cron jobs, outbox files | /api/self-improvement* | tests/test_self_improvement_panel.py |
 | dashboard_backend/services/autonomous_development.py | pipeline registry/projections/control | ~/.hermes/autonomous-development, cron jobs | /api/autonomous-development* | tests/test_autonomous_development_panel.py |
@@ -96,7 +96,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | dashboard_backend/services/dnd.py | campaign/narrative state APIs | campaign JSON/files | /api/dnd* | DND tests if present/full pytest |
 | dashboard_backend/services/games_catalog.py | ✅ PARTIAL: read-only Games tab skill catalog/frontmatter projection; Pokemon/MiniHack/Doom proxy/process helpers remain in app.py | `HERMES_HOME` injected at call time | /api/games via app wrapper | tests/test_games_catalog_service.py, tests/test_games_tab.py |
 | dashboard_backend/services/scrolls.py | ✅ PARTIAL: read-only `/api/scrolls/snapshot` state projection delegation; broader Scrolls status/artifact/loop helpers remain in app.py | scrolls project root injected at call time | /api/scrolls/snapshot via app wrapper; other /api/scrolls* via app.py | tests/test_scrolls_snapshot.py, tests/test_scrolls_panel_navigation.py |
-| dashboard_backend/routes/*.py | route wrappers that parse Request and call services | imports services only | same public paths | route presence tests |
+| dashboard_backend/routes/*.py | extracted route wrappers that parse Request objects and shape response envelopes, then call injected app/service dependencies | injected callables only for monkeypatch-sensitive seams; no `app.py` imports | same public paths | route presence and route-wrapper tests |
 
 ## Function registry
 | Name | Line Range | Responsibility | Target Module | Shared State Dependencies |
@@ -116,9 +116,9 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | `_load_dashboard_state` | 583-589 | `def _load_dashboard_state(key: str):     return _load_dashboard_state_impl(         key,         db_path=DASHBOARD_STATE` | `dashboard_backend/services/dashboard_state.py` | DASHBOARD_STATE_DB_PATH, DASHBOARD_STATE_KEYS, DASHBOARD_STATE_LOCK |
 | `_save_dashboard_state` | 592-599 | `def _save_dashboard_state(key: str, value) -> None:     _save_dashboard_state_impl(         key,         value,         ` | `dashboard_backend/services/dashboard_state.py` | DASHBOARD_STATE_DB_PATH, DASHBOARD_STATE_KEYS, DASHBOARD_STATE_LOCK |
 | `_delete_dashboard_state` | 602-608 | `def _delete_dashboard_state(key: str) -> None:     _delete_dashboard_state_impl(         key,         db_path=DASHBOARD_` | `dashboard_backend/services/dashboard_state.py` | DASHBOARD_STATE_DB_PATH, DASHBOARD_STATE_KEYS, DASHBOARD_STATE_LOCK |
-| `get_dashboard_state` | 611-617 | `async def get_dashboard_state(request):     key = request.path_params["key"]     try:         found, value = _load_dashb` | `dashboard_backend/services/dashboard_state.py` | — |
-| `set_dashboard_state` | 620-632 | `async def set_dashboard_state(request):     key = request.path_params["key"]     try:         data = json.loads(await re` | `dashboard_backend/services/dashboard_state.py` | — |
-| `delete_dashboard_state` | 635-641 | `async def delete_dashboard_state(request):     key = request.path_params["key"]     try:         _delete_dashboard_state` | `dashboard_backend/services/dashboard_state.py` | — |
+| `get_dashboard_state` | 611-617 | App-level endpoint delegate that preserves route table identity and injects `_load_dashboard_state` into the route wrapper | `app.py` wrapper -> `dashboard_backend/routes/dashboard_state.py` | `_load_dashboard_state` |
+| `set_dashboard_state` | 620-632 | App-level endpoint delegate that preserves route table identity and injects `_save_dashboard_state` into the route wrapper | `app.py` wrapper -> `dashboard_backend/routes/dashboard_state.py` | `_save_dashboard_state` |
+| `delete_dashboard_state` | 635-641 | App-level endpoint delegate that preserves route table identity and injects `_delete_dashboard_state` into the route wrapper | `app.py` wrapper -> `dashboard_backend/routes/dashboard_state.py` | `_delete_dashboard_state` |
 | `_run_chat_stream_sync` | 644-757 | `def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]) -> None:     state = ACTIVE_RUNS[run_i` | `dashboard_backend/services/active_runs.py + child_streams.py` | ACTIVE_RUNS, API_KEY, HERMES_API, HERMES_READ_TIMEOUT, HERMES_USEFUL_EVENT_TIMEOUT |
 | `_run_chat_stream` | 760-889 | `async def _run_chat_stream(     run_id: str, messages: list, session_id: Optional[str] ) -> None:     await asyncio.to_t` | `dashboard_backend/services/active_runs.py + child_streams.py` | ACTIVE_RUNS, API_KEY, HERMES_API, HERMES_READ_TIMEOUT, HERMES_USEFUL_EVENT_TIMEOUT |
 | `_child_session_ids` | 892-897 | `def _child_session_ids(conn: sqlite3.Connection, session_id: str) -> list[str]:     cursor = conn.execute(         "SELE` | `dashboard_backend/services/sessions.py` | — |
@@ -642,11 +642,43 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 
 ## Completed extraction passes
 - `dashboard_backend/services/dashboard_state.py`: dashboard-state SQLite ledger/projection persistence is extracted; app-level wrappers preserve `DASHBOARD_STATE_DB_PATH`, `DASHBOARD_STATE_KEYS`, and lock monkeypatch seams. Gate: `python -m pytest tests/test_dashboard_state_persistence.py`.
+- `dashboard_backend/routes/dashboard_state.py`: dashboard-state route-wrapper parsing/status/payload logic is extracted; `app.py` keeps `get_dashboard_state`, `set_dashboard_state`, and `delete_dashboard_state` endpoint names and route table identity while injecting live app wrappers. Gate: `python -m pytest tests/test_dashboard_state_persistence.py tests/test_dashboard_state_routes.py`.
 - `dashboard_backend/services/token_usage.py`: token usage aggregation and projection helpers are extracted; `/api/token-usage` and app-level helper names remain as wrappers. Gate: `python -m pytest tests/test_token_usage_dashboard.py`.
 - `dashboard_backend/services/message_board.py`: message-board SQLite post/message persistence is extracted; `/api/message-board*` endpoint wrappers and `generate_message_board_agent_reply` remain in `app.py`. Gate: `python -m pytest tests/test_message_board.py`.
 - `dashboard_backend/services/scrolls.py`: read-only Scrolls snapshot projection delegation is extracted; `GET /api/scrolls/snapshot` is restored as a parity API route while app-owned `_SCROLLS_PROJECT_ROOT` remains injected by the wrapper. Gate: `python -m pytest tests/test_scrolls_snapshot.py tests/test_scrolls_panel_navigation.py`.
 - `dashboard_backend/services/games_catalog.py`: read-only Games tab skill catalog/frontmatter projection is extracted; `/api/games` remains wrapped in `app.py` and app-owned `HERMES_HOME` is injected at call time. Gate: `python -m pytest tests/test_games_catalog_service.py tests/test_games_tab.py`.
 - Self-improvement repair/anomaly read-only parity: `app.py` now surfaces bounded `repair_hint` / `event_coverage_repair_hint` projections and `static/js/dashboard.js` renders Repair Readiness, Anomaly Samples, and inert Next repair commands. Gate: `python -m pytest tests/test_self_improvement_panel.py`.
+
+## Dashboard-state route-wrapper extraction pass
+
+### Task frame
+Extract only the dashboard-state HTTP route-wrapper behavior from `app.py` while preserving the `/api/dashboard-state/{key}` API route contracts, app-level endpoint names, and persistence helper monkeypatch seams.
+
+### Vocabulary map
+- **API route:** `GET`, `PUT`, and `DELETE /api/dashboard-state/{key}`, the external HTTP contracts for browser/dashboard state projections.
+- **Route wrapper:** `dashboard_backend/routes/dashboard_state.py`, which parses `Request.path_params`, uses `json.loads(await request.body())` for `PUT`, maps `ValueError` to `404`, and shapes JSON response envelopes.
+- **Service:** `dashboard_backend/services/dashboard_state.py`, the bounded SQLite persistence owner for dashboard state load/save/delete operations.
+- **State:** the persisted `conversation` and `active_run` projections; this pass does not alter active-run execution state or session ledgers.
+- **Session/run:** dashboard-state values may reference a persisted session or active run, but the route wrapper treats them as opaque JSON values.
+- **Workflow:** the browser restores, saves, or clears dashboard state through the same public route paths while `app.py` injects live compatibility wrappers.
+
+### Structural model
+`app.py` now imports route-wrapper endpoint implementations as private aliases. The app-level `get_dashboard_state`, `set_dashboard_state`, and `delete_dashboard_state` functions remain registered in the route table and delegate to the route module with `_load_dashboard_state`, `_save_dashboard_state`, and `_delete_dashboard_state` injected at call time. The route module does not import `app.py` or own persistence.
+
+### Change set
+- Added `dashboard_backend/routes/__init__.py` and `dashboard_backend/routes/dashboard_state.py`.
+- Replaced the dashboard-state endpoint bodies in `app.py` with thin delegates while keeping endpoint function names stable.
+- Added `tests/test_dashboard_state_routes.py` for injected route wrappers, error envelopes, explicit `null` persistence, app monkeypatch delegation, route table endpoint identity, and no `app.py` import direction.
+
+### Drift audit
+- No public route paths, methods, or payload shapes changed.
+- `PUT` still uses `json.loads(await request.body())`; it did not switch to `await request.json()`.
+- App-level private compatibility wrappers and globals remain in place for tests/callers.
+- Remaining side-effectful gated gaps include dashboard/backend restart routes with explicit mutation intent requirements.
+- Optional/reference-only gaps remain Dashboard Chat IRC bridge, Voice/OmniVoice, and Roguelike/Hermes Labyrinth.
+
+### Next step
+After this pass is committed and clean, continue with another low-risk route-wrapper extraction that already has service ownership and tests, or map sessions/files route wrappers before touching high-risk active-run/chat-stream/child-stream state.
 
 ## Self-improvement repair/anomaly parity pass
 
@@ -677,7 +709,7 @@ Restore the reference dashboard's read-only repair/anomaly visibility for self-i
 - Optional/reference-only gaps remain Dashboard Chat IRC bridge, Voice/OmniVoice, and Roguelike/Hermes Labyrinth.
 
 ### Next step
-After this pass is committed and clean, resume low-risk modular cleanup with dashboard-state route-wrapper extraction using injected app compatibility wrappers.
+After this pass is committed and clean, continue with another low-risk route-wrapper extraction around an already isolated service, or map sessions/files route wrappers before touching high-risk active-run/chat-stream/child-stream state.
 
 ## Games catalog extraction pass
 
@@ -705,7 +737,7 @@ Extract the low-risk Games tab catalog projection from `app.py` while preserving
 - Games proxy/process contexts (`/doom/*`, `/minihack/*`, `/pokemon/*`, `/api/pokemon/restart`, `/pokemon/chat`) remain in `app.py` for separate design/gating.
 
 ### Next step
-After this pass is committed and clean, the safest remaining low-risk refactor pass is dashboard-state route-wrapper extraction using injected app compatibility wrappers. The highest-value remaining parity pass is still self-improvement repair/anomaly read-only projection.
+After this pass is committed and clean, the next safest modular pass is another low-risk route-wrapper extraction around an already isolated service. The highest-value remaining gated parity pass is still dashboard/backend restart routes, but only with explicit mutation intent fields and rejection tests.
 
 ## Scrolls snapshot parity pass
 
@@ -733,19 +765,19 @@ Restore the retained Vesuvius/Scrolls panel's missing read-only snapshot API rou
 - Optional/reference-only gaps remain Dashboard Chat IRC bridge, Voice/OmniVoice, and Roguelike/Hermes Labyrinth.
 
 ### Next step
-After this pass is committed and the tree is clean, the safest modular pass is dashboard-state route-wrapper extraction, followed by games catalog-only service extraction or self-improvement repair/anomaly read-only projection parity.
+After this pass is committed and the tree is clean, continue with another low-risk route-wrapper extraction around an already isolated service, or map sessions/files route wrappers before touching high-risk active-run/chat-stream/child-stream state.
 
 ## Compatibility wrapper policy
 - Keep legacy `app.py` function names while tests or callers import/monkeypatch them directly.
 - Pass mutable app-owned dependencies (`HERMES_HOME`, DB paths, locks, config) into services at call time.
-- Services must not import `app.py`; planned route modules should depend on services/core only.
+- Planned route modules should not import `app.py`; they may call services/core directly or accept injected app-owned callables where monkeypatch-sensitive compatibility seams remain.
 - Treat persistent records as ledgers and route/UI summaries as projections so extraction does not change public payload contracts.
 
 ## Extraction order
 1. ✅ Token usage service (`dashboard_backend/services/token_usage.py`): low-risk read-only aggregation leaf; `/api/token-usage` wrapper remains in `app.py`.
 2. ✅ Message board service (`dashboard_backend/services/message_board.py`): isolated SQLite CRUD; route wrappers remain in `app.py` for this pass.
-3. Dashboard state route wrappers: service already extracted; move route wrappers after confirming persistence tests stay green and using injected app wrappers.
-4. Games catalog-only or Scrolls snapshot/read-only projections where filesystem/proxy state is isolated and route contracts are covered.
+3. ✅ Dashboard state route wrappers (`dashboard_backend/routes/dashboard_state.py`): service already extracted; route module now owns request parsing and JSON envelopes while app endpoint names remain registered.
+4. Games catalog-only or Scrolls snapshot/read-only route-wrapper follow-ups where filesystem/proxy state is isolated and route contracts are covered.
 5. Config/settings core extraction, then route modules that need it.
 6. Self-improvement/autonomous-development only after safety/readiness plan and mutation gates are mapped; route extraction can precede default-visible shipping but must preserve hidden-by-default posture.
 7. Child stream / active run backend last among large contexts due to high global mutable state and streaming coupling.
@@ -758,4 +790,4 @@ After this pass is committed and the tree is clean, the safest modular pass is d
 - Tests parity before this pass: reference had 18 test files / 118 tests; refactor had 17 files / 114 tests plus refactor-specific static/execution/chat sanitizer coverage.
 
 ## Next step
-Start the next pass from a clean tree. Safest options are dashboard-state route-wrapper extraction using injected app wrappers, or games catalog-only extraction. Do not extract active-run/chat-stream/child-stream until ownership/state design and tests are updated.
+Start the next pass from a clean tree. Safest options are another small route-wrapper extraction around an already isolated service, or a read-only sessions/files route-wrapper map. Do not extract active-run/chat-stream/child-stream until ownership/state design and tests are updated.

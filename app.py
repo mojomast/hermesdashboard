@@ -56,6 +56,11 @@ except Exception:  # Lightweight test stubs may omit StreamingResponse.
     StreamingResponse = PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 
+from dashboard_backend.routes.dashboard_state import (
+    delete_dashboard_state_endpoint as _delete_dashboard_state_endpoint_impl,
+    get_dashboard_state_endpoint as _get_dashboard_state_endpoint_impl,
+    set_dashboard_state_endpoint as _set_dashboard_state_endpoint_impl,
+)
 from dashboard_backend.services.dashboard_state import (
     dashboard_state_connect as _dashboard_state_connect_impl,
     delete_dashboard_state as _delete_dashboard_state_impl,
@@ -639,36 +644,24 @@ def _delete_dashboard_state(key: str) -> None:
 
 
 async def get_dashboard_state(request):
-    key = request.path_params["key"]
-    try:
-        found, value = _load_dashboard_state(key)
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=404)
-    return JSONResponse({"found": found, "value": value})
+    return await _get_dashboard_state_endpoint_impl(
+        request,
+        load_state=_load_dashboard_state,
+    )
 
 
 async def set_dashboard_state(request):
-    key = request.path_params["key"]
-    try:
-        data = json.loads(await request.body())
-    except json.JSONDecodeError:
-        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
-    if not isinstance(data, dict) or "value" not in data:
-        return JSONResponse({"error": "Expected JSON object with a value field"}, status_code=400)
-    try:
-        _save_dashboard_state(key, data.get("value"))
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=404)
-    return JSONResponse({"success": True})
+    return await _set_dashboard_state_endpoint_impl(
+        request,
+        save_state=_save_dashboard_state,
+    )
 
 
 async def delete_dashboard_state(request):
-    key = request.path_params["key"]
-    try:
-        _delete_dashboard_state(key)
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=404)
-    return JSONResponse({"success": True})
+    return await _delete_dashboard_state_endpoint_impl(
+        request,
+        delete_state=_delete_dashboard_state,
+    )
 
 
 def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]) -> None:

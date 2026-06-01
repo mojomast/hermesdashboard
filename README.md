@@ -196,7 +196,7 @@ Hermes Dashboard is being decomposed with vocabulary-first bounded contexts whil
 
 ```text
 app.py bootstrap / route table
-  -> dashboard_backend/routes/* request wrappers (planned/gradual)
+  -> dashboard_backend/routes/* request wrappers (dashboard-state extracted; broader contexts gradual)
   -> dashboard_backend/services/* bounded-context services
   -> dashboard_backend/core/* shared path/config/response helpers (planned)
 ```
@@ -205,7 +205,7 @@ During this refactor, `app.py` remains the Starlette bootstrap, route registry, 
 
 Extracted backend modules so far:
 
-- `dashboard_backend/services/dashboard_state.py` owns SQLite persistence for browser/dashboard state projections; `app.py` keeps `_load_dashboard_state`, `_save_dashboard_state`, `_delete_dashboard_state`, and related private wrappers.
+- `dashboard_backend/services/dashboard_state.py` owns SQLite persistence for browser/dashboard state projections; `dashboard_backend/routes/dashboard_state.py` owns request parsing/JSON envelopes for `GET`/`PUT`/`DELETE /api/dashboard-state/{key}`; `app.py` keeps `_load_dashboard_state`, `_save_dashboard_state`, `_delete_dashboard_state`, related private wrappers, and app-level endpoint names for route-table/monkeypatch compatibility.
 - `dashboard_backend/services/token_usage.py` owns read-only token/cost aggregation ledgers and projections; `/api/token-usage` and app-level helper names remain stable.
 - `dashboard_backend/services/message_board.py` owns message-board SQLite post/message persistence; `/api/message-board*` route handlers and Hermes reply generation remain in `app.py` for compatibility.
 - `dashboard_backend/services/scrolls.py` owns read-only Scrolls snapshot projection delegation; `GET /api/scrolls/snapshot` remains wrapped in `app.py` and injects the configured Vesuvius project root at call time.

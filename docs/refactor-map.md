@@ -21,8 +21,9 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 ## Backend extraction passes completed
 
 - `dashboard_backend/services/dashboard_state.py` owns dashboard-state SQLite schema creation and load/save/delete persistence.
-  - `app.py` keeps compatibility wrappers (`_load_dashboard_state`, `_save_dashboard_state`, etc.) that pass live `DASHBOARD_STATE_DB_PATH`, `DASHBOARD_STATE_LOCK`, and `DASHBOARD_STATE_KEYS` into the service so existing monkeypatch-based tests and callers keep working.
-  - Targeted regression gate: `python -m pytest tests/test_dashboard_state_persistence.py`.
+  - `dashboard_backend/routes/dashboard_state.py` owns `/api/dashboard-state/{key}` request parsing, JSON response envelopes, and `ValueError` to `404` mapping.
+  - `app.py` keeps compatibility wrappers (`_load_dashboard_state`, `_save_dashboard_state`, etc.) plus app-level endpoint names (`get_dashboard_state`, `set_dashboard_state`, `delete_dashboard_state`) that pass live `DASHBOARD_STATE_DB_PATH`, `DASHBOARD_STATE_LOCK`, and `DASHBOARD_STATE_KEYS` into the service so existing monkeypatch-based tests and callers keep working.
+  - Targeted regression gate: `python -m pytest tests/test_dashboard_state_persistence.py tests/test_dashboard_state_routes.py`.
 - `dashboard_backend/services/token_usage.py` owns token usage constants, read-only aggregation helpers, and token/cost projection construction.
   - `app.py` keeps compatibility wrappers (`_empty_token_usage_window`, `_token_usage_total`, `_aggregate_token_usage_api_calls`, `_aggregate_token_usage_sessions`, `get_token_usage_summary`) and the `/api/token-usage` route wrapper.
   - Targeted regression gate: `python -m pytest tests/test_token_usage_dashboard.py`.
@@ -44,7 +45,7 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 
 - Split `app.py` by stable bounded contexts without changing public API paths:
   - application/bootstrap and route registration
-  - dashboard state persistence
+  - dashboard state persistence and route-wrapper parsing/envelopes
   - sessions/files/memory/skills/games APIs
   - diagnostics and execution trace APIs
   - autonomous development/self-improvement/scrolls APIs
