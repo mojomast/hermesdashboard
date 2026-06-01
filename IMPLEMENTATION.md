@@ -192,6 +192,19 @@ The live subagent drawer lets users inspect child agent sessions in real time wi
 - child/review linkage outside persisted `parent_session_id` still relies on current payload shape and has not become a full subagent event graph
 - live SSE rendering and historical hydration are now aligned at the assistant-step reducer level, but not yet backed by a Phase 3 monotonic event store
 
+## Dashboard Chat / IRC Bridge
+
+Dashboard Chat is an optional external IRC bridge, not a Hermes execution run and not a durable Message Board thread.
+
+Current behavior:
+
+- `dashboard-chat` is registered in nav/mobile/settings but omitted from `DEFAULT_VISIBLE_DASHBOARD_TABS`, so new installs can enable it explicitly from Dashboard Settings.
+- `GET /api/dashboard-chat/status` is read-only and reports sanitized hosts/port/TLS/channel/identity plus `channel_key_configured` without returning the key.
+- `/api/dashboard-chat/ws` is registered when Starlette websocket routes are available, but it is inert until `dashboard_chat.enabled` is true and the user clicks Connect.
+- The bridge defaults to privacy-safe identity strings (`HermesDash*`, `hermesdash`, `Hermes Dashboard`) instead of local usernames/hostnames.
+- The websocket proxy is jailed to `#hermesdashboard`; arbitrary raw IRC/JOIN commands are blocked and PMs are limited to self or users present in the channel.
+- Tests use fake websocket/network seams and prove disabled Dashboard Chat does not call `asyncio.open_connection`.
+
 ## Auto-Start UX
 
 Preferred installer behavior:

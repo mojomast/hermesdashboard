@@ -1,0 +1,54 @@
+        <!-- Dashboard Chat / IRC Panel -->
+        <div class="panel" id="dashboard-chat-panel">
+            <div class="panel-header-row">
+                <div>
+                    <h2>Dashboard Chat / IRC</h2>
+                    <p class="section-subtitle">Optional IRC bridge for people who explicitly enable it. This is separate from Hermes Chat and Message Board.</p>
+                </div>
+                <button class="btn" type="button" onclick="loadDashboardChat(true)">Refresh Status</button>
+            </div>
+            <div class="dashboard-chat-grid">
+                <section class="config-section dashboard-chat-card">
+                    <div class="config-section-header">
+                        <div>
+                            <h3>Connection Status</h3>
+                            <p>Opening this tab only reads local status. The websocket connects to IRC only after the bridge is enabled and Connect is clicked.</p>
+                        </div>
+                    </div>
+                    <div id="dashboard-chat-status" class="dashboard-chat-status">Dashboard Chat status not loaded.</div>
+                    <div class="dashboard-chat-actions">
+                        <button class="btn primary" type="button" id="dashboard-chat-connect-btn" onclick="connectDashboardChat()">Connect</button>
+                        <button class="btn" type="button" onclick="disconnectDashboardChat()">Disconnect</button>
+                        <button class="btn" type="button" onclick="openDashboardChatPmTab('self')">PM yourself</button>
+                    </div>
+                    <div class="dashboard-chat-tabs" id="dashboard-chat-targets">
+                        <button class="dashboard-chat-tab active" type="button" data-target="#hermesdashboard">#hermesdashboard</button>
+                    </div>
+                    <div id="dashboard-chat-log" class="dashboard-chat-log" aria-live="polite"></div>
+                    <div class="dashboard-chat-compose">
+                        <input id="dashboard-chat-message" type="text" placeholder="Message #hermesdashboard after server-confirmed join">
+                        <button class="btn" type="button" onclick="sendDashboardChatMessage()">Send</button>
+                    </div>
+                </section>
+                <section class="config-section dashboard-chat-card">
+                    <div class="config-section-header">
+                        <div>
+                            <h3>Dashboard Chat / IRC Settings</h3>
+                            <p>Defaults avoid local usernames, hostnames, and personal environment details. Channel keys are write-only here; blank means unchanged.</p>
+                        </div>
+                    </div>
+                    <div class="config-fields">
+                        <div class="config-field"><label>Enabled</label><select id="dashboard-chat-enabled"><option value="false">Disabled</option><option value="true">Enabled</option></select></div>
+                        <div class="config-field"><label>Hosts</label><input id="dashboard-chat-hosts" type="text" placeholder="irc.ussyco.de,irc.ussy.host"></div>
+                        <div class="config-field"><label>Port</label><input id="dashboard-chat-port" type="number" min="1" max="65535" value="6697"></div>
+                        <div class="config-field"><label>TLS</label><select id="dashboard-chat-tls"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+                        <div class="config-field"><label>Nick Prefix</label><input id="dashboard-chat-nick-prefix" type="text" placeholder="HermesDash"></div>
+                        <div class="config-field"><label>Ident</label><input id="dashboard-chat-ident" type="text" placeholder="hermesdash"></div>
+                        <div class="config-field"><label>Realname / GECOS</label><input id="dashboard-chat-realname" type="text" placeholder="Hermes Dashboard"></div>
+                        <div class="config-field"><label>Channel Key</label><input id="dashboard-chat-channel-key" type="password" placeholder="leave blank to preserve existing key"></div>
+                    </div>
+                    <div class="section-actions"><button class="btn primary" type="button" onclick="saveDashboardChatSettings()">Save Dashboard Chat Settings</button></div>
+                    <p class="config-help">Policy: jailed to <code>#hermesdashboard</code>; Blocked: arbitrary JOIN/RAW commands are not proxied; PMs are limited to yourself or users present in the channel.</p>
+                </section>
+            </div>
+        </div>

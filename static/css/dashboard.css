@@ -4917,3 +4917,76 @@ body.dnd-popout-mode #dnd-panel { display: block !important; min-height: calc(10
     .hermes-rogue-shell { grid-template-columns: 1fr; }
     .hermes-rogue-map { --rogue-cell-size: clamp(14px, 4vw, 22px); }
 }
+
+/* Dashboard Chat / IRC */
+.dashboard-chat-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+    gap: 1rem;
+}
+.dashboard-chat-card { margin-bottom: 0; }
+.dashboard-chat-status {
+    background: var(--input-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 0.9rem;
+    color: var(--text);
+    line-height: 1.6;
+}
+.dashboard-chat-actions,
+.dashboard-chat-tabs,
+.dashboard-chat-compose {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 0.8rem;
+}
+.dashboard-chat-tab {
+    border: 1px solid var(--primary-border);
+    background: var(--primary-dim);
+    color: var(--primary);
+    border-radius: 999px;
+    padding: 0.35rem 0.75rem;
+    cursor: pointer;
+}
+.dashboard-chat-tab.active {
+    background: rgba(255, 215, 0, 0.28);
+}
+.dashboard-chat-tab.blink {
+    animation: dashboard-chat-blink 1s ease-in-out infinite;
+}
+@keyframes dashboard-chat-blink {
+    0%, 100% { box-shadow: 0 0 0 rgba(255, 215, 0, 0); }
+    50% { box-shadow: 0 0 14px rgba(255, 215, 0, 0.45); }
+}
+.dashboard-chat-log {
+    min-height: 220px;
+    max-height: 360px;
+    overflow-y: auto;
+    margin-top: 0.8rem;
+    background: rgba(0,0,0,0.28);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 0.75rem;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+    font-size: 0.85rem;
+}
+.dashboard-chat-log-row { color: var(--text); margin-bottom: 0.35rem; }
+.dashboard-chat-log-row.info { color: var(--info); }
+.dashboard-chat-log-row.warn { color: var(--warning); }
+.dashboard-chat-log-row.error { color: var(--error); }
+.dashboard-chat-compose input {
+    flex: 1;
+    min-width: 220px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 0.55rem 0.7rem;
+}
+@media (max-width: 900px) {
+    .dashboard-chat-grid { grid-template-columns: 1fr; }
+}
+/* /Dashboard Chat / IRC */
+

@@ -440,6 +440,7 @@ const EXPERIMENTAL_LOCAL_TOOLING_WARNING = "Experimental: built on the maintaine
 const DASHBOARD_TABS = [
     { id: 'chat', label: 'Chat', locked: true },
     { id: 'message-board', label: 'Message Board' },
+    { id: 'dashboard-chat', label: 'Dashboard Chat', experimental: true, warning: 'Optional IRC bridge: connects to external IRC hosts only after it is explicitly enabled and connected.' },
     { id: 'config', label: 'Config' },
     { id: 'secrets', label: 'Secrets' },
     { id: 'sessions', label: 'Sessions' },
@@ -3868,6 +3869,7 @@ function switchToPanel(panel) {
         log('inf', 'Lazy-loading panel: ' + panel);
         switch(panel) {
             case 'message-board': loadMessageBoardPosts(); break;
+            case 'dashboard-chat': loadDashboardChat(); break;
             case 'config': loadSettings(); break;
             case 'secrets': loadSecrets(); break;
             case 'sessions': loadSessions(); loadSessionSources(); break;
@@ -3890,6 +3892,8 @@ function switchToPanel(panel) {
         loadAgentObservability();
     } else if (panel === 'message-board') {
         loadMessageBoardPosts();
+    } else if (panel === 'dashboard-chat') {
+        loadDashboardChat();
     } else if (panel === 'games') {
         loadGames();
     } else if (panel === 'roguelike') {
@@ -3928,7 +3932,7 @@ function handleHashChange() {
     const parts = hash.split('/');
     const panel = parts[0];
 
-    const validPanels = ['chat','message-board','config','secrets','sessions','agent-observability','memory','skills','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','scrolls','cron','schedule','graph'];
+    const validPanels = ['chat','message-board','dashboard-chat','config','secrets','sessions','agent-observability','memory','skills','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','scrolls','cron','schedule','graph'];
     if (!validPanels.includes(panel) || !isDashboardTabVisible(panel)) {
         switchToPanel('chat');
         return;
@@ -3949,7 +3953,7 @@ function updateBreadcrumbs(panel, detail) {
     const bc = document.getElementById('breadcrumbs');
     if (!bc) return;
 
-    const names = { chat:'Chat', 'message-board':'Message Board', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
+    const names = { chat:'Chat', 'message-board':'Message Board', 'dashboard-chat':'Dashboard Chat', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
 
     if (detail) {
         bc.className = 'breadcrumbs visible';
@@ -3980,6 +3984,142 @@ async function fetchJsonOrThrow(url, options = {}) {
         throw new Error(message);
     }
     return data;
+}
+
+let dashboardChatSocket = null;
+let dashboardChatJoined = false;
+let dashboardChatActiveTarget = '#hermesdashboard';
+
+function appendDashboardChatLog(text, className = '') {
+    const logEl = document.getElementById('dashboard-chat-log');
+    if (!logEl) return;
+    const row = document.createElement('div');
+    row.className = className ? `dashboard-chat-log-row ${className}` : 'dashboard-chat-log-row';
+    row.textContent = text;
+    logEl.appendChild(row);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+function renderDashboardChatStatus(data = {}) {
+    const statusEl = document.getElementById('dashboard-chat-status');
+    if (statusEl) {
+        const hosts = (data.hosts || []).join(', ') || 'not configured';
+        statusEl.innerHTML = `
+            <div><strong>Status:</strong> ${data.enabled ? 'enabled' : 'disabled'} · ${data.connected ? 'connected' : 'disconnected'}</div>
+            <div><strong>Channel:</strong> ${escapeHtml(data.channel || '#hermesdashboard')}</div>
+            <div><strong>Hosts:</strong> ${escapeHtml(hosts)} · <strong>Port:</strong> ${escapeHtml(String(data.port || ''))} · <strong>TLS:</strong> ${data.tls ? 'yes' : 'no'}</div>
+            <div><strong>Privacy identity:</strong> ${escapeHtml(data.default_nick_prefix || 'HermesDash')}* / ${escapeHtml(data.ident || 'hermesdash')} / ${escapeHtml(data.realname || 'Hermes Dashboard')}</div>
+            <div><strong>Channel key:</strong> ${data.channel_key_configured ? 'configured' : 'not configured'} · <strong>Policy:</strong> ${escapeHtml(data.jail || '')}</div>
+        `;
+    }
+    const connectBtn = document.getElementById('dashboard-chat-connect-btn');
+    if (connectBtn) connectBtn.disabled = !data.enabled || !(data.hosts || []).length;
+}
+
+function hydrateDashboardChatSettings(status = {}) {
+    const cfg = settingsData?.config?.dashboard_chat || {};
+    const setValue = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    };
+    setValue('dashboard-chat-enabled', String(Boolean(cfg.enabled)));
+    setValue('dashboard-chat-hosts', Array.isArray(cfg.hosts) ? cfg.hosts.join(',') : ((status.hosts || []).join(',') || ''));
+    setValue('dashboard-chat-port', String(cfg.port || status.port || 6697));
+    setValue('dashboard-chat-tls', String(cfg.tls ?? status.tls ?? true));
+    setValue('dashboard-chat-nick-prefix', cfg.default_nick_prefix || status.default_nick_prefix || 'HermesDash');
+    setValue('dashboard-chat-ident', cfg.ident || status.ident || 'hermesdash');
+    setValue('dashboard-chat-realname', cfg.realname || status.realname || 'Hermes Dashboard');
+}
+
+async function loadDashboardChat(force = false) {
+    if (force) invalidateCache('/api/dashboard-chat/status');
+    const status = force ? await fetchJsonOrThrow('/api/dashboard-chat/status') : await cachedFetch('/api/dashboard-chat/status', 10000);
+    renderDashboardChatStatus(status);
+    if (!settingsData) {
+        settingsData = await cachedFetch('/api/settings', 15000);
+    }
+    hydrateDashboardChatSettings(status);
+    appendDashboardChatLog(status.enabled ? 'Dashboard Chat is enabled. Connect when ready.' : 'Dashboard Chat is disabled. Enable it in settings to connect.', status.enabled ? 'info' : 'warn');
+    return status;
+}
+
+async function saveDashboardChatSettings() {
+    const key = getElementValue('dashboard-chat-channel-key', '').trim();
+    const updates = {
+        'dashboard_chat.enabled': getBooleanSelectValue('dashboard-chat-enabled', false),
+        'dashboard_chat.hosts': getElementValue('dashboard-chat-hosts', '').split(',').map(item => item.trim()).filter(Boolean),
+        'dashboard_chat.port': getNumberValue('dashboard-chat-port', 6697),
+        'dashboard_chat.tls': getBooleanSelectValue('dashboard-chat-tls', true),
+        'dashboard_chat.default_nick_prefix': getElementValue('dashboard-chat-nick-prefix', 'HermesDash').trim(),
+        'dashboard_chat.ident': getElementValue('dashboard-chat-ident', 'hermesdash').trim(),
+        'dashboard_chat.realname': getElementValue('dashboard-chat-realname', 'Hermes Dashboard').trim(),
+    };
+    if (key) updates['dashboard_chat.channel_key'] = key;
+    await postConfigUpdates(updates, 'Dashboard Chat / IRC settings saved');
+    const keyEl = document.getElementById('dashboard-chat-channel-key');
+    if (keyEl) keyEl.value = '';
+    await loadDashboardChat(true);
+}
+
+function openDashboardChatPmTab(name) {
+    const target = name === 'self' ? 'self' : String(name || '').trim();
+    if (!target) return;
+    dashboardChatActiveTarget = target;
+    const targetsEl = document.getElementById('dashboard-chat-targets');
+    if (!targetsEl) return;
+    let tab = targetsEl.querySelector(`[data-target="${CSS.escape(target)}"]`);
+    if (!tab) {
+        tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'dashboard-chat-tab blink';
+        tab.dataset.target = target;
+        tab.textContent = target === 'self' ? 'PM yourself' : `PM ${target}`;
+        tab.onclick = () => openDashboardChatPmTab(target);
+        targetsEl.appendChild(tab);
+    }
+    targetsEl.querySelectorAll('.dashboard-chat-tab').forEach(item => item.classList.toggle('active', item === tab));
+    tab.classList.remove('blink');
+}
+
+function connectDashboardChat() {
+    if (dashboardChatSocket && dashboardChatSocket.readyState === WebSocket.OPEN) return;
+    dashboardChatSocket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/dashboard-chat/ws');
+    appendDashboardChatLog('Connected to dashboard IRC bridge. Waiting for IRC registration', 'info');
+    dashboardChatSocket.onmessage = (event) => {
+        let data = {};
+        try { data = JSON.parse(event.data); } catch (error) { data = { type: 'raw', text: event.data }; }
+        if (data.status === 'joined') dashboardChatJoined = true;
+        if (data.type === 'message' || data.type === 'notice') appendDashboardChatLog(`${data.private ? 'PM ' : ''}${data.from || '?'}: ${data.text || ''}`);
+        else appendDashboardChatLog(data.text || data.status || data.type || 'event', data.type === 'error' ? 'error' : 'info');
+        if (data.from && data.from !== 'self') openDashboardChatPmTab(data.from);
+    };
+    dashboardChatSocket.onclose = () => appendDashboardChatLog('Dashboard Chat disconnected.', 'warn');
+    dashboardChatSocket.onerror = () => appendDashboardChatLog('Dashboard Chat websocket error.', 'error');
+}
+
+function disconnectDashboardChat() {
+    if (dashboardChatSocket) dashboardChatSocket.close();
+    dashboardChatSocket = null;
+    dashboardChatJoined = false;
+}
+
+function sendDashboardChatMessage() {
+    const input = document.getElementById('dashboard-chat-message');
+    const text = (input?.value || '').trim();
+    if (!text || !dashboardChatSocket || dashboardChatSocket.readyState !== WebSocket.OPEN) return;
+    const target = dashboardChatActiveTarget || '#hermesdashboard';
+    if (target === '#hermesdashboard') {
+        if (!dashboardChatJoined) {
+            appendDashboardChatLog('Wait for the server-confirmed #hermesdashboard join before sending.', 'warn');
+            return;
+        }
+        dashboardChatSocket.send(JSON.stringify({ type: 'say', text }));
+    } else if (target === 'self') {
+        dashboardChatSocket.send(JSON.stringify({ type: 'selfpm', text }));
+    } else {
+        dashboardChatSocket.send(JSON.stringify({ type: 'pm', target, text }));
+    }
+    if (input) input.value = '';
 }
 
 let messageBoardSelectedPostId = null;

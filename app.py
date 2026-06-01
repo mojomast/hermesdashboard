@@ -56,10 +56,25 @@ except Exception:  # Lightweight test stubs may omit StreamingResponse.
     StreamingResponse = PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 
+from dashboard_backend.routes.dashboard_chat import (
+    dashboard_chat_status_endpoint as _dashboard_chat_status_endpoint_impl,
+    dashboard_chat_websocket_endpoint as _dashboard_chat_websocket_endpoint_impl,
+)
 from dashboard_backend.routes.dashboard_state import (
     delete_dashboard_state_endpoint as _delete_dashboard_state_endpoint_impl,
     get_dashboard_state_endpoint as _get_dashboard_state_endpoint_impl,
     set_dashboard_state_endpoint as _set_dashboard_state_endpoint_impl,
+)
+from dashboard_backend.services.dashboard_chat import (
+    _dashboard_chat_runtime_config as _dashboard_chat_runtime_config_impl,
+    _dashboard_chat_status_payload as _dashboard_chat_status_payload_impl,
+    _dashboard_chat_truncate_message as _dashboard_chat_truncate_message_impl,
+    _dashboard_chat_user_command as _dashboard_chat_user_command_impl,
+    _parse_irc_message as _parse_irc_message_impl,
+    _parse_irc_prefix as _parse_irc_prefix_impl,
+    _sanitize_dashboard_chat_identity_token as _sanitize_dashboard_chat_identity_token_impl,
+    _sanitize_dashboard_chat_nick as _sanitize_dashboard_chat_nick_impl,
+    _sanitize_dashboard_chat_pm_target as _sanitize_dashboard_chat_pm_target_impl,
 )
 from dashboard_backend.services.dashboard_state import (
     dashboard_state_connect as _dashboard_state_connect_impl,
@@ -162,6 +177,16 @@ except Exception:
         },
         "session_reset": {"mode": "both", "idle_minutes": 1440, "at_hour": 4},
         "skills": {"external_dirs": [], "disabled": [], "creation_nudge_interval": 15},
+        "dashboard_chat": {
+            "enabled": False,
+            "hosts": ["irc.ussyco.de", "irc.ussy.host"],
+            "port": 6697,
+            "tls": True,
+            "channel_key": "",
+            "default_nick_prefix": "HermesDash",
+            "ident": "hermesdash",
+            "realname": "Hermes Dashboard",
+        },
         "platform_toolsets": {},
     }
     OPTIONAL_ENV_VARS = {
@@ -601,6 +626,56 @@ def _sanitize_chat_messages(messages: list) -> list:
             continue
         sanitized.append({"role": role, "content": content})
     return sanitized
+
+
+def _sanitize_dashboard_chat_identity_token(value, fallback, max_len=32):
+    return _sanitize_dashboard_chat_identity_token_impl(value, fallback, max_len)
+
+
+def _dashboard_chat_runtime_config():
+    return _dashboard_chat_runtime_config_impl(get_config())
+
+
+def _sanitize_dashboard_chat_nick(value, prefix=None):
+    return _sanitize_dashboard_chat_nick_impl(value, prefix)
+
+
+def _dashboard_chat_user_command(nick, config=None):
+    return _dashboard_chat_user_command_impl(nick, config or _dashboard_chat_runtime_config())
+
+
+def _dashboard_chat_truncate_message(value):
+    return _dashboard_chat_truncate_message_impl(value)
+
+
+def _sanitize_dashboard_chat_pm_target(value):
+    return _sanitize_dashboard_chat_pm_target_impl(value)
+
+
+def _parse_irc_prefix(line):
+    return _parse_irc_prefix_impl(line)
+
+
+def _parse_irc_message(line, current_nick=None):
+    return _parse_irc_message_impl(line, current_nick)
+
+
+def _dashboard_chat_status_payload():
+    return _dashboard_chat_status_payload_impl(get_config())
+
+
+async def dashboard_chat_status_endpoint(request):
+    return await _dashboard_chat_status_endpoint_impl(
+        request,
+        status_payload=_dashboard_chat_status_payload,
+    )
+
+
+async def dashboard_chat_websocket_endpoint(websocket):
+    return await _dashboard_chat_websocket_endpoint_impl(
+        websocket,
+        runtime_config=_dashboard_chat_runtime_config,
+    )
 
 
 def _log_stream(run_id: str, message: str) -> None:
@@ -1899,6 +1974,15 @@ def _resolved_platform_toolsets(config: dict) -> dict[str, list[str]]:
     return resolved
 
 
+def _settings_safe_config(config: dict) -> dict:
+    safe = json.loads(json.dumps(config or {}))
+    dashboard_chat = safe.get("dashboard_chat")
+    if isinstance(dashboard_chat, dict) and dashboard_chat.get("channel_key"):
+        dashboard_chat["channel_key"] = ""
+        dashboard_chat["channel_key_configured"] = True
+    return safe
+
+
 def _settings_payload() -> dict:
     effective = get_config()
     raw = get_raw_config()
@@ -1935,8 +2019,8 @@ def _settings_payload() -> dict:
             ),
             "secrets_by_category": by_category,
         },
-        "config": effective,
-        "raw_config": raw,
+        "config": _settings_safe_config(effective),
+        "raw_config": _settings_safe_config(raw),
         "model": {
             "default": model.get("default", ""),
             "provider": model.get("provider", "auto"),
@@ -9477,6 +9561,7 @@ routes = [
     Route("/api/dashboard/update", dashboard_auto_update_endpoint, methods=["POST"]),
     Route("/health", health),
     Route("/api/status", get_status),
+    Route("/api/dashboard-chat/status", dashboard_chat_status_endpoint),
     Route("/api/config", get_config_endpoint),
     Route("/api/settings", get_settings),
     Route("/api/config", update_config, methods=["POST"]),
@@ -9584,6 +9669,7 @@ routes = [
 ]
 
 if WebSocketRoute is not None:
+    routes.insert(-1, WebSocketRoute("/api/dashboard-chat/ws", dashboard_chat_websocket_endpoint, name="dashboard_chat_ws"))
     routes.insert(-1, WebSocketRoute("/pokemon/ws", pokemon_websocket_proxy_endpoint, name="pokemon_ws"))
     routes.insert(-1, WebSocketRoute("/pokemon/watch/ws", pokemon_websocket_proxy_endpoint, name="pokemon_watch_ws"))
 

@@ -142,6 +142,7 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - **emergency-stop live runs** — stop controls for in-flight chat runs queue `action: stop` through the active session or run-id fallback
 - **Cmd+K command palette** — keyboard-driven command palette for quick navigation and recent session access
 - **threaded Message Board** — forum-style threads with persistent posts, per-thread replies, and Hermes responses scoped to each thread's own context
+- **optional Dashboard Chat / IRC bridge** — hidden-by-default IRC panel that users can enable explicitly; defaults avoid local usernames/hostnames and jail traffic to `#hermesdashboard`
 - hardened dashboard-to-Hermes streaming bridge for long tool-heavy runs, including tool progress forwarding, heartbeats, clean disconnect handling, and sanitized chat history
 
 ## Message Board
@@ -164,6 +165,29 @@ Relevant endpoints:
 - `POST /api/message-board` — create a thread and request the first Hermes reply
 - `GET /api/message-board/{post_id}` — fetch one thread with messages
 - `POST /api/message-board/{post_id}/messages` — add a thread reply, optionally asking Hermes to respond
+
+## Dashboard Chat / IRC
+
+Dashboard Chat is an optional IRC bridge separate from the main Hermes Chat and the persistent Message Board. It is registered as a hidden-by-default tab, so fresh installs only see it after the user enables **Dashboard Chat** from Dashboard Settings.
+
+Safety and privacy defaults:
+
+- Opening the tab reads `GET /api/dashboard-chat/status`; it does not connect to IRC.
+- The websocket `/api/dashboard-chat/ws` attempts IRC network access only after `dashboard_chat.enabled` is true and the user clicks **Connect**.
+- Default identity strings are generic (`HermesDash*`, `hermesdash`, `Hermes Dashboard`) and do not use local usernames or hostnames.
+- The status endpoint reports only `channel_key_configured`; it does not return the channel key.
+- The bridge is jailed to `#hermesdashboard`; arbitrary raw IRC/JOIN commands are blocked, and PMs are limited to yourself or users present in the channel.
+
+Relevant config keys:
+
+- `dashboard_chat.enabled`
+- `dashboard_chat.hosts`
+- `dashboard_chat.port`
+- `dashboard_chat.tls`
+- `dashboard_chat.channel_key`
+- `dashboard_chat.default_nick_prefix`
+- `dashboard_chat.ident`
+- `dashboard_chat.realname`
 
 ## Streaming Reliability
 
