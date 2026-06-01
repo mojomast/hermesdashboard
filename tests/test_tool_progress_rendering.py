@@ -1,9 +1,4 @@
-from pathlib import Path
-
 from tests.dashboard_sources import dashboard_source
-
-
-DASHBOARD_HTML = Path(__file__).resolve().parents[1] / "templates" / "index.html"
 
 
 def test_unmatched_tool_progress_is_retained_for_later_promotion_but_not_rendered_as_card():

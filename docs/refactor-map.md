@@ -37,11 +37,19 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 - Add route-registration tests before each extraction to compare the route table before/after each move.
 - Prefer small modules with pure helpers first, then endpoint moves once imports and monkeypatch seams are clear.
 
+## Frontend template partial pass completed
+
+- `templates/index.html` is now a Jinja shell that includes dashboard partials from `templates/dashboard/partials/`.
+- Shell/navigation partials own head assets, top navigation, mobile navigation, modal overlays, the session drawer, and the classic dashboard script tag.
+- Panel markup moved to `templates/dashboard/partials/panels/` with one file per dashboard panel while preserving panel IDs and `data-panel` values.
+- Tests now render the Jinja template before inspecting dashboard markup, then concatenate extracted CSS/JS for source-contract checks.
+- Compatibility constraints remain: `/static/js/dashboard.js` is still a classic deferred script, `type="module"` is not used, and inline handler globals are preserved.
+
 ## Frontend follow-up plan
 
 - Keep globals stable while extracting by feature area; avoid `type="module"` until inline handlers are removed or explicitly bridged.
-- Add a small asset-source helper for tests that need to inspect dashboard markup plus extracted CSS/JS.
-- Move feature-specific JavaScript into namespace-like classic scripts only after dependencies are mapped.
+- CSS next safest pass: mechanically split order-preserving static imports, starting with self-contained/bracketed blocks such as graph, command palette, interrupt, token-cost, and D&D styles.
+- JavaScript next safest pass: map hoisting/initialization first and move top-level boot into a final classic bootstrap script before splitting feature files.
 - Replace inline event handlers with delegated listeners in later passes, then consider modules/bundling.
 
 ## Guardrails

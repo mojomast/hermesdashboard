@@ -1,0 +1,130 @@
+<!-- Update Instructions Modal -->
+    <div class="modal-overlay" id="update-instructions-modal" onclick="closeUpdateInstructions(event)">
+        <div class="modal update-modal" role="dialog" aria-modal="true" aria-labelledby="update-instructions-title" onclick="event.stopPropagation()">
+            <h3 id="update-instructions-title">Update Hermes Dashboard</h3>
+            <p>Pick the update path that matches how you installed the dashboard. After files update, restart the dashboard process and use <strong>Reload Dashboard</strong> to clear browser cache.</p>
+            <div class="update-options">
+                <div class="update-option-card">
+                    <h4>Dashboard helper</h4>
+                    <p>Use this screen from the gear menu when you forget the steps. You can run a guarded auto-update, or use the copyable manual paths below when you want full control.</p>
+                    <button class="btn primary" id="dashboard-auto-update-button" type="button" onclick="startDashboardAutoUpdate()">Run Auto Update</button>
+                    <p class="message-meta" id="dashboard-auto-update-status">Checks for a clean git checkout, fetches origin, pulls with <code>--ff-only</code>, and installs requirements. It refuses to overwrite local changes.</p>
+                </div>
+                <div class="update-option-card">
+                    <h4>GitHub Desktop or another Git GUI</h4>
+                    <ol>
+                        <li>Open the <code>hermesdashboard</code> repository in your Git app.</li>
+                        <li>Fetch origin, pull the latest <code>main</code>, then restart the dashboard launcher/service.</li>
+                        <li>Return here and click <strong>Reload Dashboard</strong>.</li>
+                    </ol>
+                </div>
+                <div class="update-option-card">
+                    <h4>Download ZIP from GitHub</h4>
+                    <ol>
+                        <li>Open the GitHub repository and choose <strong>Code → Download ZIP</strong>.</li>
+                        <li>Extract it over your dashboard install directory, preserving your local <code>.env.local</code> and launcher scripts.</li>
+                        <li>Restart the dashboard, then reload this page.</li>
+                    </ol>
+                    <p><a href="https://github.com/mojomast/hermesdashboard" target="_blank" rel="noopener noreferrer">Open hermesdashboard on GitHub</a></p>
+                </div>
+                <div class="update-option-card">
+                    <h4>Terminal update</h4>
+                    <p>If you are comfortable with a shell, run this from the install directory:</p>
+                    <div class="update-command">
+                        <code id="dashboard-update-command">git pull --ff-only &amp;&amp; python -m pip install -r requirements.txt</code>
+                        <button class="btn" type="button" onclick="copyDashboardUpdateCommand()">Copy</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" type="button" onclick="hardRefreshDashboard()">Reload Dashboard</button>
+                <button class="btn" type="button" onclick="closeUpdateInstructions()">Close</button>
+            </div>
+        </div>
+    </div>
+
+<!-- Skill Content Modal -->
+        <!-- Skill Content Modal -->
+        <div id="skill-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeSkillModal()">
+            <div class="modal" style="max-width:700px;max-height:80vh;overflow:auto;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <h3 id="skill-modal-title"></h3>
+                    <button onclick="closeSkillModal()" style="background:transparent;border:none;color:var(--text);font-size:1.2rem;cursor:pointer;">&times;</button>
+                </div>
+                <pre id="skill-modal-content" style="white-space:pre-wrap;font-size:0.85rem;background:var(--input-bg);padding:1rem;border-radius:8px;max-height:60vh;overflow:auto;"></pre>
+                <div id="skill-modal-files" style="margin-top:0.75rem;font-size:0.8rem;color:var(--text-dim);"></div>
+            </div>
+        </div>
+
+<!-- Cron Job Modal -->
+        <!-- Cron Job Modal -->
+        <div id="cron-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeCronModal()">
+            <div class="modal" style="max-width:600px;max-height:85vh;overflow:auto;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <h3 id="cron-modal-title">New Cron Job</h3>
+                    <button onclick="closeCronModal()" style="background:transparent;border:none;color:var(--text);font-size:1.2rem;cursor:pointer;">&times;</button>
+                </div>
+                <div class="cron-form">
+                    <input type="hidden" id="cron-job-id">
+                    <label>
+                        <span>Name</span>
+                        <input type="text" id="cron-name" placeholder="job-name" maxlength="200">
+                    </label>
+                    <label>
+                        <span>Schedule</span>
+                        <input type="text" id="cron-schedule" placeholder="every 60m or 0 * * * *">
+                    </label>
+                    <label>
+                        <span>Prompt</span>
+                        <textarea id="cron-prompt" placeholder="Enter the agent prompt..." rows="6" maxlength="5000"></textarea>
+                    </label>
+                    <label>
+                        <span>Deliver</span>
+                        <select id="cron-deliver">
+                            <option value="local">local</option>
+                            <option value="telegram">telegram</option>
+                            <option value="discord">discord</option>
+                            <option value="slack">slack</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>Skills (comma-separated)</span>
+                        <input type="text" id="cron-skills" placeholder="skill1, skill2">
+                    </label>
+                    <label>
+                        <span>Repeat Count (optional)</span>
+                        <input type="number" id="cron-repeat" placeholder="unlimited" min="1">
+                    </label>
+                    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
+                        <button class="btn" onclick="closeCronModal()">Cancel</button>
+                        <button class="btn primary" onclick="saveCronJob()">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+<!-- Command Palette Modal -->
+    <!-- Command Palette Modal -->
+    <div id="cmd-palette-overlay" class="cmd-palette-overlay hidden" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="cmd-palette-modal">
+        <input id="cmd-palette-input" class="cmd-palette-input" type="text" placeholder="Type a command or search sessions..." autocomplete="off" aria-autocomplete="list" aria-controls="cmd-palette-results" />
+        <ul id="cmd-palette-results" class="cmd-palette-results" role="listbox"></ul>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="modal-overlay" id="edit-modal">
+        <div class="modal">
+            <h3>Edit Secret</h3>
+            <input type="password" id="edit-secret-value" placeholder="Enter new value">
+            <div class="modal-buttons">
+                <button class="btn" onclick="closeEditModal()">Cancel</button>
+                <button class="btn primary" onclick="saveEditSecret()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="image-modal" id="image-modal" onclick="closeImageModal()">
+        <img id="image-modal-img" src="" alt="Full size image">
+    </div>

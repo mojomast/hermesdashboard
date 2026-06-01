@@ -1,0 +1,23 @@
+        <!-- Message Board Panel -->
+        <div class="panel" id="message-board-panel">
+            <div class="message-board-layout">
+                <div class="message-board-left">
+                    <div class="message-board-compose">
+                        <h3>Post to Hermes</h3>
+                        <p style="color:var(--text-dim);font-size:0.86rem;margin:0.35rem 0 0.8rem;">Forum-style iteration board: each thread has its own context window. Post, reply, and ask Hermes to continue in-thread.</p>
+                        <form class="message-board-form" id="message-board-form" onsubmit="submitMessageBoardPost(event)">
+                            <input id="message-board-title" type="text" placeholder="Post title" required>
+                            <textarea id="message-board-body" placeholder="What should Hermes think about or iterate on?" required></textarea>
+                            <button class="btn primary" id="message-board-submit" type="submit">Start thread + ask Hermes</button>
+                        </form>
+                    </div>
+                    <div class="message-board-list" id="message-board-list">
+                        <div style="color:var(--text-dim);">Loading posts...</div>
+                    </div>
+                </div>
+                <div class="message-board-thread" id="message-board-thread">
+                    <h3>Message Board</h3>
+                    <p style="color:var(--text-dim);">Select a thread or create a new one. Replies stay scoped to that thread.</p>
+                </div>
+            </div>
+        </div>

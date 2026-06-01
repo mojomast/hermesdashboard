@@ -1,0 +1,13 @@
+        <!-- Skills Panel -->
+        <div class="panel" id="skills-panel">
+            <div class="search-box">
+                <input type="text" id="skill-search" placeholder="Search skills..." oninput="filterSkills()">
+            </div>
+            <div class="sessions-toolbar">
+                <select id="skill-category" onchange="filterSkills()">
+                    <option value="">All Categories</option>
+                </select>
+                <span class="stats" id="skills-stats"></span>
+            </div>
+            <div class="skills-list" id="skills-list"></div>
+        </div>

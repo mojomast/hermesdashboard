@@ -1,0 +1,167 @@
+        <!-- GRAPH_PANEL_START -->
+        <!-- Graph Panel -->
+        <div class="panel" id="graph-panel">
+            <div id="graph-container">
+                <div class="graph-toolbar">
+                    <input type="text" id="graph-search" placeholder="Search nodes... (/)">
+                    <div class="graph-type-toggles">
+                        <button class="type-toggle active" data-type="session" style="--tc: #a855f7" title="Toggle sessions (1)">
+                            <span class="toggle-dot"></span> Sessions <span class="toggle-count" data-count="session">0</span>
+                        </button>
+                        <button class="type-toggle active" data-type="file" style="--tc: #22c55e" title="Toggle files (2)">
+                            <span class="toggle-dot"></span> Files <span class="toggle-count" data-count="file">0</span>
+                        </button>
+                        <button class="type-toggle active" data-type="tool" style="--tc: #f97316" title="Toggle tools (3)">
+                            <span class="toggle-dot"></span> Tools <span class="toggle-count" data-count="tool">0</span>
+                        </button>
+                        <button class="type-toggle active" data-type="model" style="--tc: #06b6d4" title="Toggle models (4)">
+                            <span class="toggle-dot"></span> Models <span class="toggle-count" data-count="model">0</span>
+                        </button>
+                        <button class="type-toggle active" data-type="skill" style="--tc: #ffd700" title="Toggle skills (5)">
+                            <span class="toggle-dot"></span> Skills <span class="toggle-count" data-count="skill">0</span>
+                        </button>
+                    </div>
+                    <div class="graph-degree-filter">
+                        <label class="degree-label">Min <span id="degree-val">0</span></label>
+                        <input type="range" id="graph-degree-slider" min="0" max="20" value="0" class="degree-slider">
+                    </div>
+                    <div class="graph-presets">
+                        <button class="preset-btn active" data-preset="all" title="Show all">All</button>
+                        <button class="preset-btn" data-preset="sessions-models" title="Sessions + Models only">S+M</button>
+                        <button class="preset-btn" data-preset="tool-usage" title="Sessions + Tools">Tools</button>
+                        <button class="preset-btn" data-preset="skills-map" title="Sessions + Skills + Models">Skills</button>
+                    </div>
+                    <label class="graph-toggle-label">
+                        <input type="checkbox" id="graph-toggle-labels" checked> Labels
+                    </label>
+                    <select id="graph-time-scope" class="graph-time-select">
+                        <option value="0.5">Last 30m</option>
+                        <option value="1">Last 1h</option>
+                        <option value="3">Last 3h</option>
+                        <option value="6">Last 6h</option>
+                        <option value="12">Last 12h</option>
+                        <option value="24" selected>Last 24h</option>
+                        <option value="168">Last 7d</option>
+                        <option value="720">Last 30d</option>
+                        <option value="0">All Time</option>
+                    </select>
+                    <button type="button" id="graph-settings-toggle">Settings</button>
+                    <button class="btn" id="graph-reset">Reset</button>
+                    <span id="graph-badge" class="graph-badge"></span>
+                </div>
+                <div id="graph-settings-drawer" class="graph-settings-drawer">
+                    <div class="graph-settings-grid">
+                        <div class="graph-settings-row">
+                            <div class="graph-settings-heading">Graph Settings</div>
+                            <div class="graph-settings-help">Adjust label density, spacing, edges, and panel sizing. Settings are saved in this browser.</div>
+                        </div>
+                        <div class="graph-settings-row inline">
+                            <div>
+                                <label for="graph-setting-label-density">Label Density</label>
+                                <select id="graph-setting-label-density">
+                                    <option value="auto">Auto</option>
+                                    <option value="sparse">Sparse</option>
+                                    <option value="normal">Normal</option>
+                                    <option value="dense">Dense</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="graph-setting-font-family">Font Family</label>
+                                <select id="graph-setting-font-family">
+                                    <option value="system">System Sans</option>
+                                    <option value="sans">UI Sans</option>
+                                    <option value="mono">Monospace</option>
+                                    <option value="serif">Serif</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="graph-settings-row">
+                            <label for="graph-setting-label-font-size">Label Font Size <span class="graph-settings-value" data-setting-value="labelFontSize"></span></label>
+                            <input type="range" id="graph-setting-label-font-size" min="7" max="18" step="1">
+                        </div>
+                        <div class="graph-settings-row">
+                            <label for="graph-setting-label-max-length">Label Max Length <span class="graph-settings-value" data-setting-value="labelMaxLength"></span></label>
+                            <input type="range" id="graph-setting-label-max-length" min="12" max="64" step="1">
+                        </div>
+                        <div class="graph-settings-row inline">
+                            <div>
+                                <label for="graph-setting-node-scale">Node Scale <span class="graph-settings-value" data-setting-value="nodeScale"></span></label>
+                                <input type="range" id="graph-setting-node-scale" min="0.7" max="1.8" step="0.05">
+                            </div>
+                            <div>
+                                <label for="graph-setting-spacing">Spacing <span class="graph-settings-value" data-setting-value="spacing"></span></label>
+                                <input type="range" id="graph-setting-spacing" min="0.7" max="1.8" step="0.05">
+                            </div>
+                        </div>
+                        <div class="graph-settings-row">
+                            <label class="graph-settings-check" for="graph-setting-show-edges">
+                                <input type="checkbox" id="graph-setting-show-edges">
+                                Show edges
+                            </label>
+                        </div>
+                        <div class="graph-settings-row inline">
+                            <div>
+                                <label for="graph-setting-edge-opacity">Edge Opacity <span class="graph-settings-value" data-setting-value="edgeOpacity"></span></label>
+                                <input type="range" id="graph-setting-edge-opacity" min="0.05" max="1" step="0.05">
+                            </div>
+                            <div>
+                                <label for="graph-setting-edge-style">Edge Style</label>
+                                <select id="graph-setting-edge-style">
+                                    <option value="mixed">Mixed</option>
+                                    <option value="solid">Solid</option>
+                                    <option value="dashed">Dashed</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="graph-settings-row">
+                            <span class="graph-settings-heading">Visible Edge Types</span>
+                            <div class="graph-edge-checks">
+                                <label><input type="checkbox" id="graph-setting-edge-accessed"> Files</label>
+                                <label><input type="checkbox" id="graph-setting-edge-used_tool"> Tools</label>
+                                <label><input type="checkbox" id="graph-setting-edge-used_model"> Models</label>
+                                <label><input type="checkbox" id="graph-setting-edge-delegated"> Delegation</label>
+                                <label><input type="checkbox" id="graph-setting-edge-relates_to"> Related Skills</label>
+                                <label><input type="checkbox" id="graph-setting-edge-used_skill"> Session Skills</label>
+                            </div>
+                        </div>
+                        <div class="graph-settings-row inline">
+                            <div>
+                                <label for="graph-setting-motion-mode">Motion</label>
+                                <select id="graph-setting-motion-mode">
+                                    <option value="system">System</option>
+                                    <option value="reduced">Reduced</option>
+                                    <option value="full">Full</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="graph-setting-sidebar-width">Sidebar Width <span class="graph-settings-value" data-setting-value="sidebarWidth"></span></label>
+                                <input type="range" id="graph-setting-sidebar-width" min="280" max="520" step="10">
+                            </div>
+                        </div>
+                        <div class="graph-settings-row">
+                            <label for="graph-setting-floating-panel-width">Floating Panel Width <span class="graph-settings-value" data-setting-value="floatingPanelWidth"></span></label>
+                            <input type="range" id="graph-setting-floating-panel-width" min="360" max="760" step="10">
+                        </div>
+                        <div class="graph-settings-actions">
+                            <button class="btn" type="button" id="graph-settings-reset">Reset Settings</button>
+                            <button class="btn" type="button" id="graph-settings-close">Close</button>
+                        </div>
+                    </div>
+                </div>
+                <canvas id="graph-canvas"></canvas>
+                <div id="graph-tooltip" class="graph-tooltip">
+                    <div class="tt-name"></div>
+                    <div class="tt-type"></div>
+                </div>
+                <div class="graph-legend" id="graph-legend"></div>
+            </div>
+            <div id="graph-sidebar" class="graph-sidebar">
+                <div class="graph-sidebar-header">
+                    <h3 id="sidebar-title">Select a node</h3>
+                    <button class="btn" id="sidebar-close">Close</button>
+                </div>
+                <div id="sidebar-details" class="sidebar-details"></div>
+                <div id="sidebar-content" class="sidebar-content"></div>
+            </div>
+        </div>
+        <!-- GRAPH_PANEL_END -->

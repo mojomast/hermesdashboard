@@ -1,0 +1,57 @@
+        <!-- Self-Improvement Panel -->
+        <div class="panel" id="self-improvement-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Self-Improvement Cockpit</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Run ledger, evidence-gated backlog, and supervisor controls for Hermes improving itself.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadSelfImprovement()">Refresh</button>
+                    <button class="btn" onclick="selfImprovementControl('pause')">Pause Loop</button>
+                    <button class="btn primary" onclick="selfImprovementControl('resume')">Resume Loop</button>
+                    <button class="btn danger" onclick="selfImprovementControl('kill')">Kill-Switch</button>
+                    <button class="btn" onclick="selfImprovementControl('clear_stale_lock', true)">Clear Stale Lock</button>
+                </div>
+            </div>
+            <div class="stats" id="self-improvement-stats"></div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin:1rem 0;">
+                <div class="card" id="self-improvement-supervisor"><h4>Supervisor</h4><p style="color:var(--text-dim);">Loading...</p></div>
+                <div class="card" id="self-improvement-cron-mesh"><h4>Cron Wiring</h4><p style="color:var(--text-dim);">Loading cron mesh...</p></div>
+                <div class="card" id="self-improvement-drift"><h4>Drift / Guardrails</h4><p style="color:var(--text-dim);">Loading drift status...</p></div>
+                <div class="card" id="self-improvement-outbox"><h4>Becomussy Outbox</h4><p style="color:var(--text-dim);">Loading outbox health...</p></div>
+                <div class="card" id="self-improvement-event-coverage"><h4>Queue Event Coverage</h4><p style="color:var(--text-dim);">Loading event coverage...</p></div>
+                <div class="card" id="self-improvement-resume-packet"><h4>Becomussy Resume Packet</h4><p style="color:var(--text-dim);">Loading resume state...</p></div>
+                <div class="card">
+                    <h4>Add Evidence-Gated Candidate</h4>
+                    <form class="message-board-form" onsubmit="submitSelfImprovementCandidate(event)">
+                        <input id="si-candidate-title" type="text" placeholder="Candidate title" required>
+                        <select id="si-candidate-layer" required>
+                            <option value="dashboard_control_surface">dashboard_control_surface</option>
+                            <option value="agent_core">agent_core</option>
+                            <option value="tooling">tooling</option>
+                            <option value="cron_autonomy">cron_autonomy</option>
+                            <option value="memory_becomussy">memory_becomussy</option>
+                            <option value="subagents">subagents</option>
+                            <option value="provider_routing">provider_routing</option>
+                            <option value="testing_verification">testing_verification</option>
+                        </select>
+                        <textarea id="si-candidate-evidence" placeholder="Evidence source" required></textarea>
+                        <textarea id="si-candidate-benefit" placeholder="Expected measurable benefit" required></textarea>
+                        <button class="btn primary" type="submit">Add Candidate</button>
+                    </form>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:1rem;min-height:0;">
+                <div class="card" style="overflow:auto;">
+                    <h4>Run Ledger</h4>
+                    <div id="self-improvement-runs"><p style="color:var(--text-dim);">Loading runs...</p></div>
+                </div>
+                <div class="card" style="overflow:auto;">
+                    <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+                        <h4>Improvement Queue</h4>
+                        <button class="btn" onclick="selectSelfImprovementCandidate()">Select Next</button>
+                    </div>
+                    <div id="self-improvement-queue"><p style="color:var(--text-dim);">Loading candidates...</p></div>
+                </div>
+            </div>
+        </div>

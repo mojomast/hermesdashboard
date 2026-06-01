@@ -1,0 +1,39 @@
+        <!-- D&D Campaigns Panel -->
+        <div class="panel" id="dnd-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Campaigns</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Dashboard-native D&amp;D campaign control: roster, scene state, narration log, and autonomous turns.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadDndCampaigns()">Refresh</button>
+                    <button class="btn primary" id="dnd-popout-btn" onclick="openDndPopout()">Open D&amp;D Pop-out</button>
+                </div>
+            </div>
+            <div class="stats" id="dnd-stats"></div>
+            <div style="display:grid;grid-template-columns:minmax(280px,0.75fr) minmax(0,1.25fr);gap:1rem;margin-top:1rem;min-height:0;">
+                <div style="display:flex;flex-direction:column;gap:1rem;min-height:0;">
+                    <div class="card">
+                        <h4>Create Campaign</h4>
+                        <form class="message-board-form" id="dnd-create-form" onsubmit="createDndCampaign(event)">
+                            <input id="dnd-campaign-name" type="text" placeholder="Campaign name" required>
+                            <textarea id="dnd-campaign-premise" placeholder="Premise, setting, or opening scene"></textarea>
+                            <input id="dnd-campaign-tone" type="text" placeholder="Tone / genre, e.g. gothic frontier, mythic heist">
+                            <select id="dnd-campaign-system"><option value="dnd5e">D&amp;D 5e / SRD-safe</option><option value="fantasy_core">Fantasy core pack</option></select>
+                            <button class="btn primary" id="dnd-create-submit" type="submit">Create Campaign</button>
+                        </form>
+                    </div>
+                    <div class="card" style="overflow:auto;min-height:220px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
+                            <h4>Campaign List</h4>
+                            <button class="btn" onclick="loadDndCampaigns()">Reload</button>
+                        </div>
+                        <div id="dnd-campaign-list" style="margin-top:0.75rem;color:var(--text-dim);">Loading campaigns...</div>
+                    </div>
+                </div>
+                <div class="card" id="dnd-campaign-detail" style="overflow:auto;min-height:520px;">
+                    <h4>Selected Campaign</h4>
+                    <p style="color:var(--text-dim);">Select a campaign or create a new one to manage the scene, roster, and turn log.</p>
+                </div>
+            </div>
+        </div>

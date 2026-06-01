@@ -9,6 +9,55 @@ def test_dashboard_template_links_extracted_static_assets():
     assert '<script src="/static/js/dashboard.js" defer></script>' in html
     assert '<style>' not in html
     assert 'type="module"' not in html
+    assert '{% include' not in html
+
+
+def test_rendered_dashboard_keeps_key_panel_and_route_contracts():
+    html = dashboard_template()
+
+    expected_panel_ids = [
+        "chat-panel",
+        "message-board-panel",
+        "config-panel",
+        "secrets-panel",
+        "sessions-panel",
+        "agent-observability-panel",
+        "memory-panel",
+        "skills-panel",
+        "games-panel",
+        "diagnostics-panel",
+        "dnd-panel",
+        "self-improvement-panel",
+        "autonomous-development-panel",
+        "scrolls-panel",
+        "cron-panel",
+        "schedule-panel",
+        "graph-panel",
+    ]
+    for panel_id in expected_panel_ids:
+        assert f'id="{panel_id}"' in html
+
+    expected_panels = [
+        "chat",
+        "message-board",
+        "config",
+        "secrets",
+        "sessions",
+        "agent-observability",
+        "memory",
+        "skills",
+        "games",
+        "diagnostics",
+        "dnd",
+        "self-improvement",
+        "autonomous-development",
+        "scrolls",
+        "cron",
+        "schedule",
+        "graph",
+    ]
+    for panel in expected_panels:
+        assert f'data-panel="{panel}"' in html
 
 
 def test_extracted_assets_exist_and_keep_expected_contracts():

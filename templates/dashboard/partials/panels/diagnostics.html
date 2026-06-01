@@ -1,0 +1,34 @@
+        <!-- Diagnostics Panel -->
+        <div class="panel" id="diagnostics-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Diagnostics Agent</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Ask Hermes to inspect the live dashboard/Pokemon context, explain failures, and propose safe fixes. Fixes should stay proposal-only until you explicitly approve them.</p>
+                </div>
+                <div class="diagnostics-toolbar">
+                    <button class="btn" onclick="loadDiagnosticsContext()">Gather Context</button>
+                    <button class="btn" onclick="fillDiagnosticsPrompt('stuck')">Stuck Bot</button>
+                    <button class="btn" onclick="fillDiagnosticsPrompt('dashboard')">Dashboard Issue</button>
+                    <button class="btn" onclick="fillDiagnosticsPrompt('fix')">Propose Fix</button>
+                </div>
+            </div>
+            <div class="diagnostics-grid" style="margin-top:1rem;">
+                <div class="card diagnostics-form">
+                    <h4>Ask</h4>
+                    <select id="diagnostics-target">
+                        <option value="pokemon" selected>Pokemon + Hermes Dashboard</option>
+                    </select>
+                    <textarea id="diagnostics-input" placeholder="Example: The bot looks stuck. Diagnose the likely blocker, cite status fields, and propose the safest next action without changing files yet."></textarea>
+                    <button class="btn primary" id="diagnostics-send" onclick="sendDiagnosticsMessage()">Ask Diagnostics Agent</button>
+                    <p style="color:var(--text-dim);font-size:0.8rem;margin:0;">Safety default: observe and propose. Do not ask it to edit, restart, or run commands unless you are ready to approve a specific plan.</p>
+                </div>
+                <div class="card">
+                    <h4>Agent Response</h4>
+                    <div class="diagnostics-output" id="diagnostics-output">No diagnostic run yet.</div>
+                </div>
+                <div class="card" style="grid-column:1 / -1;">
+                    <h4>Latest Context Snapshot</h4>
+                    <div class="diagnostics-context" id="diagnostics-context">Click Gather Context.</div>
+                </div>
+            </div>
+        </div>

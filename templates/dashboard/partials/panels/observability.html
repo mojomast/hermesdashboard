@@ -1,0 +1,26 @@
+        <!-- Agent Observability Panel -->
+        <div class="panel" id="agent-observability-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Agent Ops Radar</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Online research pointed to the best agent dashboards: aggregate health plus trace-level failure exemplars. This radar turns local Hermes sessions into that cockpit.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <select id="agent-observability-window" onchange="loadAgentObservability()">
+                        <option value="6">6h</option>
+                        <option value="24" selected>24h</option>
+                        <option value="72">72h</option>
+                        <option value="168">7d</option>
+                    </select>
+                    <button class="btn" onclick="loadAgentObservability()">Refresh</button>
+                </div>
+            </div>
+            <div class="stats" id="agent-observability-stats"></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,0.9fr);gap:1rem;margin-top:1rem;align-items:start;">
+                <div class="card" id="agent-observability-alerts"><h4>Signals</h4><p style="color:var(--text-dim);">Loading telemetry...</p></div>
+                <div class="card" id="agent-observability-research"><h4>Research Basis</h4><p style="color:var(--text-dim);">Loading...</p></div>
+                <div class="card" id="agent-observability-tools" style="overflow:auto;"><h4>Top Tools</h4><p style="color:var(--text-dim);">Loading tools...</p></div>
+                <div class="card" id="agent-observability-mix" style="overflow:auto;"><h4>Source / Model Mix</h4><p style="color:var(--text-dim);">Loading mix...</p></div>
+                <div class="card" id="agent-observability-traces" style="grid-column:1 / -1;overflow:auto;"><h4>Recent Trace Exemplars</h4><p style="color:var(--text-dim);">Loading traces...</p></div>
+            </div>
+        </div>

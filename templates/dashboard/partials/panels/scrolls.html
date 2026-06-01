@@ -1,0 +1,16 @@
+        <!-- Vesuvius AutoResearch Panel -->
+        <div class="panel" id="scrolls-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h2 style="margin-bottom:0.35rem;">Vesuvius AutoResearch</h2>
+                    <p style="color:var(--text-dim);font-size:0.9rem;max-width:760px;">Vesuvius ink-detection AutoResearch loop: data inventory, cross-scroll experiment leaderboard, configs, cron status, and log tail.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadScrollsResearch()">Refresh</button>
+                    <button class="btn primary" id="scrolls-autoresearch-btn" onclick="triggerScrollsAutoresearch()">Run AutoResearch</button>
+                </div>
+            </div>
+            <div id="scrolls-container">
+                <div style="text-align:center;color:var(--text-dim);padding:2rem;">Loading Vesuvius AutoResearch...</div>
+            </div>
+        </div>

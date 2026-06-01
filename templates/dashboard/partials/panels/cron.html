@@ -1,0 +1,18 @@
+        <!-- Cron Panel -->
+        <div class="panel" id="cron-panel">
+            <div class="cron-toolbar">
+                <div class="search-box">
+                    <input type="text" id="cron-search" placeholder="Search jobs..." oninput="filterCronJobs()">
+                </div>
+                <div class="cron-actions">
+                    <select id="cron-filter" onchange="filterCronJobs()">
+                        <option value="">All Jobs</option>
+                        <option value="enabled">Enabled</option>
+                        <option value="paused">Paused</option>
+                    </select>
+                    <button class="btn primary" onclick="openCronModal()">+ New Job</button>
+                </div>
+            </div>
+            <div class="stats" id="cron-stats"></div>
+            <div class="cron-list" id="cron-list"></div>
+        </div>

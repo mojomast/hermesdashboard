@@ -4,6 +4,8 @@ import sys
 import types
 from pathlib import Path
 
+from tests.dashboard_sources import dashboard_source
+
 
 def _install_framework_stubs() -> None:
     if "starlette.applications" not in sys.modules:
@@ -188,7 +190,7 @@ def test_autonomous_development_api_routes_and_template_are_wired(tmp_path, monk
     assert "/api/autonomous-development/pipelines/{pipeline_id}" in route_paths
     assert "/api/autonomous-development/pipelines/{pipeline_id}/control" in route_paths
 
-    html = (Path(dashboard_app.__file__).parent / "templates" / "index.html").read_text(encoding="utf-8")
+    html = dashboard_source()
     assert 'data-panel="autonomous-development"' in html
     assert 'id="autonomous-development-panel"' in html
     assert "loadAutonomousDevelopment()" in html
