@@ -16,10 +16,11 @@
                         <button class="btn" type="button" onclick="hardRefreshDashboard()">Reload Dashboard</button>
                         <button class="btn" type="button" onclick="openUpdateInstructions()">Update Instructions</button>
                         <button class="btn" type="button" onclick="startDashboardAutoUpdate()">Auto Update</button>
-                        <button class="btn" type="button" onclick="resetDashboardTabs()">Show All Tabs</button>
+                        <button class="btn" type="button" onclick="resetDashboardTabs()">Default Tabs</button>
+                        <button class="btn" type="button" onclick="showAllDashboardTabs()">Show All Tabs</button>
                     </div>
                     <h3>Visible Tabs</h3>
-                    <p>Chat stays visible so there is always a safe fallback tab.</p>
+                    <p>Chat stays visible so there is always a safe fallback tab. Experimental tabs are hidden by default for new installs because they depend on local tooling from the maintainer's own environment.</p>
                     <div class="dashboard-tab-settings" id="dashboard-tab-settings"></div>
                 </div>
             </div>

@@ -1432,6 +1432,123 @@ body {
     border-radius: 12px;
 }
 
+
+.chat-image-btn {
+    min-width: 44px;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--text);
+    cursor: pointer;
+}
+
+.chat-image-btn:hover {
+    border-color: var(--primary-border);
+    background: rgba(255,255,255,0.06);
+}
+
+.chat-attachment-preview-bar {
+    display: none;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem 0;
+    background: var(--bg-card);
+    border-radius: 12px 12px 0 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.chat-attachment-preview-bar.has-attachments {
+    display: flex;
+}
+
+.chat-attachment-preview {
+    position: relative;
+    width: 86px;
+    height: 86px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--input-bg);
+}
+
+.chat-attachment-preview img,
+.chat-message-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.chat-attachment-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    border: none;
+    border-radius: 999px;
+    width: 22px;
+    height: 22px;
+    line-height: 20px;
+    padding: 0;
+    cursor: pointer;
+    background: rgba(0,0,0,0.72);
+    color: #fff;
+    font-weight: bold;
+}
+
+.chat-message-images {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.6rem;
+}
+
+.chat-message-image-wrap {
+    width: min(220px, 100%);
+    max-height: 220px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    background: var(--input-bg);
+    cursor: zoom-in;
+}
+
+.chat-message-image-wrap .chat-message-image {
+    height: auto;
+    max-height: 220px;
+    object-fit: contain;
+}
+
+.dashboard-tab-setting-experimental {
+    align-items: flex-start;
+}
+
+.dashboard-tab-setting-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.dashboard-tab-warning-badge {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    background: rgba(251, 191, 36, 0.16);
+    color: #fbbf24;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.dashboard-tab-warning {
+    display: block;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    line-height: 1.25;
+}
+
 #user-input {
     flex: 1;
     padding: 0.75rem 1rem;

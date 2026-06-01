@@ -31,7 +31,10 @@
                         </div>
                     </details>
                     <div class="chat-container" id="chat"></div>
+                    <div id="chat-attachment-preview-bar" class="chat-attachment-preview-bar" aria-live="polite"></div>
                     <div class="input-container">
+                        <input id="chat-image-input" type="file" accept="image/*" multiple hidden>
+                        <button id="chat-image-btn" class="chat-image-btn" type="button" title="Attach images" aria-label="Attach images">Image</button>
                         <textarea id="user-input" placeholder="Message Hermes..." rows="1"></textarea>
                         <button id="send-btn">Send</button>
                     </div>

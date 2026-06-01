@@ -40,11 +40,17 @@ def test_dashboard_tab_visibility_settings_are_persistent_and_safe():
     html = _html()
 
     assert "DASHBOARD_TAB_SETTINGS_KEY = 'hermes_dashboard_hidden_tabs_v1'" in html
+    assert "DEFAULT_VISIBLE_DASHBOARD_TABS" in html
+    assert "function getDefaultHiddenDashboardTabs()" in html
     assert "function getHiddenDashboardTabs()" in html
+    assert "raw === null" in html
     assert "function setDashboardTabVisible(panel, visible)" in html
     assert "localStorage.setItem(DASHBOARD_TAB_SETTINGS_KEY" in html
     assert "panel === 'chat'" in html
     assert "dashboard-tab-hidden" in html
+    assert "Experimental" in html
+    assert "local tooling" in html
+    assert "showAllDashboardTabs()" in html
 
 
 def test_hidden_tabs_are_respected_by_hash_routing():
@@ -60,5 +66,5 @@ def test_hidden_tabs_are_respected_by_hash_routing():
 def test_scrollprize_tab_is_available_in_dashboard_settings_registry():
     html = _html()
 
-    assert "{ id: 'scrolls', label: 'Vesuvius AutoResearch' }" in html
+    assert "id: 'scrolls', label: 'Vesuvius AutoResearch', experimental: true" in html
     assert 'data-panel="scrolls"' in html

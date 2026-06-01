@@ -71,6 +71,27 @@ def test_extracted_assets_exist_and_keep_expected_contracts():
     assert 'export {' not in js
 
 
+def test_chat_image_paste_contract_is_preserved_across_template_and_assets():
+    html = dashboard_template()
+    css = DASHBOARD_CSS.read_text(encoding="utf-8")
+    js = DASHBOARD_JS.read_text(encoding="utf-8")
+
+    assert 'id="chat-attachment-preview-bar"' in html
+    assert 'id="chat-image-input"' in html
+    assert 'id="chat-image-btn"' in html
+    assert 'accept="image/*"' in html
+    assert '.chat-attachment-preview-bar' in css
+    assert '.chat-attachment-preview' in css
+    assert '.chat-message-image-wrap' in css
+    assert 'function renderUserMessageContent' in js
+    assert 'function handleUserInputPaste' in js
+    assert 'async function attachImageFiles' in js
+    assert 'FileReader' in js
+    assert 'pendingImageAttachments' in js
+    assert "type: 'image_url'" in js
+    assert "userInput.addEventListener('paste', handleUserInputPaste)" in js
+
+
 def test_static_route_is_registered_with_extracted_asset_directory():
     static_routes = [route for route in dashboard_app.routes if getattr(route, "path", None) == "/static"]
     assert len(static_routes) == 1

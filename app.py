@@ -453,9 +453,19 @@ def _sanitize_chat_messages(messages: list) -> list:
         if not isinstance(msg, dict):
             continue
         role = msg.get("role")
-        content = str(msg.get("content") or "")
         if role not in {"system", "user", "assistant", "tool"}:
             continue
+        content = msg.get("content")
+        # Preserve multimodal content arrays with valid text/image_url parts.
+        if isinstance(content, list):
+            valid_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") in {"text", "image_url"}:
+                    valid_parts.append(part)
+            if valid_parts:
+                sanitized.append({"role": role, "content": valid_parts})
+            continue
+        content = str(content or "")
         if role == "assistant" and content.startswith("Error: Hermes gateway"):
             continue
         if not content and role != "assistant":
@@ -1882,12 +1892,18 @@ async def chat_stream(request):
             if not isinstance(msg, dict):
                 continue
             role = str(msg.get("role", "?"))
-            content = str(msg.get("content", "") or "")
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                content_preview = "[multimodal]"
+                content_len = len(json.dumps(content))
+            else:
+                content_preview = str(content or "")[:120]
+                content_len = len(str(content or ""))
             preview.append(
                 {
                     "role": role,
-                    "content": content[:120],
-                    "len": len(content),
+                    "content": content_preview,
+                    "len": content_len,
                 }
             )
         print(

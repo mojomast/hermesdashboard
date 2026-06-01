@@ -52,8 +52,15 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 - JavaScript next safest pass: map hoisting/initialization first and move top-level boot into a final classic bootstrap script before splitting feature files.
 - Replace inline event handlers with delegated listeners in later passes, then consider modules/bundling.
 
+## Frontend parity pass completed
+
+- Restored chat image attachment/paste controls in the refactored chat panel, CSS, JavaScript rendering/sending path, and backend chat-message sanitizer.
+- New installs now default to a safer tab set: chat, message board, config, secrets, sessions, memory, skills, cron, schedule, and graph.
+- Local-tooling-specific tabs remain registered and can be enabled from dashboard settings with experimental warnings: agent observability, games, diagnostics, D&D campaigns, self-improvement, autonomous development, and Vesuvius AutoResearch.
+- Existing users with an explicit `hermes_dashboard_hidden_tabs_v1` localStorage value keep their customized visibility; only browsers with no stored preference receive the safer defaults.
+
 ## Guardrails
 
 - Do not modify `/home/mojo/.hermes/dashboard` or `/home/mojo/.hermes/repos/hermesdashboard`.
 - Preserve existing route paths, response payload shapes, and dashboard global function names.
-- Run `python -m py_compile app.py` and `python -m pytest` after each pass.
+- Run `python -m py_compile app.py`, `node --check static/js/dashboard.js`, and `python -m pytest` after each pass.

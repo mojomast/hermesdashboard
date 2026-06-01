@@ -38,13 +38,23 @@ function toggleTheme() {
     setTheme(next);
 }
 
+function getDefaultHiddenDashboardTabs() {
+    return new Set(
+        DASHBOARD_TABS
+            .filter(tab => !DEFAULT_VISIBLE_DASHBOARD_TABS.has(tab.id))
+            .map(tab => tab.id)
+    );
+}
+
 function getHiddenDashboardTabs() {
     try {
-        const parsed = JSON.parse(localStorage.getItem(DASHBOARD_TAB_SETTINGS_KEY) || '[]');
+        const raw = localStorage.getItem(DASHBOARD_TAB_SETTINGS_KEY);
+        if (raw === null) return getDefaultHiddenDashboardTabs();
+        const parsed = JSON.parse(raw || '[]');
         return new Set(Array.isArray(parsed) ? parsed.filter(id => id !== 'chat') : []);
     } catch (error) {
         console.warn('Failed to parse dashboard tab settings:', error);
-        return new Set();
+        return getDefaultHiddenDashboardTabs();
     }
 }
 
@@ -76,8 +86,11 @@ function renderDashboardTabSettings() {
     if (!container) return;
     const hiddenTabs = getHiddenDashboardTabs();
     container.innerHTML = DASHBOARD_TABS.map(tab => `
-        <label class="dashboard-tab-setting" for="dashboard-tab-${tab.id}">
-            <span>${escapeHtml(tab.label)}</span>
+        <label class="dashboard-tab-setting ${tab.experimental ? 'dashboard-tab-setting-experimental' : ''}" for="dashboard-tab-${tab.id}">
+            <span class="dashboard-tab-setting-label">
+                <span>${escapeHtml(tab.label)}${tab.experimental ? '<span class="dashboard-tab-warning-badge">Experimental</span>' : ''}</span>
+                ${tab.warning ? `<small class="dashboard-tab-warning">${escapeHtml(tab.warning || EXPERIMENTAL_LOCAL_TOOLING_WARNING)}</small>` : ''}
+            </span>
             <input id="dashboard-tab-${tab.id}" type="checkbox" ${hiddenTabs.has(tab.id) ? '' : 'checked'} ${tab.locked ? 'disabled' : ''} onchange="setDashboardTabVisible('${tab.id}', this.checked)">
         </label>
     `).join('');
@@ -97,7 +110,14 @@ function resetDashboardTabs() {
     localStorage.removeItem(DASHBOARD_TAB_SETTINGS_KEY);
     applyDashboardTabSettings();
     renderDashboardTabSettings();
-    showToast('All dashboard tabs are visible again');
+    showToast('Dashboard tabs reset to safe defaults');
+}
+
+function showAllDashboardTabs() {
+    localStorage.setItem(DASHBOARD_TAB_SETTINGS_KEY, JSON.stringify([]));
+    applyDashboardTabSettings();
+    renderDashboardTabSettings();
+    showToast('All dashboard tabs are visible');
 }
 
 function openUpdateInstructions() {
@@ -283,21 +303,36 @@ function stopToolTimerUpdates() {
     }
 }
 
+const DEFAULT_VISIBLE_DASHBOARD_TABS = new Set([
+    'chat',
+    'message-board',
+    'config',
+    'secrets',
+    'sessions',
+    'memory',
+    'skills',
+    'cron',
+    'schedule',
+    'graph',
+]);
+
+const EXPERIMENTAL_LOCAL_TOOLING_WARNING = "Experimental: built on the maintainer's local tooling and may not work in a fresh install without extra setup.";
+
 const DASHBOARD_TABS = [
     { id: 'chat', label: 'Chat', locked: true },
     { id: 'message-board', label: 'Message Board' },
     { id: 'config', label: 'Config' },
     { id: 'secrets', label: 'Secrets' },
     { id: 'sessions', label: 'Sessions' },
-    { id: 'agent-observability', label: 'Agent Ops' },
+    { id: 'agent-observability', label: 'Agent Ops', experimental: true, warning: 'Experimental: depends on local observability/session tooling.' },
     { id: 'memory', label: 'Memory' },
     { id: 'skills', label: 'Skills' },
-    { id: 'games', label: 'Games' },
-    { id: 'diagnostics', label: 'Diagnostics' },
-    { id: 'dnd', label: 'Campaigns' },
-    { id: 'self-improvement', label: 'Self-Improvement' },
-    { id: 'autonomous-development', label: 'Autonomous Development' },
-    { id: 'scrolls', label: 'Vesuvius AutoResearch' },
+    { id: 'games', label: 'Games', experimental: true, warning: 'Experimental: depends on local game/emulator tooling.' },
+    { id: 'diagnostics', label: 'Diagnostics', experimental: true, warning: 'Experimental: depends on local diagnostic tooling.' },
+    { id: 'dnd', label: 'Campaigns', experimental: true, warning: 'Experimental: depends on local campaign/game tooling.' },
+    { id: 'self-improvement', label: 'Self-Improvement', experimental: true, warning: 'Experimental: depends on local Hermes self-improvement tooling.' },
+    { id: 'autonomous-development', label: 'Autonomous Development', experimental: true, warning: 'Experimental: depends on local autonomous-development tooling.' },
+    { id: 'scrolls', label: 'Vesuvius AutoResearch', experimental: true, warning: 'Experimental: depends on local Vesuvius/autoresearch tooling.' },
     { id: 'cron', label: 'Cron' },
     { id: 'schedule', label: 'Schedule' },
     { id: 'graph', label: 'Graph' },
@@ -317,6 +352,9 @@ const sessionsPerPage = 50;
 const chat = document.getElementById('chat');
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
+const chatImageInput = document.getElementById('chat-image-input');
+const chatImageBtn = document.getElementById('chat-image-btn');
+const chatAttachmentPreviewBar = document.getElementById('chat-attachment-preview-bar');
 const debugLog = document.getElementById('debug-log');
 const contextSummary = document.getElementById('chat-context-summary');
 const contextPills = document.getElementById('chat-context-pills');
@@ -340,6 +378,8 @@ let activeSessionDetailId = null;
 let activeRun = null;
 let activeChatSessionId = null;
 let streamResumeInFlight = false;
+let pendingImageAttachments = [];
+let pendingImageAttachmentSeq = 0;
 
 // Dashboard state persistence
 // Legacy localStorage keys are read once for migration only. Rich chat/run
@@ -3477,6 +3517,24 @@ function scrollChatToBottom(force = false, stick = null) {
     }
 }
 
+function renderUserMessageContent(content) {
+    if (!Array.isArray(content)) {
+        return formatMessageContent(content || '');
+    }
+    const textHtml = content
+        .filter(part => part && part.type === 'text' && typeof part.text === 'string' && part.text.trim())
+        .map(part => formatMessageContent(part.text))
+        .join('');
+    const imageHtml = content
+        .filter(part => part && part.type === 'image_url' && part.image_url && typeof part.image_url.url === 'string')
+        .map(part => part.image_url.url)
+        .filter(url => /^data:image\//i.test(url) || /^https?:\/\//i.test(url))
+        .map(url => `<button type="button" class="chat-message-image-wrap" onclick="showImageModal('${escapeHtml(url)}')" aria-label="Open pasted image"><img class="chat-message-image" src="${escapeHtml(url)}" alt="Pasted image"></button>`)
+        .join('');
+    const images = imageHtml ? `<div class="chat-message-images">${imageHtml}</div>` : '';
+    return (textHtml || '') + images || '<span style="color:var(--text-dim);">[empty message]</span>';
+}
+
 function addMessage(role, message, save = true) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
@@ -3485,7 +3543,7 @@ function addMessage(role, message, save = true) {
         bindToolCardInteractions(div);
     } else {
         const content = typeof message === 'string' ? message : message.content;
-        div.innerHTML = formatMessageContent(content || '');
+        div.innerHTML = renderUserMessageContent(content);
     }
     chat.appendChild(div);
     scrollChatToBottom(true);
@@ -7452,20 +7510,101 @@ function updateContextDisplay(assistantMessage) {
         : '';
 }
 
+function isSafeImageDataUrl(url) {
+    return typeof url === 'string' && /^data:image\/(png|jpe?g|gif|webp|bmp);base64,/i.test(url);
+}
+
+function renderPendingImageAttachments() {
+    if (!chatAttachmentPreviewBar) return;
+    chatAttachmentPreviewBar.innerHTML = pendingImageAttachments.map(att => `
+        <div class="chat-attachment-preview">
+            <img src="${escapeHtml(att.dataUrl)}" alt="Pasted image preview">
+            <button type="button" class="chat-attachment-remove" onclick="removePendingImageAttachment('${att.id}')" aria-label="Remove pasted image">×</button>
+        </div>
+    `).join('');
+    chatAttachmentPreviewBar.classList.toggle('has-attachments', pendingImageAttachments.length > 0);
+}
+
+function removePendingImageAttachment(id) {
+    pendingImageAttachments = pendingImageAttachments.filter(att => att.id !== id);
+    renderPendingImageAttachments();
+}
+
+function clearPendingImageAttachments() {
+    pendingImageAttachments = [];
+    renderPendingImageAttachments();
+}
+
+function readImageFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+        reader.readAsDataURL(file);
+    });
+}
+
+async function attachImageFiles(files, sourceLabel = 'selected') {
+    const imageFiles = Array.from(files || []).filter(file => /^image\//i.test(file.type || ''));
+    if (!imageFiles.length) return;
+    try {
+        const dataUrls = await Promise.all(imageFiles.map(readImageFile));
+        const validUrls = dataUrls.filter(isSafeImageDataUrl);
+        if (!validUrls.length) {
+            showToast(`${sourceLabel} image format is not supported`, true);
+            return;
+        }
+        pendingImageAttachments.push(...validUrls.map(dataUrl => ({
+            id: `img_${Date.now()}_${pendingImageAttachmentSeq++}`,
+            dataUrl,
+        })));
+        renderPendingImageAttachments();
+        log('inf', `Attached ${validUrls.length} ${sourceLabel} image${validUrls.length === 1 ? '' : 's'}`);
+    } catch (error) {
+        showToast(`Failed to attach ${sourceLabel} image: ` + error.message, true);
+        log('err', `Failed to attach ${sourceLabel} image: ` + error.message, true);
+    }
+}
+
+async function handleUserInputPaste(event) {
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageFiles = items
+        .filter(item => item.kind === 'file' && /^image\//i.test(item.type || ''))
+        .map(item => item.getAsFile())
+        .filter(Boolean);
+    if (!imageFiles.length) return;
+    event.preventDefault();
+    await attachImageFiles(imageFiles, 'pasted');
+}
+
+async function handleChatImageInputChange(event) {
+    await attachImageFiles(event.target?.files || [], 'selected');
+    if (event.target) event.target.value = '';
+}
+
 async function sendMessage() {
     const message = userInput.value.trim();
-    if (!message) return;
+    const imageAttachments = pendingImageAttachments.slice();
+    if (!message && !imageAttachments.length) return;
+    const userContent = imageAttachments.length
+        ? [
+            ...(message ? [{ type: 'text', text: message }] : []),
+            ...imageAttachments.map(att => ({ type: 'image_url', image_url: { url: att.dataUrl } })),
+        ]
+        : message;
 
     userInput.value = '';
     userInput.style.height = 'auto';
+    clearPendingImageAttachments();
     sendBtn.disabled = true;
 
-    addMessage('user', { content: message });
-    conversation.push({ role: 'user', content: message });
+    addMessage('user', { content: userContent });
+    conversation.push({ role: 'user', content: userContent });
     saveConversation();
 
     log('req', `POST /chat (streaming)`);
-    log('inf', `User: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`);
+    const logMessage = message || `[${imageAttachments.length} pasted image${imageAttachments.length === 1 ? '' : 's'}]`;
+    log('inf', `User: ${logMessage.substring(0, 100)}${logMessage.length > 100 ? '...' : ''}`);
     activeRun = {
         runId: `run_${Date.now()}_${Math.random().toString(16).slice(2)}`,
         eventOffset: 0,
@@ -7501,6 +7640,7 @@ function clearChat() {
     void saveDashboardState('conversation', null, { immediate: true });
     removeLegacyLocalStorageValue(STORAGE_KEY);
     clearActiveRun();
+    clearPendingImageAttachments();
     activeChatSessionId = null;
     saveActiveChatSession();
     updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
@@ -7518,12 +7658,17 @@ function debounce(fn, ms) {
 
 // Event listeners
 sendBtn.addEventListener('click', sendMessage);
+if (chatImageBtn && chatImageInput) {
+    chatImageBtn.addEventListener('click', () => chatImageInput.click());
+    chatImageInput.addEventListener('change', handleChatImageInputChange);
+}
 userInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendMessage();
     }
 });
+userInput.addEventListener('paste', handleUserInputPaste);
 userInput.addEventListener('input', () => {
     userInput.style.height = 'auto';
     userInput.style.height = Math.min(userInput.scrollHeight, 150) + 'px';
