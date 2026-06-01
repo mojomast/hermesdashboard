@@ -23,6 +23,22 @@ import yaml
 from starlette.applications import Starlette
 from starlette.routing import Route
 try:
+    from starlette.routing import Mount
+except Exception:  # Lightweight test stubs may omit Mount.
+    class Mount:
+        def __init__(self, path, app=None, name=None, **kwargs):
+            self.path = path
+            self.app = app
+            self.name = name
+            self.kwargs = kwargs
+try:
+    from starlette.staticfiles import StaticFiles
+except Exception:  # Lightweight test stubs may omit StaticFiles.
+    class StaticFiles:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+try:
     from starlette.routing import WebSocketRoute
 except Exception:
     WebSocketRoute = None
@@ -9241,6 +9257,11 @@ async def dashboard_auto_update_endpoint(request):
 
 
 routes = [
+    Mount(
+        "/static",
+        StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")),
+        name="static",
+    ),
     Route("/", homepage),
     # Campaigns is implemented as a hash-routed dashboard panel (#dnd), but
     # users/bookmarks can land on path-style URLs after navigation or refresh.

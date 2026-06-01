@@ -1,11 +1,8 @@
-from pathlib import Path
-
-
-TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "index.html"
+from tests.dashboard_sources import dashboard_source
 
 
 def _html() -> str:
-    return TEMPLATE.read_text(encoding="utf-8")
+    return dashboard_source()
 
 
 def test_dashboard_settings_button_and_menu_are_rendered():

@@ -78,6 +78,7 @@ def _install_framework_stubs() -> None:
 _install_framework_stubs()
 
 import app as dashboard_app
+from tests.dashboard_sources import dashboard_source
 
 
 class FakeRequest:
@@ -168,7 +169,7 @@ def test_agent_observability_report_aggregates_sessions_tools_and_alerts(tmp_pat
 
 
 def test_agent_observability_frontend_panel_is_wired():
-    html = (dashboard_app.Path(__file__).resolve().parents[1] / "templates" / "index.html").read_text(encoding="utf-8")
+    html = dashboard_source()
 
     assert 'data-panel="agent-observability"' in html
     assert 'id="agent-observability-panel"' in html

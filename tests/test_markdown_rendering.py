@@ -3,14 +3,14 @@ import subprocess
 from pathlib import Path
 
 
-DASHBOARD_HTML = Path(__file__).resolve().parents[1] / "templates" / "index.html"
+DASHBOARD_JS = Path(__file__).resolve().parents[1] / "static" / "js" / "dashboard.js"
 
 
 def _run_markdown_renderer(markdown: str) -> str:
-    html = DASHBOARD_HTML.read_text()
-    start = html.index("        function escapeHtml(text)")
-    end = html.index("        function formatSessionTranscriptContent(text)")
-    functions = html[start:end]
+    js = DASHBOARD_JS.read_text(encoding="utf-8")
+    start = js.index("function escapeHtml(text)")
+    end = js.index("function formatSessionTranscriptContent(text)")
+    functions = js[start:end]
     script = f"""
 const document = {{
   createElement: () => ({{

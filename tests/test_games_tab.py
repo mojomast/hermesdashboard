@@ -81,6 +81,7 @@ def _install_framework_stubs() -> None:
 _install_framework_stubs()
 
 import app as dashboard_app
+from tests.dashboard_sources import dashboard_source
 
 
 class FakeRequest:
@@ -307,7 +308,7 @@ def test_pokemon_upstream_path_maps_proxy_root_to_dashboard():
 
 
 def test_games_tab_is_wired_into_dashboard_template():
-    html = (Path(dashboard_app.__file__).parent / "templates" / "index.html").read_text(encoding="utf-8")
+    html = dashboard_source()
 
     assert 'data-panel="games"' in html
     assert 'id="games-panel"' in html

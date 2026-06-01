@@ -77,6 +77,7 @@ def _install_framework_stubs() -> None:
 _install_framework_stubs()
 
 import app as dashboard_app
+from tests.dashboard_sources import dashboard_source
 
 
 class FakeRequest:
@@ -728,7 +729,7 @@ def test_self_improvement_api_routes_and_template_are_wired(tmp_path, monkeypatc
     assert "/api/self-improvement/candidates" in route_paths
     assert "/api/self-improvement/control" in route_paths
 
-    html = (Path(dashboard_app.__file__).parent / "templates" / "index.html").read_text(encoding="utf-8")
+    html = dashboard_source()
     assert 'data-panel="self-improvement"' in html
     assert 'id="self-improvement-panel"' in html
     assert "loadSelfImprovement()" in html

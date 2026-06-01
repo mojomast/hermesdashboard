@@ -83,17 +83,18 @@ _install_framework_stubs()
 import app as dashboard_app
 
 
+from tests.dashboard_sources import DASHBOARD_JS
+
+
 def _extract_dashboard_js_helpers() -> str:
-    index_html = (
-        Path(__file__).resolve().parent.parent / "templates" / "index.html"
-    ).read_text()
-    start = index_html.index("function makeExecutionNodeId")
-    end = index_html.index("function parseToolPayload")
-    middle_end = index_html.index("function getDelegateChildBucket")
+    index_js = DASHBOARD_JS.read_text(encoding="utf-8")
+    start = index_js.index("function makeExecutionNodeId")
+    end = index_js.index("function parseToolPayload")
+    middle_end = index_js.index("function getDelegateChildBucket")
     script_parts = [
         "function log() {}\n",
-        index_html[start:end],
-        index_html[end:middle_end],
+        index_js[start:end],
+        index_js[end:middle_end],
     ]
     return "\n".join(script_parts)
 
