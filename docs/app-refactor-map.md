@@ -647,7 +647,39 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 - `dashboard_backend/services/message_board.py`: message-board SQLite post/message persistence is extracted; `/api/message-board*` endpoint wrappers and `generate_message_board_agent_reply` remain in `app.py`. Gate: `python -m pytest tests/test_message_board.py`.
 - `dashboard_backend/services/scrolls.py`: read-only Scrolls snapshot projection delegation is extracted; `GET /api/scrolls/snapshot` is restored as a parity API route while app-owned `_SCROLLS_PROJECT_ROOT` remains injected by the wrapper. Gate: `python -m pytest tests/test_scrolls_snapshot.py tests/test_scrolls_panel_navigation.py`.
 - `dashboard_backend/services/games_catalog.py`: read-only Games tab skill catalog/frontmatter projection is extracted; `/api/games` remains wrapped in `app.py` and app-owned `HERMES_HOME` is injected at call time. Gate: `python -m pytest tests/test_games_catalog_service.py tests/test_games_tab.py`.
+- Roguelike/Hermes Labyrinth frontend-only parity: the dirty reference's self-contained Roguelike tab is restored in partialized HTML plus classic static CSS/JS with no backend API route. Gate: `python -m pytest tests/test_roguelike_tab.py`.
 - Self-improvement repair/anomaly read-only parity: `app.py` now surfaces bounded `repair_hint` / `event_coverage_repair_hint` projections and `static/js/dashboard.js` renders Repair Readiness, Anomaly Samples, and inert Next repair commands. Gate: `python -m pytest tests/test_self_improvement_panel.py`.
+
+## Roguelike frontend parity pass
+
+### Task frame
+Restore the dirty current dashboard's frontend-only Hermes Labyrinth/Roguelike tab in the refactor copy without adding backend routes, changing game proxy routes, or making local experiment tabs default-visible.
+
+### Vocabulary map
+- **API route:** none; this pass explicitly preserves the absence of `/api/roguelike` and `/api/hermes-rogue` backend contracts.
+- **Route wrapper/service:** not involved; the tab is a client-side game workflow owned by rendered HTML, CSS, and classic JavaScript.
+- **State:** run state, best depth, wins/losses, and last seed are browser-local `localStorage` game state, not Hermes session/run state and not durable server ledgers.
+- **Session/run:** the Roguelike uses the word run for a game attempt only; it is distinct from a Hermes execution run or persisted session.
+- **Task/job/message/event:** not involved; no background task/job, chat message, or durable event ledger is created.
+- **Workflow:** user opens the hidden-by-default experimental Roguelike tab, starts/continues a browser-local seeded game, and can copy a textual run summary.
+
+### Structural model
+`templates/index.html` includes `templates/dashboard/partials/panels/roguelike.html` beside the existing Games/Diagnostics panels. The top/mobile nav and `DASHBOARD_TABS` register `roguelike` as an experimental local tab, so fresh browsers hide it by default until explicitly enabled. `static/css/dashboard.css` owns the `.hermes-rogue-*`/`.rogue-*` selectors, and `static/js/dashboard.js` owns `HermesRogue` plus `initRoguelike()` in the classic compatibility script.
+
+### Change set
+- Added `templates/dashboard/partials/panels/roguelike.html` with the Hermes Labyrinth DOM shell, map grid, log, controls, and live status.
+- Registered the tab in desktop nav, mobile nav, `DASHBOARD_TABS`, hash routing, lazy-loading, and breadcrumbs.
+- Added Roguelike CSS selectors and browser-local seeded game JavaScript from the dirty reference into extracted static assets.
+- Added `tests/test_roguelike_tab.py` with rendered-template/static-asset source assertions and explicit no-backend-route guards.
+
+### Drift audit
+- Fixed optional/reference-only frontend gap: Roguelike/Hermes Labyrinth tab.
+- No backend API route, route wrapper, service, filesystem write, subprocess, or network dependency was added.
+- The tab remains experimental/hidden-by-default for fresh browsers through existing dashboard tab visibility policy.
+- Remaining dirty-reference gaps include Dashboard Chat IRC bridge, Voice/OmniVoice panels and backend routes, chat emergency-stop button parity, self-improvement event coverage history/recovery debt delta, and dashboard/backend restart routes with explicit mutation intent requirements.
+
+### Next step
+After this pass is committed and clean, choose one bounded remaining dirty-reference slice: chat emergency-stop parity if the user-control delta is highest priority, self-improvement history/debt read-only visibility if operator diagnostics are highest priority, or gated restart routes if backend parity is highest priority. Keep Voice/OmniVoice split into smaller backend/frontend sub-slices.
 
 ## Dashboard-state route-wrapper extraction pass
 

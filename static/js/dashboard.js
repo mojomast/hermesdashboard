@@ -447,6 +447,7 @@ const DASHBOARD_TABS = [
     { id: 'memory', label: 'Memory' },
     { id: 'skills', label: 'Skills' },
     { id: 'games', label: 'Games', experimental: true, warning: 'Experimental: depends on local game/emulator tooling.' },
+    { id: 'roguelike', label: 'Roguelike', experimental: true, warning: 'Experimental: local dashboard-only game experiment.' },
     { id: 'diagnostics', label: 'Diagnostics', experimental: true, warning: 'Experimental: depends on local diagnostic tooling.' },
     { id: 'dnd', label: 'Campaigns', experimental: true, warning: 'Experimental: depends on local campaign/game tooling.' },
     { id: 'self-improvement', label: 'Self-Improvement', experimental: true, warning: 'Experimental: depends on local Hermes self-improvement tooling.' },
@@ -3872,6 +3873,7 @@ function switchToPanel(panel) {
             case 'memory': loadMemory(); break;
             case 'skills': loadSkills(); break;
             case 'games': loadGames(); break;
+            case 'roguelike': initRoguelike(); break;
             case 'dnd': loadDndCampaigns(); break;
             case 'self-improvement': loadSelfImprovement(); break;
             case 'autonomous-development': loadAutonomousDevelopment(); break;
@@ -3888,6 +3890,8 @@ function switchToPanel(panel) {
         loadMessageBoardPosts();
     } else if (panel === 'games') {
         loadGames();
+    } else if (panel === 'roguelike') {
+        initRoguelike();
     } else if (panel === 'dnd') {
         loadDndCampaigns();
     } else if (panel === 'self-improvement') {
@@ -3922,7 +3926,7 @@ function handleHashChange() {
     const parts = hash.split('/');
     const panel = parts[0];
 
-    const validPanels = ['chat','message-board','config','secrets','sessions','agent-observability','memory','skills','games','diagnostics','dnd','self-improvement','autonomous-development','scrolls','cron','schedule','graph'];
+    const validPanels = ['chat','message-board','config','secrets','sessions','agent-observability','memory','skills','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','scrolls','cron','schedule','graph'];
     if (!validPanels.includes(panel) || !isDashboardTabVisible(panel)) {
         switchToPanel('chat');
         return;
@@ -3943,7 +3947,7 @@ function updateBreadcrumbs(panel, detail) {
     const bc = document.getElementById('breadcrumbs');
     if (!bc) return;
 
-    const names = { chat:'Chat', 'message-board':'Message Board', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
+    const names = { chat:'Chat', 'message-board':'Message Board', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
 
     if (detail) {
         bc.className = 'breadcrumbs visible';
@@ -5535,6 +5539,374 @@ async function toggleSkill(skillId, enable) {
         log('err', `Skill update failed: ${e.message}`, true);
     }
 }
+
+const HermesRogue = (() => {
+    const WIDTH = 21;
+    const HEIGHT = 15;
+    const STORE = 'hermesRogue.';
+    const TILE_LABELS = { '#': 'Wall', '.': 'Floor', '>': 'Exit Kernel', '✦': 'Memory Shard', '⚿': 'Cache Key', '+': 'Health Patch', '◇': 'Focus Crystal', 'T': 'Tool Shrine', 'L': 'Lock Gate' };
+    let state = null;
+    let initialized = false;
+
+    function stringSeed(input) {
+        const value = String(input || Date.now()).trim();
+        if (/^\d+$/.test(value)) return Number(value) >>> 0;
+        let h = 2166136261;
+        for (let i = 0; i < value.length; i++) {
+            h ^= value.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+        }
+        return h >>> 0;
+    }
+
+    function mulberry32(seed) {
+        return function() {
+            let t = seed += 0x6D2B79F5;
+            t = Math.imul(t ^ t >>> 15, t | 1);
+            t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+            return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+    }
+
+    function getMetric(name) {
+        return Number(localStorage.getItem(STORE + name) || 0);
+    }
+
+    function setMetric(name, value) {
+        localStorage.setItem(STORE + name, String(value));
+    }
+
+    function idx(x, y) { return y * WIDTH + x; }
+    function inBounds(x, y) { return x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT; }
+    function tileAt(x, y) { return state.floor.tiles[idx(x, y)]; }
+    function setTile(x, y, tile) { state.floor.tiles[idx(x, y)] = tile; }
+    function randInt(rng, min, max) { return Math.floor(rng() * (max - min + 1)) + min; }
+    function manhattan(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+    function passable(tile) { return tile !== '#' && tile !== 'L'; }
+
+    function log(message) {
+        if (!state) return;
+        state.log.unshift(message);
+        state.log = state.log.slice(0, 8);
+    }
+
+    function reachableFrom(start, tiles) {
+        const seen = new Set([idx(start.x, start.y)]);
+        const queue = [start];
+        while (queue.length) {
+            const p = queue.shift();
+            for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                const nx = p.x + dx, ny = p.y + dy, key = idx(nx, ny);
+                if (!inBounds(nx, ny) || seen.has(key) || tiles[key] === '#') continue;
+                seen.add(key);
+                queue.push({ x: nx, y: ny });
+            }
+        }
+        return seen;
+    }
+
+    function randomFloorCell(rng, occupied = new Set()) {
+        const floors = [];
+        for (let y = 1; y < HEIGHT - 1; y++) {
+            for (let x = 1; x < WIDTH - 1; x++) {
+                const key = idx(x, y);
+                if (tileAt(x, y) === '.' && !occupied.has(key)) floors.push({ x, y });
+            }
+        }
+        return floors[Math.floor(rng() * floors.length)] || { x: 10, y: 7 };
+    }
+
+    function place(tile, count, rng, occupied, avoidStart = false) {
+        for (let i = 0; i < count; i++) {
+            let p = null;
+            for (let tries = 0; tries < 60; tries++) {
+                const candidate = randomFloorCell(rng, occupied);
+                if (!avoidStart || manhattan(candidate, { x: 10, y: 7 }) > 3) { p = candidate; break; }
+            }
+            if (!p) continue;
+            setTile(p.x, p.y, tile);
+            occupied.add(idx(p.x, p.y));
+        }
+    }
+
+    function generateFloor(depth) {
+        const rng = state.rng;
+        for (let attempt = 0; attempt < 20; attempt++) {
+            const tiles = Array(WIDTH * HEIGHT).fill('#');
+            let x = Math.floor(WIDTH / 2), y = Math.floor(HEIGHT / 2);
+            tiles[idx(x, y)] = '.';
+            const steps = randInt(rng, 240, 330);
+            for (let i = 0; i < steps; i++) {
+                const dir = [[1,0],[-1,0],[0,1],[0,-1]][randInt(rng, 0, 3)];
+                x = Math.max(1, Math.min(WIDTH - 2, x + dir[0]));
+                y = Math.max(1, Math.min(HEIGHT - 2, y + dir[1]));
+                tiles[idx(x, y)] = '.';
+                if (rng() < 0.2) {
+                    tiles[idx(Math.max(1, Math.min(WIDTH - 2, x + randInt(rng, -1, 1))), Math.max(1, Math.min(HEIGHT - 2, y + randInt(rng, -1, 1))))] = '.';
+                }
+            }
+            const seen = reachableFrom({ x: 10, y: 7 }, tiles);
+            if (seen.size < 85) continue;
+            state.player.x = 10; state.player.y = 7;
+            state.floor = { tiles, enemies: [] };
+            let farthest = { x: 10, y: 7, d: 0 };
+            for (const key of seen) {
+                const px = key % WIDTH, py = Math.floor(key / WIDTH), d = manhattan({ x: 10, y: 7 }, { x: px, y: py });
+                if (d > farthest.d) farthest = { x: px, y: py, d };
+            }
+            const occupied = new Set([idx(10, 7), idx(farthest.x, farthest.y)]);
+            setTile(farthest.x, farthest.y, '>');
+            const spec = depth === 1 ? { shards: 3, hp: 1, focus: 1, keys: 0, shrines: 0, gates: 0, bugs: 2, wraiths: 0 }
+                : depth === 2 ? { shards: 4, hp: 1, focus: 0, keys: 1, shrines: 1, gates: 1, bugs: 3, wraiths: 1 }
+                : { shards: 5, hp: 1, focus: 0, keys: 1, shrines: 1, gates: 2, bugs: 4, wraiths: 2 };
+            place('✦', spec.shards, rng, occupied);
+            place('+', spec.hp, rng, occupied);
+            place('◇', spec.focus, rng, occupied);
+            place('⚿', spec.keys, rng, occupied);
+            place('T', spec.shrines, rng, occupied);
+            place('L', spec.gates, rng, occupied);
+            for (let i = 0; i < spec.bugs; i++) {
+                const p = randomFloorCell(rng, occupied); occupied.add(idx(p.x, p.y));
+                state.floor.enemies.push({ x: p.x, y: p.y, hp: 2, kind: 'entropy', symbol: 'e', damage: 1 });
+            }
+            for (let i = 0; i < spec.wraiths; i++) {
+                const p = randomFloorCell(rng, occupied); occupied.add(idx(p.x, p.y));
+                state.floor.enemies.push({ x: p.x, y: p.y, hp: 3, kind: 'drift', symbol: 'd', damage: 2, slow: 0 });
+            }
+            return;
+        }
+        const tiles = Array(WIDTH * HEIGHT).fill('#');
+        for (let yy = 1; yy < HEIGHT - 1; yy++) for (let xx = 1; xx < WIDTH - 1; xx++) tiles[idx(xx, yy)] = '.';
+        state.player.x = 10; state.player.y = 7;
+        state.floor = { tiles, enemies: [{ x: 5, y: 5, hp: 2, kind: 'entropy', symbol: 'e', damage: 1 }] };
+        setTile(18, 12, '>'); setTile(7, 6, '✦'); setTile(12, 8, '+');
+    }
+
+    function newRun(seed) {
+        const seedInt = stringSeed(seed || Date.now());
+        state = {
+            seed: seedInt,
+            rng: mulberry32(seedInt),
+            player: { x: 10, y: 7 },
+            hp: 10, maxHp: 10, focus: 3, keys: 0, shards: 0, depth: 1, turns: 0,
+            status: 'running', log: [], finalSummary: ''
+        };
+        generateFloor(1);
+        log('Run initialized. Hermes enters the Labyrinth.');
+        setMetric('lastSeed', seedInt);
+        render();
+        focusMap();
+    }
+
+    function enemyAt(x, y) {
+        return state.floor.enemies.find(enemy => enemy.x === x && enemy.y === y);
+    }
+
+    function classFor(tile, enemy, playerHere) {
+        if (playerHere) return 'rogue-player';
+        if (enemy) return 'rogue-enemy';
+        if (tile === '#') return 'rogue-wall';
+        if (tile === '>') return 'rogue-exit';
+        if (tile === 'T') return 'rogue-shrine';
+        if (tile === 'L') return 'rogue-gate';
+        if (tile !== '.') return 'rogue-item';
+        return 'rogue-floor';
+    }
+
+    function labelFor(tile, enemy, playerHere, x, y) {
+        if (playerHere) return `Hermes at ${x},${y}`;
+        if (enemy) return `${enemy.kind === 'drift' ? 'Drift Wraith' : 'Entropy Bug'} at ${x},${y}`;
+        return `${TILE_LABELS[tile] || 'Floor'} at ${x},${y}`;
+    }
+
+    function render() {
+        const map = document.getElementById('rogue-map');
+        if (!map || !state) return;
+        const cells = [];
+        for (let y = 0; y < HEIGHT; y++) {
+            for (let x = 0; x < WIDTH; x++) {
+                const enemy = enemyAt(x, y);
+                const playerHere = state.player.x === x && state.player.y === y;
+                const tile = tileAt(x, y);
+                const symbol = playerHere ? '@' : enemy ? enemy.symbol : tile === '.' ? '' : tile;
+                cells.push(`<div class="rogue-cell ${classFor(tile, enemy, playerHere)}" role="gridcell" data-x="${x}" data-y="${y}" data-tile="${playerHere ? 'player' : enemy ? enemy.kind : tile}" aria-label="${labelFor(tile, enemy, playerHere, x, y)}">${symbol}</div>`);
+            }
+        }
+        map.innerHTML = cells.join('');
+        const values = {
+            'rogue-depth': state.depth,
+            'rogue-hp': `${state.hp}/${state.maxHp}`,
+            'rogue-focus': state.focus,
+            'rogue-keys': state.keys,
+            'rogue-shards': state.shards,
+            'rogue-turns': state.turns,
+            'rogue-best': getMetric('bestDepth'),
+            'rogue-record': `${getMetric('wins')}/${getMetric('losses')}`
+        };
+        Object.entries(values).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.textContent = value; });
+        const tile = tileAt(state.player.x, state.player.y);
+        const tileEl = document.getElementById('rogue-tile');
+        if (tileEl) tileEl.textContent = `Tile: ${TILE_LABELS[tile] || 'Floor'} (${state.player.x},${state.player.y})`;
+        const inv = document.getElementById('rogue-inventory');
+        if (inv) inv.textContent = `Inventory: ${state.keys} cache key(s), ${state.focus} focus, seed ${state.seed}.`;
+        const logEl = document.getElementById('rogue-log');
+        if (logEl) logEl.textContent = state.log.join('\n');
+        const live = document.getElementById('rogue-live-status');
+        if (live) live.textContent = state.log[0] || 'Ready.';
+    }
+
+    function focusMap() {
+        const map = document.getElementById('rogue-map');
+        if (map) map.focus({ preventScroll: true });
+    }
+
+    function resolveTile(tile, nx, ny) {
+        if (tile === '✦') { state.shards += 1; setTile(nx, ny, '.'); log('Recovered a memory shard.'); }
+        else if (tile === '⚿') { state.keys += 1; setTile(nx, ny, '.'); log('Found a cache key.'); }
+        else if (tile === '+') { state.hp = Math.min(state.maxHp, state.hp + 4); setTile(nx, ny, '.'); log('Applied a health patch.'); }
+        else if (tile === '◇') { state.focus += 2; setTile(nx, ny, '.'); log('Focus restored.'); }
+        else if (tile === '>') {
+            if (state.depth >= 3) {
+                if (state.shards >= 6) winRun();
+                else log('The Exit Kernel rejects the run: collect 6 memory shards.');
+            } else {
+                state.depth += 1;
+                setMetric('bestDepth', Math.max(getMetric('bestDepth'), state.depth));
+                generateFloor(state.depth);
+                log(`Descended to depth ${state.depth}.`);
+            }
+        }
+    }
+
+    function spendTurn() {
+        state.turns += 1;
+        enemyTurn();
+        checkWinLoss();
+        render();
+    }
+
+    function tryMove(dx, dy) {
+        if (!state || state.status !== 'running') return;
+        const nx = state.player.x + dx, ny = state.player.y + dy;
+        if (!inBounds(nx, ny)) return;
+        const targetEnemy = enemyAt(nx, ny);
+        if (targetEnemy) {
+            targetEnemy.hp -= 1;
+            if (targetEnemy.hp <= 0) {
+                state.floor.enemies = state.floor.enemies.filter(enemy => enemy !== targetEnemy);
+                log(targetEnemy.kind === 'drift' ? 'Drift wraith anchored.' : 'Entropy bug patched.');
+            } else {
+                log('Hermes patches hostile entropy.');
+            }
+            spendTurn(); return;
+        }
+        const tile = tileAt(nx, ny);
+        if (tile === '#') { log('Wall: not a productive path.'); render(); return; }
+        if (tile === 'L') {
+            if (state.keys > 0) { state.keys -= 1; setTile(nx, ny, '.'); log('Cache key consumed. Gate opened.'); }
+            else { log('The lock gate needs a cache key.'); render(); return; }
+        }
+        if (tile === 'T') {
+            if (state.focus > 0) {
+                state.focus -= 1;
+                if (state.floor.enemies.length) { state.floor.enemies.shift(); log('Tool Shrine terminates a hostile process.'); }
+                else { state.hp = Math.min(state.maxHp, state.hp + 2); log('Tool Shrine stabilizes coherence.'); }
+            } else log('No focus available to invoke the shrine.');
+            spendTurn(); return;
+        }
+        state.player.x = nx; state.player.y = ny;
+        resolveTile(tile, nx, ny);
+        if (state.status === 'running') spendTurn(); else render();
+    }
+
+    function waitTurn() {
+        if (!state || state.status !== 'running') return;
+        log('Hermes waits and listens for drift.');
+        spendTurn();
+    }
+
+    function enemyTurn() {
+        for (const enemy of [...state.floor.enemies]) {
+            if (manhattan(enemy, state.player) === 1) { state.hp -= enemy.damage; log(`${enemy.kind === 'drift' ? 'Drift wraith' : 'Entropy bug'} hits for ${enemy.damage}.`); continue; }
+            if (enemy.kind === 'drift') { enemy.slow = (enemy.slow || 0) + 1; if (enemy.slow % 2) continue; }
+            const chase = manhattan(enemy, state.player) <= 6;
+            const options = [[1,0],[-1,0],[0,1],[0,-1]].map(([dx, dy]) => ({ x: enemy.x + dx, y: enemy.y + dy }));
+            const valid = options.filter(p => inBounds(p.x, p.y) && passable(tileAt(p.x, p.y)) && !enemyAt(p.x, p.y) && !(p.x === state.player.x && p.y === state.player.y));
+            if (!valid.length) continue;
+            valid.sort((a, b) => chase ? manhattan(a, state.player) - manhattan(b, state.player) : state.rng() - 0.5);
+            enemy.x = valid[0].x; enemy.y = valid[0].y;
+            if (manhattan(enemy, state.player) === 1) { state.hp -= enemy.damage; log(`${enemy.kind === 'drift' ? 'Drift wraith' : 'Entropy bug'} corrupts ${enemy.damage} HP.`); }
+        }
+    }
+
+    function checkWinLoss() {
+        if (state.status !== 'running') return;
+        if (state.hp <= 0) {
+            state.hp = 0;
+            state.status = 'lost';
+            setMetric('losses', getMetric('losses') + 1);
+            state.finalSummary = `Hermes Labyrinth loss — turns: ${state.turns}, shards: ${state.shards}, depth: ${state.depth}, seed: ${state.seed}`;
+            log('Run lost: coherence collapsed.');
+        }
+    }
+
+    function winRun() {
+        state.status = 'won';
+        setMetric('wins', getMetric('wins') + 1);
+        setMetric('bestDepth', Math.max(getMetric('bestDepth'), state.depth));
+        state.finalSummary = `Hermes Labyrinth win — turns: ${state.turns}, shards: ${state.shards}, hp: ${state.hp}, seed: ${state.seed}`;
+        log('Run complete: Hermes stabilized the Labyrinth.');
+    }
+
+    function handleKeydown(event) {
+        if (!state) return;
+        const tag = event.target && event.target.tagName ? event.target.tagName.toLowerCase() : '';
+        if (['input', 'textarea', 'select'].includes(tag) || event.target?.isContentEditable) return;
+        const active = document.getElementById('roguelike-panel')?.classList.contains('active');
+        if (!active) return;
+        const key = event.key.toLowerCase();
+        const moves = { arrowup: [0,-1], w: [0,-1], k: [0,-1], arrowdown: [0,1], s: [0,1], j: [0,1], arrowleft: [-1,0], a: [-1,0], h: [-1,0], arrowright: [1,0], d: [1,0], l: [1,0] };
+        if (moves[key]) { event.preventDefault(); tryMove(moves[key][0], moves[key][1]); }
+        else if (key === ' ' || key === '.') { event.preventDefault(); waitTurn(); }
+        else if (key === 'r') { event.preventDefault(); newRun(); }
+        else if (key === '?') { event.preventDefault(); toggleHelp(); }
+    }
+
+    function toggleHelp() {
+        document.getElementById('rogue-help')?.classList.toggle('visible');
+    }
+
+    function copySummary() {
+        if (!state) return;
+        const summary = state.finalSummary || `Hermes Labyrinth run — turns: ${state.turns}, shards: ${state.shards}, hp: ${state.hp}, depth: ${state.depth}, seed: ${state.seed}`;
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(summary).then(() => showToast('Roguelike summary copied'));
+        else window.prompt('Copy summary', summary);
+    }
+
+    function init() {
+        if (initialized) { render(); focusMap(); return; }
+        initialized = true;
+        document.getElementById('rogue-new-run')?.addEventListener('click', () => newRun());
+        document.getElementById('rogue-seeded-run')?.addEventListener('click', () => {
+            const seed = window.prompt('Seed for Hermes Labyrinth?', localStorage.getItem(STORE + 'lastSeed') || 'hermes');
+            if (seed !== null) newRun(seed);
+        });
+        document.getElementById('rogue-help-toggle')?.addEventListener('click', toggleHelp);
+        document.getElementById('rogue-copy-summary')?.addEventListener('click', copySummary);
+        document.querySelectorAll('[data-rogue-move]').forEach(button => button.addEventListener('click', () => {
+            const [dx, dy] = button.dataset.rogueMove.split(',').map(Number);
+            tryMove(dx, dy); focusMap();
+        }));
+        document.querySelectorAll('[data-rogue-wait]').forEach(button => button.addEventListener('click', () => { waitTurn(); focusMap(); }));
+        document.addEventListener('keydown', handleKeydown);
+        newRun(localStorage.getItem(STORE + 'lastSeed') || Date.now());
+    }
+
+    return { init, newRun, generateFloor, enemyTurn, checkWinLoss, handleKeydown, move: tryMove, wait: waitTurn, getState: () => state };
+})();
+window.HermesRogue = HermesRogue;
+
+function initRoguelike() { HermesRogue.init(); }
 
 let allGames = [];
 

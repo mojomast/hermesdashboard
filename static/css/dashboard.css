@@ -4786,3 +4786,125 @@ body.dnd-popout-mode #dnd-panel { display: block !important; min-height: calc(10
     .subagent-monitor-row { grid-template-columns: auto minmax(0, 1fr); }
     .subagent-monitor-actions { grid-column: 2; flex-wrap: wrap; }
 }
+
+/* Hermes Labyrinth / Roguelike tab */
+.hermes-rogue-card {
+    margin-top: 1rem;
+    background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(59,130,246,0.08)), var(--bg-card);
+    border: 1px solid rgba(16,185,129,0.28);
+}
+
+.hermes-rogue-header, .hermes-rogue-stats, .hermes-rogue-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.hermes-rogue-subtitle { color: var(--text-dim); margin-top: 0.25rem; font-size: 0.9rem; }
+
+.hermes-rogue-stats {
+    justify-content: flex-start;
+    margin: 1rem 0;
+    padding: 0.75rem;
+    border-radius: 10px;
+    background: rgba(0,0,0,0.18);
+    border: 1px solid var(--border-subtle);
+}
+
+.hermes-rogue-stat {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+}
+
+.hermes-rogue-stat strong { color: var(--text); }
+
+.hermes-rogue-shell {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(260px, 0.75fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.hermes-rogue-map {
+    --rogue-cell-size: clamp(18px, 2.2vw, 26px);
+    display: grid;
+    grid-template-columns: repeat(21, var(--rogue-cell-size));
+    grid-auto-rows: var(--rogue-cell-size);
+    gap: 2px;
+    width: max-content;
+    max-width: 100%;
+    padding: 0.75rem;
+    border-radius: 12px;
+    background: #030712;
+    border: 1px solid rgba(148,163,184,0.25);
+    box-shadow: inset 0 0 24px rgba(16,185,129,0.08);
+    overflow: auto;
+}
+
+.hermes-rogue-map:focus { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.rogue-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1;
+    user-select: none;
+}
+
+.rogue-wall { background: #111827; color: #475569; }
+.rogue-floor { background: #07111f; color: #334155; }
+.rogue-player { background: #10b981; color: #02120c; font-weight: 800; box-shadow: 0 0 12px rgba(16,185,129,0.75); }
+.rogue-exit { background: #312e81; color: #c4b5fd; }
+.rogue-item { background: #1f2937; color: #facc15; }
+.rogue-shrine { background: #0f172a; color: #38bdf8; }
+.rogue-gate { background: #3f2d12; color: #fdba74; }
+.rogue-enemy { background: #3f1111; color: #fca5a5; }
+
+.hermes-rogue-side {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.hermes-rogue-panellet {
+    padding: 0.75rem;
+    border-radius: 10px;
+    background: rgba(0,0,0,0.18);
+    border: 1px solid var(--border-subtle);
+}
+
+.rogue-log {
+    min-height: 10rem;
+    max-height: 14rem;
+    overflow: auto;
+    color: var(--text-dim);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+}
+
+.rogue-dpad {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(44px, 1fr));
+    gap: 0.4rem;
+    max-width: 240px;
+}
+
+.rogue-dpad button:nth-child(1) { grid-column: 2; }
+.rogue-dpad button:nth-child(2) { grid-column: 1; }
+.rogue-dpad button:nth-child(3) { grid-column: 2; }
+.rogue-dpad button:nth-child(4) { grid-column: 3; }
+.rogue-dpad button:nth-child(5) { grid-column: 2; }
+
+.rogue-help { color: var(--text-dim); font-size: 0.86rem; display: none; }
+.rogue-help.visible { display: block; }
+.rogue-live-status { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+@media (max-width: 900px) {
+    .hermes-rogue-shell { grid-template-columns: 1fr; }
+    .hermes-rogue-map { --rogue-cell-size: clamp(14px, 4vw, 22px); }
+}
