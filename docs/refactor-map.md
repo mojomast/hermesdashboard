@@ -35,6 +35,10 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 - `dashboard_backend/services/games_catalog.py` owns the read-only Games tab skill catalog/frontmatter projection.
   - `app.py` keeps the `/api/games` route wrapper plus compatibility helper names, and passes live `HERMES_HOME` into the service at call time.
   - Targeted regression gate: `python -m pytest tests/test_games_catalog_service.py tests/test_games_tab.py`.
+- Self-improvement repair/anomaly parity restored bounded read-only event-coverage projections.
+  - `app.py` surfaces `repair_hint` / `event_coverage_repair_hint` without adding mutation routes.
+  - `static/js/dashboard.js` renders Repair Readiness, Anomaly Samples, and inert Next repair commands while the tab remains hidden-by-default.
+  - Targeted regression gate: `python -m pytest tests/test_self_improvement_panel.py`.
 
 ## Backend follow-up plan
 

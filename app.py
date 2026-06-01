@@ -3948,6 +3948,50 @@ def _read_self_improvement_candidate_events(limit: int = 20) -> dict:
     }
 
 
+def _bounded_candidate_event_repair_hint(
+    helper: Any,
+    queue_path: Path,
+    event_ledger_path: Path,
+    replay_result: dict,
+    *,
+    sample_limit: int = 5,
+) -> dict | None:
+    """Mirror canonical read-only event-coverage repair commands for dashboards."""
+    if bool(replay_result.get("coverage_ok")):
+        return None
+    repair_hint: dict[str, Any] = {}
+    if helper is not None and hasattr(helper, "backlog_gate"):
+        try:
+            gate = helper.backlog_gate(queue_path, event_ledger_path=event_ledger_path)
+            event_coverage = dict((gate or {}).get("event_coverage") or {})
+            repair_hint = dict(event_coverage.get("repair_hint") or {})
+        except Exception:
+            repair_hint = {}
+    if not repair_hint:
+        return None
+    samples = list(repair_hint.get("sample_missing_candidates") or [])[:sample_limit]
+    anomaly_details = list(repair_hint.get("anomaly_details") or [])[:sample_limit]
+    apply_readiness = dict(repair_hint.get("apply_readiness") or {})
+    next_commands = list(apply_readiness.get("next_commands") or repair_hint.get("next_commands") or [])[:5]
+    return {
+        "mutation": False,
+        "reason": repair_hint.get("reason") or "review a read-only event backfill preview before applying synthetic lifecycle events",
+        "missing_count": repair_hint.get("missing_count"),
+        "status_counts": dict(repair_hint.get("status_counts") or {}),
+        "sample_missing_candidates": samples,
+        "sample_truncated": bool(repair_hint.get("sample_truncated")) or len(samples) < len(repair_hint.get("sample_missing_candidates") or []),
+        "anomaly_count": repair_hint.get("anomaly_count"),
+        "structural_summary": dict(repair_hint.get("structural_summary") or {}),
+        "anomaly_details": anomaly_details,
+        "anomaly_details_truncated": bool(repair_hint.get("anomaly_details_truncated")) or len(anomaly_details) < len(repair_hint.get("anomaly_details") or []),
+        "apply_readiness": apply_readiness,
+        "next_commands": next_commands,
+        "dry_run_command": repair_hint.get("dry_run_command"),
+        "apply_command": repair_hint.get("apply_command"),
+        "verify_after_apply_command": repair_hint.get("verify_after_apply_command"),
+    }
+
+
 def _read_self_improvement_candidate_event_coverage() -> dict:
     """Return compact read-only event-ledger replay coverage for the dashboard.
 
@@ -3967,6 +4011,10 @@ def _read_self_improvement_candidate_event_coverage() -> dict:
                 result.setdefault("source", "self_improvement_queue.replay_events")
                 result.setdefault("queue_path", str(queue_path))
                 result.setdefault("event_ledger_path", str(event_ledger_path))
+                repair_hint = _bounded_candidate_event_repair_hint(helper, queue_path, event_ledger_path, result)
+                if repair_hint:
+                    result["repair_hint"] = repair_hint
+                    result["event_coverage_repair_hint"] = repair_hint
                 return result
         except Exception as exc:
             return {

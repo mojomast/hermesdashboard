@@ -6652,6 +6652,18 @@ function renderSelfImprovementEventCoverage(coverage) {
         .slice(0, 4)
         .map(candidate => candidate.id || candidate.candidate_id || candidate.title || '')
         .filter(Boolean);
+    const repairHint = coverage.repair_hint || coverage.event_coverage_repair_hint || {};
+    const applyReadiness = repairHint.apply_readiness || {};
+    const anomalyDetails = (repairHint.anomaly_details || []).slice(0, 4);
+    const nextRepairCommands = (repairHint.next_commands || []).slice(0, 4);
+    const applySafe = applyReadiness.apply_safe;
+    const blocking = applyReadiness.blocking;
+    const repairCommandFallbacks = [
+        repairHint.dry_run_command ? {kind: 'dry_run', command: repairHint.dry_run_command, reason: 'review synthetic event backfill preview'} : null,
+        repairHint.apply_command ? {kind: 'apply', command: repairHint.apply_command, reason: 'apply only after preview/token review'} : null,
+        repairHint.verify_after_apply_command ? {kind: 'verify', command: repairHint.verify_after_apply_command, reason: 'verify coverage after any apply'} : null,
+    ].filter(Boolean);
+    const commandRows = nextRepairCommands.length ? nextRepairCommands : repairCommandFallbacks;
     const status = coverage.coverage_ok === false ? 'coverage gaps' : (coverage.coverage_ok === true ? 'covered' : 'unknown');
     el.innerHTML = `
         <h4>Queue Event Coverage</h4>
@@ -6660,9 +6672,35 @@ function renderSelfImprovementEventCoverage(coverage) {
             <span class="meta-pill">level: ${escapeHtml(severity.level || 'unknown')}</span>
             <span class="meta-pill">events: ${escapeHtml(String(coverage.event_count ?? '—'))}</span>
             <span class="meta-pill">missing: ${escapeHtml(String(missing.count ?? severity.missing_count ?? '—'))}</span>
+            ${repairHint.anomaly_count !== undefined && repairHint.anomaly_count !== null ? `<span class="meta-pill">anomalies: ${escapeHtml(String(repairHint.anomaly_count))}</span>` : ''}
         </div>
         <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Missing by status: ${escapeHtml(statusSummary)}</p>
         <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Source: ${escapeHtml(coverage.source || coverage.event_ledger_path || 'waiting for replay summary')}</p>
+        ${repairHint.mutation === false ? `
+        <div class="activity-item" style="margin:0.55rem 0;">
+            <strong>Repair Readiness</strong>
+            <div class="message-meta" style="margin-top:0.35rem;">
+                <span class="meta-pill">apply_safe: ${escapeHtml(String(applySafe ?? 'unknown'))}</span>
+                <span class="meta-pill">blocking: ${escapeHtml(String(blocking ?? false))}</span>
+                <span class="meta-pill">missing: ${escapeHtml(String(repairHint.missing_count ?? '—'))}</span>
+                <span class="meta-pill">anomalies: ${escapeHtml(String(repairHint.anomaly_count ?? '—'))}</span>
+            </div>
+            <p style="color:var(--text-dim);font-size:0.82rem;margin:0.35rem 0 0;">${escapeHtml(applyReadiness.reason || repairHint.reason || 'Review read-only repair hints before mutating the event ledger.')}</p>
+        </div>` : ''}
+        ${anomalyDetails.length ? `
+        <div class="activity-item" style="margin:0.55rem 0;">
+            <strong>Anomaly Samples</strong>
+            <ul style="color:var(--warning);font-size:0.82rem;margin:0.35rem 0 0 1rem;">
+                ${anomalyDetails.map(item => `<li>${escapeHtml(item.anomaly_type || 'anomaly')}: ${escapeHtml(item.candidate_id || item.title || 'unknown candidate')} ${item.line_number ? `· line ${escapeHtml(String(item.line_number))}` : ''}</li>`).join('')}
+            </ul>
+        </div>` : ''}
+        ${commandRows.length ? `
+        <div class="activity-item" style="margin:0.55rem 0;">
+            <strong>Next repair commands</strong>
+            <ul style="color:var(--text-dim);font-size:0.78rem;margin:0.35rem 0 0 1rem;">
+                ${commandRows.map(row => `<li><code>${escapeHtml(row.command || '')}</code>${row.reason ? ` — ${escapeHtml(row.reason)}` : ''}</li>`).join('')}
+            </ul>
+        </div>` : ''}
         ${missingPreview.length ? `<ul style="color:var(--warning);font-size:0.82rem;margin:0.4rem 0 0 1rem;">${missingPreview.map(id => `<li>${escapeHtml(id)}</li>`).join('')}</ul>` : '<p style="color:var(--text-dim);font-size:0.82rem;margin:0.35rem 0;">No missing candidate coverage preview.</p>'}
     `;
 }

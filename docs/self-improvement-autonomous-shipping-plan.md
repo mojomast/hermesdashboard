@@ -236,4 +236,5 @@ Audit entries should include actor, intent, action, touched files/jobs, and read
 
 ## Drift audit
 
-Reference app has additional self-improvement repair/anomaly helper coverage not yet present in the refactor: `_bounded_candidate_event_repair_hint`, `repair_hint`, `event_coverage_repair_hint`, anomaly samples, and apply-readiness/next-command UI. This is a priority parity candidate before default-visible shipping.
+- Restored read-only repair/anomaly parity for event coverage in the refactor copy: `_bounded_candidate_event_repair_hint`, `repair_hint`, `event_coverage_repair_hint`, `Repair Readiness`, `Anomaly Samples`, and inert `Next repair commands` UI are present and test-covered.
+- This does **not** make Self-Improvement or Autonomous Development default-visible; mutation controls still require the remaining server-side intent/allowlist/readiness phases before default-visible shipping.

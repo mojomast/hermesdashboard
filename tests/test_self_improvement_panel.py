@@ -356,6 +356,127 @@ def test_candidate_event_coverage_summary_surfaces_missing_ledger_coverage(tmp_p
     assert state["candidate_event_coverage"]["missing_event_coverage"]["count"] == 1
 
 
+def test_candidate_event_coverage_surfaces_read_only_repair_hint(tmp_path, monkeypatch):
+    root = tmp_path / "self-improvement"
+    root.mkdir()
+    monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)
+
+    class Helper:
+        @staticmethod
+        def replay_events(queue_path, event_ledger_path, summary=True):
+            return {
+                "ok": True,
+                "coverage_ok": False,
+                "event_count": 1,
+                "missing_event_coverage": {
+                    "count": 1,
+                    "status_counts": {"built": 1},
+                    "candidate_ids_by_status": {"built": ["built-missing"]},
+                    "candidates": [{"candidate_id": "built-missing", "status": "built"}],
+                },
+                "missing_event_coverage_severity": {"coverage_ok": False, "level": "high", "missing_count": 1},
+            }
+
+        @staticmethod
+        def backlog_gate(queue_path, event_ledger_path=None):
+            return {
+                "event_coverage": {
+                    "repair_hint": {
+                        "mutation": False,
+                        "missing_count": 1,
+                        "status_counts": {"built": 1},
+                        "sample_missing_candidates": [{"candidate_id": "built-missing", "status": "built"}],
+                        "dry_run_command": "self_improvement_queue.py backfill-events --dry-run --json",
+                        "apply_command": "self_improvement_queue.py backfill-events --apply --json",
+                        "verify_after_apply_command": "self_improvement_queue.py backfill-events --verify-after-apply --json",
+                    }
+                }
+            }
+
+    monkeypatch.setattr(dashboard_app, "_load_self_improvement_queue_helper", lambda: Helper())
+
+    coverage = dashboard_app._read_self_improvement_candidate_event_coverage()
+    state = dashboard_app.get_self_improvement_status()
+
+    repair_hint = coverage["repair_hint"]
+    assert repair_hint["mutation"] is False
+    assert repair_hint["missing_count"] == 1
+    assert repair_hint["status_counts"]["built"] == 1
+    assert repair_hint["sample_missing_candidates"][0]["candidate_id"] == "built-missing"
+    assert "backfill-events --dry-run" in repair_hint["dry_run_command"]
+    assert "backfill-events --apply" in repair_hint["apply_command"]
+    assert "backfill-events --verify-after-apply" in repair_hint["verify_after_apply_command"]
+    assert state["candidate_event_coverage"]["event_coverage_repair_hint"]["mutation"] is False
+
+
+def test_candidate_event_repair_hint_surfaces_apply_safety_and_anomaly_commands(tmp_path):
+    class Helper:
+        @staticmethod
+        def backlog_gate(queue_path, event_ledger_path=None):
+            return {
+                "event_coverage": {
+                    "repair_hint": {
+                        "mutation": False,
+                        "missing_count": 46,
+                        "status_counts": {"built": 30, "debated": 16},
+                        "sample_missing_candidates": [{"candidate_id": "built-missing", "status": "built"}],
+                        "anomaly_count": 11,
+                        "structural_summary": {"previous_status_mismatch_count": 11},
+                        "anomaly_details": [
+                            {
+                                "anomaly_type": "previous_status_mismatch",
+                                "candidate_id": "stale-previous-status",
+                                "line_number": 325,
+                                "suggested_next_action": "repair stale previous_status before synthetic backfill",
+                            }
+                        ],
+                        "apply_readiness": {
+                            "mutation": False,
+                            "apply_safe": False,
+                            "blocking": True,
+                            "reason": "structural event-ledger anomalies must be repaired before synthetic backfill apply",
+                            "anomaly_repair_preview_command": "self_improvement_queue.py anomaly-repair-preview --json",
+                            "replay_anomalies_command": "self_improvement_queue.py replay-events --only-anomalies --json",
+                            "next_commands": [
+                                {"kind": "repair_anomalies_preview", "command": "self_improvement_queue.py anomaly-repair-preview --json", "reason": "inspect anomalies"},
+                                {"kind": "dry_run_review", "command": "self_improvement_queue.py backfill-events --dry-run --json", "reason": "recompute preview"},
+                            ],
+                        },
+                        "dry_run_command": "self_improvement_queue.py backfill-events --dry-run --json",
+                        "apply_command": "",
+                        "verify_after_apply_command": "self_improvement_queue.py backfill-events --verify-after-apply --json",
+                    }
+                }
+            }
+
+    hint = dashboard_app._bounded_candidate_event_repair_hint(
+        Helper(),
+        tmp_path / "feature-candidates.jsonl",
+        tmp_path / "feature-candidate-events.jsonl",
+        {"coverage_ok": False},
+    )
+
+    assert hint["anomaly_count"] == 11
+    assert hint["structural_summary"]["previous_status_mismatch_count"] == 11
+    assert hint["apply_readiness"]["apply_safe"] is False
+    assert hint["apply_readiness"]["blocking"] is True
+    assert "structural event-ledger anomalies" in hint["apply_readiness"]["reason"]
+    assert hint["anomaly_details"][0]["candidate_id"] == "stale-previous-status"
+    assert "anomaly-repair-preview" in hint["next_commands"][0]["command"]
+    assert "backfill-events --dry-run" in hint["next_commands"][1]["command"]
+
+
+def test_event_coverage_panel_contains_repair_controls():
+    html = dashboard_source()
+
+    assert "Repair Readiness" in html
+    assert "Anomaly Samples" in html
+    assert "Next repair commands" in html
+    assert "nextRepairCommands" in html
+    assert "repairHint.mutation === false" in html
+    assert "applyReadiness.reason" in html
+
+
 def test_evidence_gated_queue_accepts_valid_and_rejects_out_of_scope(tmp_path, monkeypatch):
     root = tmp_path / "self-improvement"
     monkeypatch.setattr(dashboard_app, "SELF_IMPROVEMENT_HOME", root)

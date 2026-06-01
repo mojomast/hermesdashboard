@@ -646,6 +646,38 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 - `dashboard_backend/services/message_board.py`: message-board SQLite post/message persistence is extracted; `/api/message-board*` endpoint wrappers and `generate_message_board_agent_reply` remain in `app.py`. Gate: `python -m pytest tests/test_message_board.py`.
 - `dashboard_backend/services/scrolls.py`: read-only Scrolls snapshot projection delegation is extracted; `GET /api/scrolls/snapshot` is restored as a parity API route while app-owned `_SCROLLS_PROJECT_ROOT` remains injected by the wrapper. Gate: `python -m pytest tests/test_scrolls_snapshot.py tests/test_scrolls_panel_navigation.py`.
 - `dashboard_backend/services/games_catalog.py`: read-only Games tab skill catalog/frontmatter projection is extracted; `/api/games` remains wrapped in `app.py` and app-owned `HERMES_HOME` is injected at call time. Gate: `python -m pytest tests/test_games_catalog_service.py tests/test_games_tab.py`.
+- Self-improvement repair/anomaly read-only parity: `app.py` now surfaces bounded `repair_hint` / `event_coverage_repair_hint` projections and `static/js/dashboard.js` renders Repair Readiness, Anomaly Samples, and inert Next repair commands. Gate: `python -m pytest tests/test_self_improvement_panel.py`.
+
+## Self-improvement repair/anomaly parity pass
+
+### Task frame
+Restore the reference dashboard's read-only repair/anomaly visibility for self-improvement candidate event coverage without enabling event-ledger mutations or making experimental tabs default-visible.
+
+### Vocabulary map
+- **API route:** existing `GET /api/self-improvement`; no new route was added.
+- **Service/projection helper:** `_bounded_candidate_event_repair_hint`, a bounded read-only projection adapter around the canonical self-improvement queue helper's repair hint.
+- **Event:** append-only candidate lifecycle ledger row used to derive coverage, anomaly, and readiness projections.
+- **State:** `repair_hint` / `event_coverage_repair_hint` are UI state projections; they contain commands as inert text, not executable dashboard jobs.
+- **Workflow:** operator reviews repair readiness and next commands outside the dashboard mutation surface.
+
+### Structural model
+`_read_self_improvement_candidate_event_coverage()` still delegates replay to the canonical queue helper when available. If coverage is incomplete, it now asks the helper's `backlog_gate(...)` for a bounded repair projection and attaches both `repair_hint` and `event_coverage_repair_hint`. Frontend rendering remains in the classic compatibility script.
+
+### Change set
+- Added `_bounded_candidate_event_repair_hint(...)` with sample/anomaly/command bounds and `mutation: False` projection semantics.
+- Wired repair projections into `_read_self_improvement_candidate_event_coverage()` for canonical replay results.
+- Updated `renderSelfImprovementEventCoverage()` to show Repair Readiness, Anomaly Samples, and Next repair commands as inert text.
+- Expanded `tests/test_self_improvement_panel.py` for repair hint projection, anomaly/apply-readiness command surfacing, and frontend marker coverage.
+- Updated `docs/self-improvement-autonomous-shipping-plan.md` drift audit.
+
+### Drift audit
+- Fixed true retained-surface gap: self-improvement repair/anomaly read-only visibility.
+- Still not default-visible: `self-improvement` and `autonomous-development` remain gated by the shipping plan.
+- Remaining side-effectful gated gaps include dashboard/backend restart routes.
+- Optional/reference-only gaps remain Dashboard Chat IRC bridge, Voice/OmniVoice, and Roguelike/Hermes Labyrinth.
+
+### Next step
+After this pass is committed and clean, resume low-risk modular cleanup with dashboard-state route-wrapper extraction using injected app compatibility wrappers.
 
 ## Games catalog extraction pass
 
@@ -719,8 +751,9 @@ After this pass is committed and the tree is clean, the safest modular pass is d
 7. Child stream / active run backend last among large contexts due to high global mutable state and streaming coupling.
 
 ## Drift audit from read-only reference
-- Reference has 124 route declarations; refactor has 104 plus extracted static mount in the last parity count. Missing reference surfaces include dashboard restart/backend restart, Dashboard Chat IRC bridge, Scrolls snapshot, Voice/OmniVoice routes, and self-improvement repair/anomaly helper coverage.
-- Prioritize true retained-surface gaps: Scrolls snapshot and self-improvement repair/anomaly read-only visibility. Dashboard/backend restart routes are real parity gaps but require explicit mutation intent gates.
+- Reference has 124 route declarations; refactor has 104 plus extracted static mount in the last parity count. Missing reference surfaces include dashboard restart/backend restart, Dashboard Chat IRC bridge, Voice/OmniVoice routes, and optional/local experiment panels.
+- Completed true retained-surface parity gaps: Scrolls snapshot and self-improvement repair/anomaly read-only visibility.
+- Dashboard/backend restart routes are real parity gaps but require explicit mutation intent gates.
 - Treat Dashboard Chat IRC bridge, OmniVoice/Voice, and Roguelike/Hermes Labyrinth as optional/reference experiments unless explicitly requested.
 - Tests parity before this pass: reference had 18 test files / 118 tests; refactor had 17 files / 114 tests plus refactor-specific static/execution/chat sanitizer coverage.
 
