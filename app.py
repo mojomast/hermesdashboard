@@ -63,6 +63,18 @@ from dashboard_backend.services.dashboard_state import (
     save_dashboard_state as _save_dashboard_state_impl,
     validate_dashboard_state_key as _validate_dashboard_state_key_impl,
 )
+from dashboard_backend.services.message_board import (
+    _load_message_board_post as _load_message_board_post_impl,
+    _message_board_connection as _message_board_connection_impl,
+    _message_board_db_path as _message_board_db_path_impl,
+    _message_board_now as _message_board_now_impl,
+    _message_board_row_to_message as _message_board_row_to_message_impl,
+    add_message_board_reply as _add_message_board_reply_impl,
+    add_message_board_user_message as _add_message_board_user_message_impl,
+    create_message_board_post as _create_message_board_post_impl,
+    get_message_board_post as _get_message_board_post_impl,
+    list_message_board_posts as _list_message_board_posts_impl,
+)
 from dashboard_backend.services.token_usage import (
     TOKEN_USAGE_FIELDS as TOKEN_USAGE_FIELDS,
     _aggregate_token_usage_api_calls as _aggregate_token_usage_api_calls_impl,
@@ -6530,151 +6542,39 @@ async def session_stream(request):
 
 
 def _message_board_db_path() -> Path:
-    return HERMES_HOME / "dashboard_message_board.sqlite3"
+    return _message_board_db_path_impl(HERMES_HOME)
 
 
 def _message_board_now() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return _message_board_now_impl()
 
 
 def _message_board_connection() -> sqlite3.Connection:
-    db_path = _message_board_db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS message_board_posts (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            author TEXT NOT NULL,
-            status TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS message_board_messages (
-            id TEXT PRIMARY KEY,
-            post_id TEXT NOT NULL REFERENCES message_board_posts(id) ON DELETE CASCADE,
-            role TEXT NOT NULL,
-            author TEXT NOT NULL,
-            content TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    return conn
+    return _message_board_connection_impl(HERMES_HOME)
 
 
 def _message_board_row_to_message(row: sqlite3.Row) -> dict:
-    return {
-        "id": row["id"],
-        "post_id": row["post_id"],
-        "role": row["role"],
-        "author": row["author"],
-        "content": row["content"],
-        "created_at": row["created_at"],
-    }
+    return _message_board_row_to_message_impl(row)
 
 
 def _load_message_board_post(conn: sqlite3.Connection, post_id: str) -> Optional[dict]:
-    post_row = conn.execute(
-        """
-        SELECT id, title, author, status, created_at, updated_at
-        FROM message_board_posts
-        WHERE id = ?
-        """,
-        (post_id,),
-    ).fetchone()
-    if not post_row:
-        return None
-    message_rows = conn.execute(
-        """
-        SELECT id, post_id, role, author, content, created_at
-        FROM message_board_messages
-        WHERE post_id = ?
-        ORDER BY created_at, rowid
-        """,
-        (post_id,),
-    ).fetchall()
-    post = dict(post_row)
-    post["messages"] = [_message_board_row_to_message(row) for row in message_rows]
-    post["reply_count"] = sum(1 for msg in post["messages"] if msg["role"] == "assistant")
-    return post
+    return _load_message_board_post_impl(conn, post_id)
 
 
 def get_message_board_post(post_id: str) -> Optional[dict]:
-    with _message_board_connection() as conn:
-        return _load_message_board_post(conn, post_id)
+    return _get_message_board_post_impl(post_id, hermes_home=HERMES_HOME)
 
 
 def list_message_board_posts(limit: int = 50) -> list[dict]:
-    with _message_board_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT p.id, p.title, p.author, p.status, p.created_at, p.updated_at,
-                   COUNT(CASE WHEN m.role = 'assistant' THEN 1 END) AS reply_count,
-                   (
-                       SELECT mm.content
-                       FROM message_board_messages mm
-                       WHERE mm.post_id = p.id AND mm.role = 'assistant'
-                       ORDER BY mm.created_at DESC, mm.rowid DESC
-                       LIMIT 1
-                   ) AS last_reply_preview
-            FROM message_board_posts p
-            LEFT JOIN message_board_messages m ON m.post_id = p.id
-            GROUP BY p.id
-            ORDER BY p.updated_at DESC
-            LIMIT ?
-            """,
-            (int(limit),),
-        ).fetchall()
-        posts = []
-        for row in rows:
-            item = dict(row)
-            preview = item.get("last_reply_preview") or ""
-            item["last_reply_preview"] = preview[:240]
-            item["reply_count"] = int(item.get("reply_count") or 0)
-            posts.append(item)
-        return posts
+    return _list_message_board_posts_impl(limit=limit, hermes_home=HERMES_HOME)
 
 
 def add_message_board_reply(post_id: str, content: str, author: str = "Hermes", role: str = "assistant") -> dict:
-    content = str(content or "").strip()
-    if not content:
-        raise ValueError("Reply content is required")
-    if role not in {"assistant", "user"}:
-        raise ValueError("Reply role must be assistant or user")
-    now = _message_board_now()
-    with _message_board_connection() as conn:
-        if not _load_message_board_post(conn, post_id):
-            raise KeyError(post_id)
-        conn.execute(
-            """
-            INSERT INTO message_board_messages (id, post_id, role, author, content, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (f"msg_{uuid.uuid4().hex}", post_id, role, author, content, now),
-        )
-        status = "answered" if role == "assistant" else "open"
-        conn.execute(
-            """
-            UPDATE message_board_posts
-            SET status = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (status, now, post_id),
-        )
-        conn.commit()
-        return _load_message_board_post(conn, post_id)
+    return _add_message_board_reply_impl(post_id, content, author=author, role=role, hermes_home=HERMES_HOME)
 
 
 def add_message_board_user_message(post_id: str, content: str, author: str = "mojo") -> dict:
-    return add_message_board_reply(post_id, content, author=author, role="user")
+    return _add_message_board_user_message_impl(post_id, content, author=author, hermes_home=HERMES_HOME)
 
 
 def create_message_board_post(
@@ -6683,37 +6583,13 @@ def create_message_board_post(
     author: str = "mojo",
     agent_reply: Optional[str] = None,
 ) -> dict:
-    title = str(title or "").strip()
-    body = str(body or "").strip()
-    author = str(author or "mojo").strip() or "mojo"
-    if not title:
-        raise ValueError("Post title is required")
-    if not body:
-        raise ValueError("Post body is required")
-    post_id = f"post_{uuid.uuid4().hex}"
-    now = _message_board_now()
-    with _message_board_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO message_board_posts (id, title, author, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (post_id, title, author, "open", now, now),
-        )
-        conn.execute(
-            """
-            INSERT INTO message_board_messages (id, post_id, role, author, content, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (f"msg_{uuid.uuid4().hex}", post_id, "user", author, body, now),
-        )
-        conn.commit()
-    if agent_reply:
-        return add_message_board_reply(post_id, agent_reply, author="Hermes", role="assistant")
-    loaded = get_message_board_post(post_id)
-    if not loaded:
-        raise RuntimeError("Created message board post could not be loaded")
-    return loaded
+    return _create_message_board_post_impl(
+        title,
+        body,
+        author=author,
+        agent_reply=agent_reply,
+        hermes_home=HERMES_HOME,
+    )
 
 
 def _extract_non_stream_chat_content(payload: dict) -> str:

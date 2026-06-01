@@ -189,6 +189,44 @@ Compatibility notes:
 - config/env metadata features use local fallbacks when optional Hermes CLI internals are unavailable
 - if your Hermes install does not expose the bundled API-only launcher internals, use your existing Hermes API and set `HERMES_API`
 
+
+## Architecture and Refactor Status
+
+Hermes Dashboard is being decomposed with vocabulary-first bounded contexts while preserving public behavior. The current dependency direction is:
+
+```text
+app.py bootstrap / route table
+  -> dashboard_backend/routes/* request wrappers (planned/gradual)
+  -> dashboard_backend/services/* bounded-context services
+  -> dashboard_backend/core/* shared path/config/response helpers (planned)
+```
+
+During this refactor, `app.py` remains the Starlette bootstrap, route registry, and compatibility-wrapper owner. Services must not import `app.py`; app-owned mutable dependencies such as `HERMES_HOME`, database paths, locks, and runtime config are passed into services at call time so tests and local callers that monkeypatch app symbols keep working.
+
+Extracted backend modules so far:
+
+- `dashboard_backend/services/dashboard_state.py` owns SQLite persistence for browser/dashboard state projections; `app.py` keeps `_load_dashboard_state`, `_save_dashboard_state`, `_delete_dashboard_state`, and related private wrappers.
+- `dashboard_backend/services/token_usage.py` owns read-only token/cost aggregation ledgers and projections; `/api/token-usage` and app-level helper names remain stable.
+- `dashboard_backend/services/message_board.py` owns message-board SQLite post/message persistence; `/api/message-board*` route handlers and Hermes reply generation remain in `app.py` for compatibility.
+
+Refactor passes follow `AUDIT -> MAP -> EXTRACT -> VERIFY -> DOCUMENT -> COMMIT`. For backend extraction passes, run the focused context tests first, then the full gate:
+
+```sh
+python -m py_compile app.py
+node --check static/js/dashboard.js
+python -m pytest
+```
+
+Compatibility contracts for the current refactor copy:
+
+- Preserve public route paths and payload shapes.
+- Preserve DOM IDs, CSS class names, tab IDs, and frontend behavior.
+- Keep `static/js/dashboard.js` as a classic deferred compatibility script; do not switch to `type="module"` yet.
+- Preserve global JavaScript functions while inline handlers still rely on them.
+- Do not introduce npm/Vite/bundler requirements for these passes.
+
+See [`docs/app-refactor-map.md`](docs/app-refactor-map.md) for the backend bounded-context map and [`docs/self-improvement-autonomous-shipping-plan.md`](docs/self-improvement-autonomous-shipping-plan.md) for safety gates before default-visible self-improvement/autonomous-development tabs.
+
 ## First-Run Verification
 
 After the installer finishes, a healthy first run looks like this:
@@ -304,6 +342,9 @@ It depends on an existing Hermes install for:
 - [Setup Guide](SETUP.md)
 - [Operations Guide](OPERATIONS.md)
 - [Implementation Notes](IMPLEMENTATION.md)
+- [Backend Refactor Map](docs/app-refactor-map.md)
+- [Frontend/General Refactor Map](docs/refactor-map.md)
+- [Self-Improvement / Autonomous Development Shipping Plan](docs/self-improvement-autonomous-shipping-plan.md)
 - [Contributing Guide](CONTRIBUTING.md)
 
 ## Contributing

@@ -84,8 +84,8 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | dashboard_backend/core/paths.py | repo/user/home path constants, safe path helpers | HOME_DIR/HERMES paths, env vars | used by most routes | shared import tests + full pytest |
 | dashboard_backend/core/responses.py | JSON/HTML/plain response helpers and error envelopes | none or Starlette response classes | all API wrappers | full pytest |
 | dashboard_backend/core/config.py | settings, models, personality, secrets, provider config | CONFIG caches/env | /api/settings, /api/models, /api/personality, /api/secrets | settings/model tests |
-| dashboard_backend/services/token_usage.py | TOKEN_USAGE_FIELDS and token usage aggregation helpers | session DB/filesystem reads only | /api/token-usage via wrapper/route | tests/test_token_usage_dashboard.py |
-| dashboard_backend/services/message_board.py | message-board DB schema/read/write helpers | message board sqlite path/lock | /api/message-board* | tests/test_message_board.py |
+| dashboard_backend/services/token_usage.py | ✅ EXTRACTED: TOKEN_USAGE_FIELDS and token usage aggregation helpers; app wrappers remain | session DB/filesystem reads only | /api/token-usage via wrapper/route | tests/test_token_usage_dashboard.py |
+| dashboard_backend/services/message_board.py | ✅ EXTRACTED: message-board SQLite schema/read/write helpers; endpoint wrappers remain in app.py | message board sqlite path via HERMES_HOME | /api/message-board* via app wrappers | tests/test_message_board.py |
 | dashboard_backend/services/sessions.py | session listing, traces, transcript/history projections | session paths/caches | /api/sessions*, /api/traces* | session/execution trace tests |
 | dashboard_backend/services/dashboard_state.py | SQLite persistence for browser dashboard state | state sqlite path | /api/dashboard-state/* | tests/test_dashboard_state_persistence.py |
 | dashboard_backend/services/active_runs.py + child_streams.py | live chat stream orchestration, active run state, child event routing | ACTIVE_RUNS, ACTIVE_CHILD_STREAMS, STEER_MESSAGES, INTERRUPT_FLAGS | /chat, /api/session/* stream/control | high-risk streaming tests + full pytest |
@@ -321,24 +321,24 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | `steer_session` | 6517-6576 | `async def steer_session(request):     session_id = request.path_params["session_id"]     try:         body = await reque` | `dashboard_backend/services/sessions.py` | ACTIVE_CHILD_STREAMS, ACTIVE_SESSION_STEER_MESSAGES, API_KEY, HERMES_API |
 | `stop_run` | 6579-6603 | `async def stop_run(request):     run_id = request.path_params["run_id"]     state = ACTIVE_RUNS.get(run_id)     if not s` | `app.py/bootstrap or dashboard_backend/core/*` | ACTIVE_RUNS |
 | `session_stream` | 6606-6670 | `async def session_stream(request):     session_id = request.path_params["session_id"]     db_path = HERMES_HOME / "state` | `dashboard_backend/services/sessions.py` | ACTIVE_CHILD_STREAMS, ACTIVE_RUNS, HERMES_HOME |
-| `_message_board_db_path` | 6673-6674 | `def _message_board_db_path() -> Path:     return HERMES_HOME / "dashboard_message_board.sqlite3"` | `dashboard_backend/services/message_board.py` | HERMES_HOME |
-| `_message_board_now` | 6677-6678 | `def _message_board_now() -> str:     return datetime.datetime.now(datetime.timezone.utc).isoformat()` | `dashboard_backend/services/message_board.py` | — |
-| `_message_board_connection` | 6681-6711 | `def _message_board_connection() -> sqlite3.Connection:     db_path = _message_board_db_path()     db_path.parent.mkdir(p` | `dashboard_backend/services/message_board.py` | — |
-| `_message_board_row_to_message` | 6714-6722 | `def _message_board_row_to_message(row: sqlite3.Row) -> dict:     return {         "id": row["id"],         "post_id": ro` | `dashboard_backend/services/message_board.py` | — |
-| `_load_message_board_post` | 6725-6748 | `def _load_message_board_post(conn: sqlite3.Connection, post_id: str) -> Optional[dict]:     post_row = conn.execute(    ` | `dashboard_backend/services/message_board.py` | — |
-| `get_message_board_post` | 6751-6753 | `def get_message_board_post(post_id: str) -> Optional[dict]:     with _message_board_connection() as conn:         return` | `dashboard_backend/services/message_board.py` | — |
-| `list_message_board_posts` | 6756-6784 | `def list_message_board_posts(limit: int = 50) -> list[dict]:     with _message_board_connection() as conn:         rows ` | `dashboard_backend/services/message_board.py` | — |
-| `add_message_board_reply` | 6787-6814 | `def add_message_board_reply(post_id: str, content: str, author: str = "Hermes", role: str = "assistant") -> dict:     co` | `dashboard_backend/services/message_board.py` | — |
-| `add_message_board_user_message` | 6817-6818 | `def add_message_board_user_message(post_id: str, content: str, author: str = "mojo") -> dict:     return add_message_boa` | `dashboard_backend/services/message_board.py` | — |
-| `create_message_board_post` | 6821-6857 | `def create_message_board_post(     title: str,     body: str,     author: str = "mojo",     agent_reply: Optional[str] =` | `dashboard_backend/services/message_board.py` | — |
+| `✅ _message_board_db_path` | 6673-6674 | `def _message_board_db_path() -> Path:     return HERMES_HOME / "dashboard_message_board.sqlite3"` | `dashboard_backend/services/message_board.py` | HERMES_HOME |
+| `✅ _message_board_now` | 6677-6678 | `def _message_board_now() -> str:     return datetime.datetime.now(datetime.timezone.utc).isoformat()` | `dashboard_backend/services/message_board.py` | — |
+| `✅ _message_board_connection` | 6681-6711 | `def _message_board_connection() -> sqlite3.Connection:     db_path = _message_board_db_path()     db_path.parent.mkdir(p` | `dashboard_backend/services/message_board.py` | — |
+| `✅ _message_board_row_to_message` | 6714-6722 | `def _message_board_row_to_message(row: sqlite3.Row) -> dict:     return {         "id": row["id"],         "post_id": ro` | `dashboard_backend/services/message_board.py` | — |
+| `✅ _load_message_board_post` | 6725-6748 | `def _load_message_board_post(conn: sqlite3.Connection, post_id: str) -> Optional[dict]:     post_row = conn.execute(    ` | `dashboard_backend/services/message_board.py` | — |
+| `✅ get_message_board_post` | 6751-6753 | `def get_message_board_post(post_id: str) -> Optional[dict]:     with _message_board_connection() as conn:         return` | `dashboard_backend/services/message_board.py` | — |
+| `✅ list_message_board_posts` | 6756-6784 | `def list_message_board_posts(limit: int = 50) -> list[dict]:     with _message_board_connection() as conn:         rows ` | `dashboard_backend/services/message_board.py` | — |
+| `✅ add_message_board_reply` | 6787-6814 | `def add_message_board_reply(post_id: str, content: str, author: str = "Hermes", role: str = "assistant") -> dict:     co` | `dashboard_backend/services/message_board.py` | — |
+| `✅ add_message_board_user_message` | 6817-6818 | `def add_message_board_user_message(post_id: str, content: str, author: str = "mojo") -> dict:     return add_message_boa` | `dashboard_backend/services/message_board.py` | — |
+| `✅ create_message_board_post` | 6821-6857 | `def create_message_board_post(     title: str,     body: str,     author: str = "mojo",     agent_reply: Optional[str] =` | `dashboard_backend/services/message_board.py` | — |
 | `_extract_non_stream_chat_content` | 6860-6880 | `def _extract_non_stream_chat_content(payload: dict) -> str:     try:         choices = payload.get("choices") or []     ` | `app.py/bootstrap or dashboard_backend/core/*` | — |
 | `_parse_json_object_content` | 6883-6891 | `def _parse_json_object_content(content: str) -> dict:     text = str(content or "").strip()     if text.startswith("```"` | `app.py/bootstrap or dashboard_backend/core/*` | — |
 | `call_dnd_hermes_json` | 6894-6907 | `async def call_dnd_hermes_json(messages: list[dict], timeout_seconds: float = 90.0) -> dict:     async with httpx.AsyncC` | `dashboard_backend/services/dnd.py` | API_KEY, HERMES_API |
-| `generate_message_board_agent_reply` | 6910-6948 | `async def generate_message_board_agent_reply(post: dict) -> str:     thread_messages = []     for msg in post.get("messa` | `dashboard_backend/services/message_board.py` | API_KEY, HERMES_API |
-| `get_message_board_posts_endpoint` | 6951-6952 | `async def get_message_board_posts_endpoint(request):     return JSONResponse({"posts": list_message_board_posts()})` | `dashboard_backend/services/message_board.py` | — |
-| `get_message_board_post_endpoint` | 6955-6961 | `async def get_message_board_post_endpoint(request, post_id: Optional[str] = None):     if post_id is None:         post_` | `dashboard_backend/services/message_board.py` | — |
-| `create_message_board_post_endpoint` | 6964-6976 | `async def create_message_board_post_endpoint(request):     data = await request.json()     try:         post = create_me` | `dashboard_backend/services/message_board.py` | — |
-| `create_message_board_message_endpoint` | 6979-6994 | `async def create_message_board_message_endpoint(request):     post_id = request.path_params["post_id"]     data = await ` | `dashboard_backend/services/message_board.py` | — |
+| `generate_message_board_agent_reply` (kept in app.py) | 6910-6948 | Hermes API agent-reply generation for a message-board thread; not extracted with SQLite persistence | `app.py` for now | API_KEY, HERMES_API |
+| `get_message_board_posts_endpoint` (kept in app.py) | 6951-6952 | `async def get_message_board_posts_endpoint(request):     return JSONResponse({"posts": list_message_board_posts()})` | `app.py` route wrapper for now | — |
+| `get_message_board_post_endpoint` (kept in app.py) | 6955-6961 | `async def get_message_board_post_endpoint(request, post_id: Optional[str] = None):     if post_id is None:         post_` | `app.py` route wrapper for now | — |
+| `create_message_board_post_endpoint` (kept in app.py) | 6964-6976 | `async def create_message_board_post_endpoint(request):     data = await request.json()     try:         post = create_me` | `app.py` route wrapper for now | — |
+| `create_message_board_message_endpoint` (kept in app.py) | 6979-6994 | `async def create_message_board_message_endpoint(request):     post_id = request.path_params["post_id"]     data = await ` | `app.py` route wrapper for now | — |
 | `get_session_tokens` | 6997-7154 | `async def get_session_tokens(request):     session_id = request.path_params["session_id"]     db_path = HERMES_HOME / "s` | `dashboard_backend/services/sessions.py` | HERMES_HOME, MODEL_COST_TABLE, TOKEN_USAGE_FIELDS |
 | `_dnd_turn_lock` | 7177-7182 | `def _dnd_turn_lock(campaign_id: str) -> asyncio.Lock:     lock = DND_TURN_LOCKS.get(str(campaign_id))     if lock is Non` | `dashboard_backend/services/dnd.py` | DND_TURN_LOCKS |
 | `_dnd_now` | 7185-7186 | `def _dnd_now() -> str:     return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")` | `dashboard_backend/services/dnd.py` | — |
@@ -484,7 +484,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | 9775 | Route | `"/api/sessions/{session_id}/steer"` | `steer_session` | `"POST"` |
 | 9776 | Route | `"/api/sessions/{session_id}"` | `delete_session` | `"DELETE"` |
 | 9777 | Route | `"/api/message-board"` | `get_message_board_posts_endpoint)` | `—` |
-| 9778 | Route | `"/api/message-board"` | `create_message_board_post_endpoint` | `"POST"` |
+| 9778 | Route | `"/api/message-board"` | `create_message_board_post_endpoint` (kept in app.py) | `"POST"` |
 | 9784 | Route | `"/api/message-board/{post_id}"` | `get_message_board_post_endpoint)` | `—` |
 | 9785 | Route | `"/api/files/content"` | `get_file_content)` | `—` |
 | 9786 | Route | `"/api/memory"` | `get_memory)` | `—` |
@@ -640,19 +640,31 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 - Preserve DOM IDs, CSS classes, route paths, and tab metadata while moving backend wrappers.
 - `/static`, `/static/js/dashboard.js`, and `/static/css/dashboard.css` are smoke-test contracts.
 
+## Completed extraction passes
+- `dashboard_backend/services/dashboard_state.py`: dashboard-state SQLite ledger/projection persistence is extracted; app-level wrappers preserve `DASHBOARD_STATE_DB_PATH`, `DASHBOARD_STATE_KEYS`, and lock monkeypatch seams. Gate: `python -m pytest tests/test_dashboard_state_persistence.py`.
+- `dashboard_backend/services/token_usage.py`: token usage aggregation and projection helpers are extracted; `/api/token-usage` and app-level helper names remain as wrappers. Gate: `python -m pytest tests/test_token_usage_dashboard.py`.
+- `dashboard_backend/services/message_board.py`: message-board SQLite post/message persistence is extracted; `/api/message-board*` endpoint wrappers and `generate_message_board_agent_reply` remain in `app.py`. Gate: `python -m pytest tests/test_message_board.py`.
+
+## Compatibility wrapper policy
+- Keep legacy `app.py` function names while tests or callers import/monkeypatch them directly.
+- Pass mutable app-owned dependencies (`HERMES_HOME`, DB paths, locks, config) into services at call time.
+- Services must not import `app.py`; planned route modules should depend on services/core only.
+- Treat persistent records as ledgers and route/UI summaries as projections so extraction does not change public payload contracts.
+
 ## Extraction order
-1. Token usage service (`dashboard_backend/services/token_usage.py`): low-risk read-only aggregation leaf; keep `/api/token-usage` wrapper in `app.py` initially.
-2. Message board service (`dashboard_backend/services/message_board.py`): isolated SQLite CRUD; extract service first, route wrappers second.
-3. Dashboard state route wrappers: service already extracted; move route wrappers after confirming persistence tests stay green.
-4. Scrolls/DnD/graph leaf services where filesystem/proxy state is isolated and route contracts are covered.
+1. ✅ Token usage service (`dashboard_backend/services/token_usage.py`): low-risk read-only aggregation leaf; `/api/token-usage` wrapper remains in `app.py`.
+2. ✅ Message board service (`dashboard_backend/services/message_board.py`): isolated SQLite CRUD; route wrappers remain in `app.py` for this pass.
+3. Dashboard state route wrappers: service already extracted; move route wrappers after confirming persistence tests stay green and using injected app wrappers.
+4. Games catalog-only or Scrolls snapshot/read-only projections where filesystem/proxy state is isolated and route contracts are covered.
 5. Config/settings core extraction, then route modules that need it.
 6. Self-improvement/autonomous-development only after safety/readiness plan and mutation gates are mapped; route extraction can precede default-visible shipping but must preserve hidden-by-default posture.
 7. Child stream / active run backend last among large contexts due to high global mutable state and streaming coupling.
 
 ## Drift audit from read-only reference
-- Reference has 124 route declarations; refactor has 104 plus extracted static mount. Missing reference surfaces include dashboard restart/backend restart, Dashboard Chat IRC bridge, Scrolls snapshot, Voice/OmniVoice routes, and self-improvement repair/anomaly helper coverage.
-- Roguelike/Hermes Labyrinth is a frontend-only reference feature; no backend route is expected, but refactor lacks the reference tests/panel.
-- Tests parity: reference has 18 test files / 118 tests; refactor has 17 files / 114 tests plus refactor-specific static/execution/chat sanitizer coverage.
+- Reference has 124 route declarations; refactor has 104 plus extracted static mount in the last parity count. Missing reference surfaces include dashboard restart/backend restart, Dashboard Chat IRC bridge, Scrolls snapshot, Voice/OmniVoice routes, and self-improvement repair/anomaly helper coverage.
+- Prioritize true retained-surface gaps: Scrolls snapshot and self-improvement repair/anomaly read-only visibility. Dashboard/backend restart routes are real parity gaps but require explicit mutation intent gates.
+- Treat Dashboard Chat IRC bridge, OmniVoice/Voice, and Roguelike/Hermes Labyrinth as optional/reference experiments unless explicitly requested.
+- Tests parity before this pass: reference had 18 test files / 118 tests; refactor had 17 files / 114 tests plus refactor-specific static/execution/chat sanitizer coverage.
 
 ## Next step
-Perform the first gated extraction pass: move token usage constants/helpers into `dashboard_backend/services/token_usage.py`, keep endpoint route path `/api/token-usage`, run focused and full gates, then commit `refactor(token-usage): extract backend service from app.py`.
+Start the next pass from a clean tree. Safest options are dashboard-state route-wrapper extraction using injected app wrappers, or games catalog-only extraction. Do not extract active-run/chat-stream/child-stream until ownership/state design and tests are updated.
