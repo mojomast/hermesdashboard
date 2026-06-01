@@ -253,6 +253,125 @@ function invalidateCache(url) {
     else { Object.keys(apiCache).forEach(k => delete apiCache[k]); log('inf', 'Cache invalidated: all'); }
 }
 
+function formatTokenCount(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return '--';
+    if (n < 1000) return String(Math.round(n));
+    if (n < 1000000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
+    if (n < 1000000000) return `${(n / 1000000).toFixed(n < 10000000 ? 1 : 0)}M`;
+    return `${(n / 1000000000).toFixed(n < 10000000000 ? 1 : 0)}B`;
+}
+
+function tokenTotal(window) {
+    const n = Number(window && window.total_tokens);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function tokenUsageTopline(windows) {
+    const sessionTotal = tokenTotal(windows.current_session);
+    const dayTotal = tokenTotal(windows.current_day);
+    const weekTotal = tokenTotal(windows.current_week);
+    const monthTotal = tokenTotal(windows.current_month);
+    const overallTotal = tokenTotal(windows.overall);
+    if (sessionTotal > 0 || dayTotal > 0) {
+        return `S ${formatTokenCount(sessionTotal)} · D ${formatTokenCount(dayTotal)}`;
+    }
+    if (weekTotal > 0) {
+        return `W ${formatTokenCount(weekTotal)} · O ${formatTokenCount(overallTotal)}`;
+    }
+    if (monthTotal > 0) {
+        return `M ${formatTokenCount(monthTotal)} · O ${formatTokenCount(overallTotal)}`;
+    }
+    if (overallTotal > 0) {
+        return `O ${formatTokenCount(overallTotal)}`;
+    }
+    return 'S 0 · D 0';
+}
+
+function formatTokenExact(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return '--';
+    return new Intl.NumberFormat().format(Math.round(n));
+}
+
+function getCurrentTokenUsageSessionId() {
+    return (activeRun && activeRun.sessionId) || activeChatSessionId || '';
+}
+
+function renderTokenUsageSummary(data) {
+    lastTokenUsagePayload = data || null;
+    const windows = (data && data.windows) || {};
+    const session = windows.current_session || {};
+    const day = windows.current_day || {};
+    const week = windows.current_week || {};
+    const month = windows.current_month || {};
+    const overall = windows.overall || {};
+
+    const sessionTotal = session.total_tokens;
+    const dayTotal = day.total_tokens;
+    const summary = document.getElementById('token-usage-summary');
+    if (summary) {
+        summary.textContent = tokenUsageTopline(windows);
+    }
+
+    const fields = {
+        'token-usage-current-session': sessionTotal,
+        'token-usage-current-day': dayTotal,
+        'token-usage-current-week': week.total_tokens,
+        'token-usage-current-month': month.total_tokens,
+        'token-usage-overall': overall.total_tokens,
+    };
+    Object.entries(fields).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = formatTokenExact(value);
+    });
+
+    const widget = document.getElementById('token-usage-widget');
+    if (widget) {
+        widget.title = [
+            `Session: ${formatTokenExact(sessionTotal)} tokens`,
+            `Today: ${formatTokenExact(dayTotal)} tokens`,
+            `Week: ${formatTokenExact(week.total_tokens)} tokens`,
+            `Month: ${formatTokenExact(month.total_tokens)} tokens`,
+            `Overall: ${formatTokenExact(overall.total_tokens)} tokens`,
+        ].join('\n');
+    }
+}
+
+async function loadTokenUsageSummary() {
+    if (tokenUsagePollInFlight) return;
+    tokenUsagePollInFlight = true;
+    try {
+        const sessionId = getCurrentTokenUsageSessionId();
+        const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+        const response = await fetch(`/api/token-usage${qs}`, {
+            headers: { 'Accept': 'application/json' },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        renderTokenUsageSummary(await response.json());
+    } catch (error) {
+        console.warn('Failed to load token usage:', error);
+        if (!lastTokenUsagePayload) {
+            const summary = document.getElementById('token-usage-summary');
+            if (summary) summary.textContent = 'S -- · D --';
+        }
+    } finally {
+        tokenUsagePollInFlight = false;
+    }
+}
+
+function startTokenUsagePolling() {
+    if (tokenUsagePollTimer) return;
+    void loadTokenUsageSummary();
+    tokenUsagePollTimer = setInterval(() => {
+        void loadTokenUsageSummary();
+    }, 30000);
+}
+
+function refreshTokenUsageSoon() {
+    setTimeout(() => void loadTokenUsageSummary(), 500);
+}
+
 // Tool call timing
 const toolCallTimers = new Map();  // call_id -> start timestamp
 const toolCallCompletionTimes = new Map();  // call_id -> elapsed string
@@ -378,6 +497,9 @@ let activeSessionDetailId = null;
 let activeRun = null;
 let activeChatSessionId = null;
 let streamResumeInFlight = false;
+let tokenUsagePollTimer = null;
+let tokenUsagePollInFlight = false;
+let lastTokenUsagePayload = null;
 let pendingImageAttachments = [];
 let pendingImageAttachmentSeq = 0;
 
@@ -627,6 +749,7 @@ function resumeActiveRunFromBanner() {
 function detachChatSession() {
     activeChatSessionId = null;
     saveActiveChatSession();
+    refreshTokenUsageSoon();
     clearChat();
     updateActiveChatBanner();
     showToast('Started a new chat');
@@ -1899,6 +2022,7 @@ async function hydrateChatFromSession(sessionId, options = {}) {
     const lastAssistant = [...conversation].reverse().find(msg => msg.role === 'assistant');
     updateContextDisplay(lastAssistant ? normalizeAssistantMessage(lastAssistant) : { usage: null, last_prompt_tokens: 0 });
     saveActiveChatSession();
+    refreshTokenUsageSoon();
     updateActiveChatBanner();
     updateActiveRunBanner();
     showToast(`Loaded session ${sessionId.slice(0, 8)} into chat`);
@@ -7643,6 +7767,7 @@ function clearChat() {
     clearPendingImageAttachments();
     activeChatSessionId = null;
     saveActiveChatSession();
+    refreshTokenUsageSoon();
     updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
     updateActiveChatBanner();
     log('inf', 'Chat cleared');
@@ -9728,6 +9853,7 @@ applyGraphSettingsToUi();
 // Initialize (lazy: only load essentials for chat)
 log('inf', 'Dashboard initialized');
 loadActiveChatSession();
+startTokenUsagePolling();
 loadStatus();
 loadModels();
 

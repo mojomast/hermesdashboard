@@ -167,6 +167,89 @@
     background: var(--primary-dim);
 }
 
+.token-usage-widget {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2rem;
+    padding: 0.35rem 0.55rem;
+    border: 1px solid var(--primary-border);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.03);
+    color: var(--text);
+    font-size: 0.78rem;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: default;
+}
+
+.token-usage-label {
+    color: var(--primary);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.token-usage-value {
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.token-usage-widget:hover,
+.token-usage-widget:focus-within {
+    background: var(--primary-dim);
+}
+
+.token-usage-popover {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.55rem);
+    z-index: 1200;
+    min-width: 230px;
+    padding: 0.65rem;
+    border: 1px solid var(--primary-border);
+    border-radius: 10px;
+    background: rgba(15, 15, 35, 0.98);
+    box-shadow: 0 16px 45px rgba(0,0,0,0.35);
+}
+
+[data-theme="light"] .token-usage-popover {
+    background: rgba(255,255,255,0.98);
+}
+
+.token-usage-widget:hover .token-usage-popover,
+.token-usage-widget:focus-within .token-usage-popover {
+    display: block;
+}
+
+.token-usage-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    padding: 0.2rem 0;
+}
+
+.token-usage-row strong {
+    color: var(--text);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+    .token-usage-widget {
+        max-width: 7.5rem;
+        overflow: hidden;
+        padding-inline: 0.45rem;
+    }
+
+    .token-usage-label {
+        display: none;
+    }
+}
+
 .dashboard-settings-wrapper {
     position: relative;
 }

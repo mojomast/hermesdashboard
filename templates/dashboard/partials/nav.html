@@ -2,6 +2,17 @@
         <div class="logo">Hermes <span>Dashboard</span></div>
         <div style="display:flex;align-items:center;gap:1rem;">
             <button class="hamburger" id="hamburger" onclick="toggleMobileMenu()">&#9776;</button>
+            <div class="token-usage-widget" id="token-usage-widget" tabindex="0" aria-live="polite" title="Token usage loading">
+                <span class="token-usage-label">Tok</span>
+                <span class="token-usage-value" id="token-usage-summary">S -- · D --</span>
+                <div class="token-usage-popover" id="token-usage-popover" role="status" aria-label="Token usage totals">
+                    <div class="token-usage-row"><span>Session</span><strong id="token-usage-current-session">--</strong></div>
+                    <div class="token-usage-row"><span>Today</span><strong id="token-usage-current-day">--</strong></div>
+                    <div class="token-usage-row"><span>This week</span><strong id="token-usage-current-week">--</strong></div>
+                    <div class="token-usage-row"><span>This month</span><strong id="token-usage-current-month">--</strong></div>
+                    <div class="token-usage-row"><span>Overall</span><strong id="token-usage-overall">--</strong></div>
+                </div>
+            </div>
             <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
                 <span id="theme-icon">&#9790;</span>
             </button>

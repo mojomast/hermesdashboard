@@ -68,3 +68,30 @@ def test_scrollprize_tab_is_available_in_dashboard_settings_registry():
 
     assert "id: 'scrolls', label: 'Vesuvius AutoResearch', experimental: true" in html
     assert 'data-panel="scrolls"' in html
+
+
+def test_token_usage_top_bar_widget_is_rendered_before_theme_options():
+    html = _html()
+
+    assert 'id="token-usage-widget"' in html
+    assert 'id="token-usage-summary"' in html
+    assert 'id="token-usage-current-session"' in html
+    assert 'id="token-usage-current-day"' in html
+    assert 'id="token-usage-current-week"' in html
+    assert 'id="token-usage-current-month"' in html
+    assert 'id="token-usage-overall"' in html
+
+    assert html.index('id="token-usage-widget"') < html.index('id="theme-toggle"')
+    assert html.index('id="theme-toggle"') < html.index('id="dashboard-settings-button"')
+
+    assert '.token-usage-widget' in html
+    assert '.token-usage-popover' in html
+    assert 'function formatTokenCount(' in html
+    assert 'function tokenUsageTopline(' in html
+    assert 'return `O ${formatTokenCount(overallTotal)}`;' in html
+    assert 'summary.textContent = tokenUsageTopline(windows);' in html
+    assert 'function loadTokenUsageSummary(' in html
+    assert 'function renderTokenUsageSummary(' in html
+    assert '/api/token-usage' in html
+    assert 'startTokenUsagePolling();' in html
+
