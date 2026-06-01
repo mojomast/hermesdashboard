@@ -2144,6 +2144,15 @@ body {
 .btn:hover { background: rgba(255, 215, 0, 0.25); }
 .btn.primary { background: var(--primary); color: var(--bg-dark); border-color: var(--primary); }
 .btn.primary:hover { background: #ffed4a; }
+.emergency-stop-btn {
+    background: rgba(248, 113, 113, 0.14);
+    border: 1px solid rgba(248, 113, 113, 0.36);
+    color: #fca5a5;
+}
+.emergency-stop-btn:hover {
+    background: rgba(248, 113, 113, 0.24);
+    border-color: rgba(248, 113, 113, 0.55);
+}
 
 /* Sessions Panel */
 .sessions-list {

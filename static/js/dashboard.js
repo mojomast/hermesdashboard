@@ -483,6 +483,7 @@ const chatRunStatus = document.getElementById('chat-run-status');
 const chatRunStatusTitle = document.getElementById('chat-run-status-title');
 const chatRunStatusText = document.getElementById('chat-run-status-text');
 const chatRunStatusMeta = document.getElementById('chat-run-status-meta');
+const chatRunStopBtn = document.getElementById('chat-run-stop-btn');
 const chatRunReattachBtn = document.getElementById('chat-run-reattach-btn');
 const chatRunResumeBtn = document.getElementById('chat-run-resume-btn');
 let conversation = [];
@@ -700,6 +701,7 @@ function updateActiveRunBanner() {
         ageSeconds !== null ? `started ${ageSeconds}s ago` : '',
         activeRun.eventOffset ? `${activeRun.eventOffset} events cached` : '',
     ].filter(Boolean).join(' • ');
+    if (chatRunStopBtn) chatRunStopBtn.disabled = streamResumeInFlight;
     if (chatRunReattachBtn) chatRunReattachBtn.disabled = !activeRun.sessionId;
     if (chatRunResumeBtn) chatRunResumeBtn.disabled = streamResumeInFlight;
 }
@@ -4866,10 +4868,10 @@ function showInterruptButton(sessionId) {
         wrapper.style.gap = '0.25rem';
         container.appendChild(wrapper);
     }
-    wrapper.innerHTML = '<button class="btn interrupt-btn" type="button">Pause</button><span class="interrupt-status-msg" id="interrupt-status-msg" style="display:none;"></span>';
+    wrapper.innerHTML = '<button class="btn interrupt-btn emergency-stop-btn" type="button">Stop main agent</button><span class="interrupt-status-msg" id="interrupt-status-msg" style="display:none;"></span>';
     const btn = wrapper.querySelector('.interrupt-btn');
     if (btn) {
-        btn.onclick = function() { requestInterrupt(sessionId); };
+        btn.onclick = function() { requestInterrupt(sessionId, activeRun?.runId || null); };
     }
     wrapper.style.display = 'inline-flex';
 }
@@ -4881,38 +4883,49 @@ function hideInterruptButton() {
     if (wrapper) {
         wrapper.style.display = 'none';
     }
+    if (chatRunStopBtn) {
+        chatRunStopBtn.disabled = true;
+    }
 }
 
-function requestInterrupt(sessionId) {
-    if (!window.confirm('Pause the running agent before its next tool call?')) return;
-    fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/interrupt', {
+function requestInterrupt(sessionId, runId = null) {
+    if (!sessionId && !runId) return;
+    if (!window.confirm('Emergency stop the running main agent?')) return;
+    const path = sessionId
+        ? '/api/sessions/' + encodeURIComponent(sessionId) + '/interrupt'
+        : '/api/runs/' + encodeURIComponent(runId) + '/stop';
+    fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'pause' }),
+        body: JSON.stringify({ action: 'stop', run_id: runId || '' }),
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
-        if (data.status === 'interrupt_queued') {
+        if (data.status === 'interrupt_queued' || data.status === 'stop_queued') {
             liveRunInterruptState.queued = true;
             const btn = document.querySelector('.interrupt-btn');
             if (btn) {
                 btn.classList.add('queued');
-                btn.textContent = 'Pausing…';
+                btn.textContent = 'Stopping…';
                 btn.disabled = true;
+            }
+            if (chatRunStopBtn) {
+                chatRunStopBtn.disabled = true;
             }
             const msg = document.getElementById('interrupt-status-msg');
             if (msg) {
-                msg.textContent = 'Interrupt queued — will halt before next tool call.';
+                msg.textContent = 'Emergency stop queued.';
                 msg.style.display = 'block';
             }
+            showToast('Emergency stop queued');
         } else if (data.status === 'not_running') {
             showToast('Session is not running', true);
             hideInterruptButton();
         }
     })
     .catch(function(err) {
-        log('err', 'Failed to queue interrupt: ' + err.message);
-        showToast('Failed to queue interrupt', true);
+        log('err', 'Failed to queue emergency stop: ' + err.message);
+        showToast('Failed to queue emergency stop', true);
     });
 }
 // === END TRACK D ===

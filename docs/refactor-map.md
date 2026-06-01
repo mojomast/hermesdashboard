@@ -73,6 +73,7 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 ## Frontend parity pass completed
 
 - Restored chat image attachment/paste controls in the refactored chat panel, CSS, JavaScript rendering/sending path, and backend chat-message sanitizer.
+- Restored Chat emergency-stop parity for active main-agent runs: static `#chat-run-stop-btn`, `.emergency-stop-btn` styling, `requestInterrupt(sessionId, runId = null)` stop semantics with `/api/runs/{run_id}/stop` fallback, route/handler tests, and cooperative `stop_requested` polling in the sync upstream SSE reader.
 - Restored the dirty reference's frontend-only Roguelike/Hermes Labyrinth tab as an experimental hidden-by-default panel with partialized HTML, extracted CSS/JS, and no backend API route.
 - New installs now default to a safer tab set: chat, message board, config, secrets, sessions, memory, skills, cron, schedule, and graph.
 - Local-tooling-specific tabs remain registered and can be enabled from dashboard settings with experimental warnings: agent observability, games, roguelike, diagnostics, D&D campaigns, self-improvement, autonomous development, and Vesuvius AutoResearch.

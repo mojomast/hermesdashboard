@@ -716,6 +716,18 @@ def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]
                 first_useful_event_at = time.time()
                 saw_useful_event = False
                 for line in response.iter_lines():
+                    if state.get("stop_requested"):
+                        _log_stream(run_id, "sync stopped by dashboard request")
+                        state["events"].append(
+                            {
+                                "data": json.dumps(
+                                    {"type": "content", "content": "Stopped by user."}
+                                )
+                            }
+                        )
+                        state["done"] = True
+                        state["events"].append({"data": "[DONE]"})
+                        break
                     if (
                         not saw_useful_event
                         and time.time() - first_useful_event_at > HERMES_USEFUL_EVENT_TIMEOUT

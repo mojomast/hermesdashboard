@@ -10,6 +10,7 @@
                             <div class="chat-run-status-meta" id="chat-run-status-meta"></div>
                         </div>
                         <div class="chat-run-status-actions">
+                            <button class="btn emergency-stop-btn" type="button" id="chat-run-stop-btn" onclick="requestInterrupt(activeRun?.sessionId || null, activeRun?.runId || null)">Stop main agent</button>
                             <button class="btn" type="button" id="chat-run-reattach-btn" onclick="reattachActiveRunSession()">Reattach Session</button>
                             <button class="btn" type="button" id="chat-run-resume-btn" onclick="resumeActiveRunFromBanner()">Resume Stream</button>
                             <button class="btn" type="button" onclick="dismissActiveRunBanner()">Dismiss</button>

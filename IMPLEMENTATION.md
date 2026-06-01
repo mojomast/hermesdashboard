@@ -127,7 +127,8 @@ Current behavior:
 
 - `ACTIVE_RUN_KEY` stores `runId`, `eventOffset`, `startedAt`, `sessionId`, and a reduced assistant state snapshot
 - on reload, the dashboard now shows a visible chat banner when an in-flight run is still present instead of silently resuming immediately
-- the banner summarizes the latest known tool/content activity and exposes `Reattach Session` plus `Resume Stream`
+- the banner summarizes the latest known tool/content activity and exposes `Stop main agent`, `Reattach Session`, and `Resume Stream`
+- `Stop main agent` posts an emergency stop to `/api/sessions/{session_id}/interrupt` with `action: stop`, falling back to `/api/runs/{run_id}/stop` when a session id is not attached yet
 - `Reattach Session` hydrates the persisted transcript for the saved `sessionId` into Chat while preserving the active run record
 - `Resume Stream` reconnects `/chat` with `resume=true` and the stored `eventOffset`
 
@@ -138,6 +139,8 @@ Why it works this way:
 
 Current backend additions in `app.py`:
 
+- `POST /api/runs/{run_id}/stop` marks the active dashboard run stopped, cancels the task, sets the session interrupt flag when known, and appends `[DONE]`
+- `_run_chat_stream_sync` cooperatively honors `stop_requested` while reading upstream SSE so a worker-thread stream can close promptly after the dashboard stop request
 - `GET /api/sessions/{id}` now includes `related_artifacts` for `request_dump_<session_id>_*.json`
 - synthesized `background_reviews`, `skill_events`, and `session_search_events` now include additive `target` metadata when a transcript destination can be inferred
 

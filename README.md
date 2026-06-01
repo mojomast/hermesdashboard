@@ -139,7 +139,7 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - **token & cost accounting** — per-session token usage badge and step-by-step cost breakdown
 - **session search & filter** — full-text search across sessions with status, date range, and real-time filtering
 - **cron schedule viewer** — dedicated Schedule tab showing cron jobs with run history, next-run countdowns, and session links
-- **interrupt/pause live runs** — pause button for in-flight chat runs, queues an interrupt before the next tool call
+- **emergency-stop live runs** — stop controls for in-flight chat runs queue `action: stop` through the active session or run-id fallback
 - **Cmd+K command palette** — keyboard-driven command palette for quick navigation and recent session access
 - **threaded Message Board** — forum-style threads with persistent posts, per-thread replies, and Hermes responses scoped to each thread's own context
 - hardened dashboard-to-Hermes streaming bridge for long tool-heavy runs, including tool progress forwarding, heartbeats, clean disconnect handling, and sanitized chat history
@@ -177,6 +177,7 @@ Current behavior:
 - cleans stale dashboard transport errors and UI-only trace metadata before sending history back to Hermes
 - uses a synchronous upstream SSE reader in a worker thread to avoid premature async stream closure seen with long tool-heavy runs
 - stores resumable run state so refreshes can reattach or resume explicitly
+- exposes an emergency-stop control in the active-run banner; it posts `action: stop` to `/api/sessions/{session_id}/interrupt` or falls back to `/api/runs/{run_id}/stop`, sets `stop_requested`, appends a user-visible stopped event, and closes the stream with `[DONE]`
 
 ## Upstream Compatibility
 
