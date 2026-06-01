@@ -300,6 +300,8 @@ templates = Jinja2Templates(
 
 ACTIVE_RUN_TTL_SECONDS = 1800
 ACTIVE_RUNS: dict[str, dict] = {}
+ACTIVE_CHILD_STREAMS: dict[str, dict] = {}
+ACTIVE_SESSION_STEER_MESSAGES: dict[str, list[dict]] = {}
 _STARTUP_METADATA_BACKFILL_STARTED = False
 DASHBOARD_STATE_DB_PATH = HERMES_HOME / "dashboard_state.db"
 DASHBOARD_STATE_KEYS = {"conversation", "active_run"}
@@ -408,6 +410,98 @@ def _cleanup_active_runs() -> None:
             expired.append(run_id)
     for run_id in expired:
         ACTIVE_RUNS.pop(run_id, None)
+
+    expired_children = []
+    for child_session_id, state in ACTIVE_CHILD_STREAMS.items():
+        updated_at = state.get("updated_at", 0)
+        if not state.get("done") and now - updated_at <= ACTIVE_RUN_TTL_SECONDS:
+            continue
+        if now - updated_at > ACTIVE_RUN_TTL_SECONDS:
+            expired_children.append(child_session_id)
+    for child_session_id in expired_children:
+        ACTIVE_CHILD_STREAMS.pop(child_session_id, None)
+
+
+def _event_metadata(payload: dict) -> dict:
+    metadata = {}
+    args = payload.get("arguments")
+    if isinstance(args, dict):
+        metadata.update(args)
+    raw_args = payload.get("args")
+    if isinstance(raw_args, dict):
+        metadata.update(raw_args)
+    for key in (
+        "delegate_call_id",
+        "child_session_id",
+        "subagent_id",
+        "parent_session_id",
+        "task_index",
+        "task_count",
+        "goal",
+        "label",
+        "parent_id",
+        "depth",
+    ):
+        if payload.get(key) is not None:
+            metadata[key] = payload.get(key)
+    return metadata
+
+
+def _register_child_stream(run_id: str, payload: dict) -> None:
+    metadata = _event_metadata(payload)
+    child_session_id = str(
+        metadata.get("child_session_id") or metadata.get("session_id") or metadata.get("subagent_id") or ""
+    ).strip()
+    if not child_session_id:
+        return
+    state = ACTIVE_CHILD_STREAMS.setdefault(
+        child_session_id,
+        {
+            "events": deque(),
+            "done": False,
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "parent_run_id": run_id,
+            "child_session_id": child_session_id,
+            "delegate_call_id": metadata.get("delegate_call_id") or "",
+        },
+    )
+    state["updated_at"] = time.time()
+    if metadata.get("delegate_call_id") and not state.get("delegate_call_id"):
+        state["delegate_call_id"] = metadata.get("delegate_call_id")
+    state["events"].append({"data": json.dumps(payload)})
+
+
+def _route_child_stream_event(run_id: str, payload: dict) -> None:
+    payload_type = payload.get("type")
+    if payload_type == "child_session_started":
+        _register_child_stream(run_id, payload)
+        return
+    if payload_type not in {"tool_call", "tool_output", "tool_progress", "meta", "run_state"}:
+        return
+    metadata = _event_metadata(payload)
+    child_session_id = str(
+        metadata.get("child_session_id") or metadata.get("session_id") or metadata.get("subagent_id") or ""
+    ).strip()
+    if not child_session_id:
+        return
+    state = ACTIVE_CHILD_STREAMS.setdefault(
+        child_session_id,
+        {
+            "events": deque(),
+            "done": False,
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "parent_run_id": run_id,
+            "child_session_id": child_session_id,
+            "delegate_call_id": metadata.get("delegate_call_id") or "",
+        },
+    )
+    state["updated_at"] = time.time()
+    state["events"].append({"data": json.dumps(payload)})
+    if payload_type == "run_state" and payload.get("status") in {"complete", "error"}:
+        state["done"] = True
+        state["events"].append({"data": "[DONE]"})
 
 
 def _normalize_sse_payload(parsed: dict) -> list[dict]:
@@ -764,6 +858,7 @@ async def _run_chat_stream(
                             tool_events += 1
                         event = {"data": json.dumps(payload)}
                         state["events"].append(event)
+                        _route_child_stream_event(run_id, payload)
                 if not state.get("done"):
                     state["done"] = True
                     state["events"].append({"data": "[DONE]"})
@@ -6347,25 +6442,60 @@ async def interrupt_session(request):
         data = {}
 
     action = data.get("action", "")
-    if action != "pause":
+    mode = str(data.get("mode") or "soft").strip().lower()
+    if mode not in {"soft", "hard"}:
+        mode = "soft"
+    if action not in {"pause", "resume", "stop"}:
         return JSONResponse(
             {"status": "invalid_action", "session_id": session_id}, status_code=400
         )
 
-    # Check if session has an active run in ACTIVE_RUNS
-    has_active_run = False
-    for state in ACTIVE_RUNS.values():
-        if state.get("session_id") == session_id and not state.get("done"):
-            has_active_run = True
-            break
+    child_state = ACTIVE_CHILD_STREAMS.get(session_id)
+    if child_state and not child_state.get("done"):
+        backend_status = "not_sent"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{HERMES_API}/api/subagents/{session_id}/control",
+                    headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                    json={"action": action, "mode": mode},
+                )
+                backend_status = resp.json().get("status", resp.text)
+        except Exception as exc:
+            backend_status = f"error: {exc}"
+        child_state["updated_at"] = time.time()
+        child_state["events"].append(
+            {
+                "data": json.dumps(
+                    {
+                        "type": "run_state",
+                        "status": "complete" if action == "stop" else action,
+                        "mode": mode,
+                        "session_id": session_id,
+                        "content": f"Subagent {action} requested.",
+                        "backend_status": backend_status,
+                    }
+                )
+            }
+        )
+        if action == "stop":
+            set_interrupt_flag(session_id, True)
+            child_state["done"] = True
+            child_state["events"].append({"data": "[DONE]"})
+        return JSONResponse({"status": f"{action}_queued", "mode": mode, "session_id": session_id, "backend_status": backend_status})
 
-    if not has_active_run:
+    active_states = [
+        state
+        for state in ACTIVE_RUNS.values()
+        if state.get("session_id") == session_id and not state.get("done")
+    ]
+
+    if not active_states:
         return JSONResponse({"status": "not_running", "session_id": session_id})
 
     set_interrupt_flag(session_id, True)
-    for state in ACTIVE_RUNS.values():
-        if state.get("session_id") != session_id or state.get("done"):
-            continue
+    for state in active_states:
+        state["stop_requested"] = True
         task = state.get("task")
         if task is not None and not task.done():
             task.cancel()
@@ -6381,31 +6511,125 @@ async def interrupt_session(request):
             }
         )
         state["events"].append({"data": "[DONE]"})
-    return JSONResponse({"status": "interrupt_queued", "session_id": session_id})
+    return JSONResponse({"status": "stop_queued" if action == "stop" else "interrupt_queued", "session_id": session_id})
+
+
+async def steer_session(request):
+    session_id = request.path_params["session_id"]
+    try:
+        body = await request.body()
+        data = json.loads(body) if body else {}
+    except Exception:
+        data = {}
+    message = str(data.get("message") or "").strip()
+    mode = str(data.get("mode") or "soft").strip().lower()
+    if mode not in {"soft", "hard"}:
+        mode = "soft"
+    if not message:
+        return JSONResponse(
+            {"status": "empty_message", "session_id": session_id}, status_code=400
+        )
+
+    item = {"message": message, "created_at": time.time(), "session_id": session_id}
+    queue = ACTIVE_SESSION_STEER_MESSAGES.setdefault(session_id, [])
+    queue.append(item)
+    del queue[:-20]
+
+    backend_status = "not_sent"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{HERMES_API}/api/subagents/{session_id}/steer",
+                headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                json={"message": message, "mode": mode},
+            )
+            backend_status = resp.json().get("status", resp.text)
+    except Exception as exc:
+        backend_status = f"error: {exc}"
+
+    child_state = ACTIVE_CHILD_STREAMS.get(session_id)
+    if child_state is not None:
+        child_state.setdefault("steer_messages", []).append(item)
+        child_state["updated_at"] = time.time()
+        child_state.setdefault("events", []).append(
+            {
+                "data": json.dumps(
+                    {
+                        "type": "steer",
+                        "session_id": session_id,
+                        "mode": mode,
+                        "message": message,
+                    }
+                )
+            }
+        )
+
+    return JSONResponse(
+        {
+            "status": "queued",
+            "session_id": session_id,
+            "queued": len(queue),
+            "mode": mode,
+            "backend_status": backend_status,
+            "note": "Guidance is queued for the live subagent's next model turn when backend_status is queued.",
+        }
+    )
+
+
+async def stop_run(request):
+    run_id = request.path_params["run_id"]
+    state = ACTIVE_RUNS.get(run_id)
+    if not state or state.get("done"):
+        return JSONResponse({"status": "not_running", "run_id": run_id})
+    state["stop_requested"] = True
+    session_id = state.get("session_id")
+    if session_id:
+        set_interrupt_flag(str(session_id), True)
+    task = state.get("task")
+    if task is not None and not task.done():
+        task.cancel()
+    state["done"] = True
+    state["events"].append(
+        {
+            "data": json.dumps(
+                {
+                    "type": "content",
+                    "content": "\n\nStopped by user.",
+                }
+            )
+        }
+    )
+    state["events"].append({"data": "[DONE]"})
+    return JSONResponse({"status": "stop_queued", "run_id": run_id, "session_id": session_id})
 
 
 async def session_stream(request):
     session_id = request.path_params["session_id"]
     db_path = HERMES_HOME / "state.db"
 
+    active_run = ACTIVE_CHILD_STREAMS.get(session_id)
+    if active_run and active_run.get("done"):
+        active_run = None
+    if not active_run:
+        for state in ACTIVE_RUNS.values():
+            if state.get("session_id") == session_id and not state.get("done"):
+                active_run = state
+                break
+
     if not db_path.exists():
-        return JSONResponse({"error": "No sessions database"}, status_code=404)
+        if not active_run:
+            return JSONResponse({"error": "No sessions database"}, status_code=404)
+        session_row = None
+    else:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        session_row = conn.execute(
+            "SELECT id, ended_at FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        conn.close()
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    session_row = conn.execute(
-        "SELECT id, ended_at FROM sessions WHERE id = ?", (session_id,)
-    ).fetchone()
-    conn.close()
-
-    if not session_row:
+    if not session_row and not active_run:
         return JSONResponse({"error": "Session not found"}, status_code=404)
-
-    active_run = None
-    for state in ACTIVE_RUNS.values():
-        if state.get("session_id") == session_id and not state.get("done"):
-            active_run = state
-            break
 
     async def generate():
         if active_run:
@@ -6423,7 +6647,7 @@ async def session_stream(request):
                     return
                 await asyncio.sleep(0.1)
         else:
-            status = "complete" if session_row["ended_at"] else "unknown"
+            status = "complete" if session_row and session_row["ended_at"] else "unknown"
             yield {
                 "data": json.dumps(
                     {
@@ -9510,6 +9734,7 @@ routes = [
     Route("/campaigns", homepage),
     Route("/campaigns/", homepage),
     Route("/chat", chat_stream, methods=["POST"]),
+    Route("/api/runs/{run_id}/stop", stop_run, methods=["POST"]),
     Route("/api/dashboard-state/{key}", get_dashboard_state),
     Route("/api/dashboard-state/{key}", set_dashboard_state, methods=["PUT"]),
     Route("/api/dashboard-state/{key}", delete_dashboard_state, methods=["DELETE"]),
@@ -9547,6 +9772,7 @@ routes = [
         interrupt_session,
         methods=["POST"],
     ),
+    Route("/api/sessions/{session_id}/steer", steer_session, methods=["POST"]),
     Route("/api/sessions/{session_id}", delete_session, methods=["DELETE"]),
     Route("/api/message-board", get_message_board_posts_endpoint),
     Route("/api/message-board", create_message_board_post_endpoint, methods=["POST"]),
