@@ -17,3 +17,13 @@ def test_parallel_tool_batch_status_is_aggregated_not_hard_coded_running():
     assert "const batchStatusClass = getParallelToolBatchStatusClass(tools);" in html
     assert "tool-call-status-dot ${escapeHtml(batchStatusClass)}" in html
     assert "<span class=\"tool-call-status-dot running\"></span>" not in html
+
+
+def test_delegate_task_live_header_does_not_cap_child_sessions_at_three():
+    html = dashboard_source()
+
+    assert "function renderDelegateLiveActionStrip" in html
+    assert "childEntries.map((entry, childIdx)" in html
+    assert "childEntries.slice(0, 3)" not in html
+    assert "delegate-live-actions" in html
+    assert "live subagent" in html

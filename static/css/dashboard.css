@@ -4725,3 +4725,64 @@ body.dnd-popout-mode #dnd-panel { display: block !important; min-height: calc(10
 .dnd-event-subagent { border-left:3px solid var(--pink); }
 .dnd-character-sheet, .dnd-world-entity { padding:0.6rem; border:1px solid var(--border-subtle); border-radius:10px; margin:0.45rem 0; background:rgba(0,0,0,0.16); }
 @media (max-width: 1100px) { .dnd-dashboard-grid { grid-template-columns:1fr; } }
+
+
+.delegate-live-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: auto;
+    min-width: 0;
+}
+
+.delegate-live-count {
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.delegate-live-actions .tool-call-action-badge {
+    margin: 0;
+    background: var(--primary-dim);
+    color: var(--primary);
+    border-color: var(--primary-border);
+}
+
+.subagent-monitor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0.45rem 0;
+}
+
+.subagent-monitor-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.4rem;
+    border: 1px solid var(--primary-border);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+}
+
+.subagent-monitor-title {
+    font-weight: 650;
+    color: var(--text);
+}
+
+.subagent-monitor-meta {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+}
+
+.subagent-monitor-actions {
+    display: flex;
+    gap: 0.35rem;
+}
+
+@media (max-width: 720px) {
+    .delegate-live-actions { max-width: 100%; flex-wrap: wrap; }
+    .subagent-monitor-row { grid-template-columns: auto minmax(0, 1fr); }
+    .subagent-monitor-actions { grid-column: 2; flex-wrap: wrap; }
+}

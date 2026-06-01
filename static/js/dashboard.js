@@ -2436,198 +2436,259 @@ function renderToolOutput(toolName, parsedOutput, rawOutput) {
     return `<div class="tool-section tool-call-result"><label>Output</label>${formatToolOutputText(rawOutput)}</div>`;
 }
 
-function renderDelegateChildStreams(tool) {
-    if (!tool || !tool.child_events || typeof tool.child_events !== 'object') return '';
-    const keys = Object.keys(tool.child_events);
-    if (!keys.length) return '';
+function normalizeTaskIndex(value) {
+    if (Number.isInteger(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '' && Number.isInteger(Number(value))) return Number(value);
+    return null;
+}
 
-    // Build a live activity summary for the top level
-    let liveSummary = '';
+function getEventMetadata(parsed) {
+    const args = (parsed && typeof parsed.arguments === 'object' && parsed.arguments !== null) ? parsed.arguments : {};
+    const rawArgs = (parsed && typeof parsed.args === 'object' && parsed.args !== null) ? parsed.args : {};
+    return { ...args, ...rawArgs, ...(parsed || {}) };
+}
+
+function renderDelegateChildStreams(tool) {
+    if (!tool) return '';
+    const childEntries = liveChildSessionMap.get(tool.call_id || '') || [];
+    const childEvents = (tool.child_events && typeof tool.child_events === 'object') ? tool.child_events : {};
+    const keys = Object.keys(childEvents);
+    if (!keys.length && !childEntries.length) return '';
     const allEvents = keys.flatMap(key => {
-        const events = Array.isArray(tool.child_events[key]) ? tool.child_events[key] : [];
+        const events = Array.isArray(childEvents[key]) ? childEvents[key] : [];
         return events.map(e => ({ ...e, taskKey: key }));
     });
-
-    if (allEvents.length > 0) {
-        const activeCount = allEvents.filter(e => e.type === 'tool_call' && !e.tool?.output).length;
-        const completedCount = allEvents.filter(e => e.type === 'tool_output').length;
-        const toolNames = [...new Set(allEvents.map(e => e.tool?.name).filter(Boolean))];
-
-        if (activeCount > 0 || completedCount > 0) {
-            liveSummary = `<div class="subagent-activity-summary">
-                <span class="subagent-badge">${allEvents.length} tools</span>
-                ${activeCount > 0 ? `<span class="subagent-badge active">${activeCount} running</span>` : ''}
-                ${completedCount > 0 ? `<span class="subagent-badge complete">${completedCount} done</span>` : ''}
-                ${toolNames.length > 0 ? `<span class="subagent-tools">${escapeHtml(toolNames.slice(0, 5).join(', '))}${toolNames.length > 5 ? '...' : ''}</span>` : ''}
-            </div>`;
-        }
-    }
-
-    const childEntries = liveChildSessionMap.get(tool.call_id || '') || [];
+    const activeCount = allEvents.filter(e => e.type === 'tool_call' && !e.tool?.output).length;
+    const completedCount = allEvents.filter(e => e.type === 'tool_output').length;
+    const liveSummary = (allEvents.length || childEntries.length) ? `<div class="subagent-activity-summary">
+        <span class="subagent-badge">${allEvents.length || childEntries.length} events</span>
+        ${activeCount > 0 ? `<span class="subagent-badge active">${activeCount} running</span>` : ''}
+        ${completedCount > 0 ? `<span class="subagent-badge complete">${completedCount} done</span>` : ''}
+    </div>` : '';
+    const monitorRows = childEntries.map((entry, idx) => {
+        const taskIndex = normalizeTaskIndex(entry.taskIndex);
+        const key = Number.isInteger(taskIndex) ? String(taskIndex) : 'default';
+        const events = Array.isArray(childEvents[key]) ? childEvents[key] : [];
+        const latest = events[events.length - 1] || {};
+        return `<div class="subagent-monitor-row">
+            <span class="tool-call-status-dot ${events.length ? 'running' : 'pending'}"></span>
+            <div class="subagent-monitor-main">
+                <div class="subagent-monitor-title">${escapeHtml(Number.isInteger(taskIndex) ? `Task ${taskIndex + 1}` : `Live Subagent ${idx + 1}`)}</div>
+                <div class="subagent-monitor-meta">${escapeHtml((entry.childSessionId || '').slice(0, 12) || 'pending session')} · latest: ${escapeHtml(latest.name || latest.tool?.name || 'subagent')} · ${events.length} event${events.length === 1 ? '' : 's'}</div>
+            </div>
+            <div class="subagent-monitor-actions">
+                <button class="btn live-view-btn" type="button" data-child-session-id="${escapeHtml(entry.childSessionId)}" data-delegate-call-id="${escapeHtml(tool.call_id || '')}" data-use-parent="true" data-label="${escapeHtml(entry.label || '')}">Live</button>
+                <button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(entry.childSessionId)}">Stop</button>
+            </div>
+        </div>`;
+    }).join('');
     const sections = keys.map((key) => {
-        const events = Array.isArray(tool.child_events[key]) ? tool.child_events[key] : [];
+        const events = Array.isArray(childEvents[key]) ? childEvents[key] : [];
         if (!events.length) return '';
-        const title = key === 'default' ? 'Live Subagent Activity' : `Task ${Number(key) + 1} Activity`;
-        const sectionKey = escapeHtml(`${tool.call_id || tool.name || 'delegate'}:${key}`);
         const taskIndex = key === 'default' ? null : Number(key);
-        const childEntry = childEntries.find(e => e.taskIndex === taskIndex) || childEntries[0] || null;
-        const drawerBtn = childEntry ? `<button class="btn live-view-btn" style="font-size:0.72rem;padding:0.2rem 0.5rem;margin-left:0.4rem;" data-child-session-id="${escapeHtml(childEntry.childSessionId)}" data-use-parent="true" data-label="${escapeHtml(childEntry.label || '')}">Live view</button>` : '';
-        // Always keep open to show subagent activity prominently
-        return `
-            <details class="delegate-task-raw delegate-clickable" data-tool-key="delegate-child:${sectionKey}" open>
-                <summary>${escapeHtml(title)} <span class="event-count">(${events.length})</span>${drawerBtn}</summary>
-                <div class="assistant-tools">${renderToolCallList(events.map((event, idx) => makeToolCardEntry(event.tool || event, idx)))}</div>
-            </details>
-        `;
-    }).filter(Boolean).join('');
+        const childEntry = childEntries.find(e => normalizeTaskIndex(e.taskIndex) === taskIndex) || childEntries[0] || null;
+        const title = key === 'default' ? 'Live Subagent Activity' : `Task ${Number(key) + 1} Activity`;
+        const drawerBtn = childEntry ? `<button class="btn live-view-btn" data-child-session-id="${escapeHtml(childEntry.childSessionId)}" data-delegate-call-id="${escapeHtml(tool.call_id || '')}" data-use-parent="true" data-label="${escapeHtml(childEntry.label || '')}">Live view</button>` : '';
+        const stopBtn = childEntry ? `<button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childEntry.childSessionId)}">Stop</button>` : '';
+        return `<details class="delegate-task-raw delegate-clickable" data-tool-key="delegate-child:${escapeHtml(`${tool.call_id || tool.name || 'delegate'}:${key}`)}" open>
+            <summary>${escapeHtml(title)} <span class="event-count">(${events.length})</span>${drawerBtn}${stopBtn}</summary>
+            <div class="assistant-tools">${renderToolCallList(events.map((event, idx) => makeToolCardEntry(event.tool || event, idx)), { listId: `delegate:${tool.call_id || tool.name || 'delegate'}:${key}` })}</div>
+        </details>`;
+    }).join('');
+    const liveOnlySections = childEntries
+        .filter((entry) => !keys.includes(String(normalizeTaskIndex(entry.taskIndex) ?? 'default')))
+        .map((entry, idx) => `<details class="delegate-task-raw delegate-clickable" data-tool-key="delegate-child-live:${escapeHtml(entry.childSessionId)}" open>
+            <summary>Live Subagent Session ${idx + 1} <span class="event-count">attached</span><button class="btn live-view-btn" data-child-session-id="${escapeHtml(entry.childSessionId)}" data-delegate-call-id="${escapeHtml(tool.call_id || '')}" data-use-parent="true" data-label="${escapeHtml(entry.label || '')}">Live view</button><button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(entry.childSessionId)}">Stop</button></summary>
+            <div style="color:var(--text-dim);font-size:0.78rem;margin-top:0.35rem;">Waiting for streamed child tool activity…</div>
+        </details>`).join('');
+    const monitor = monitorRows ? `<div class="subagent-monitor-list">${monitorRows}</div>` : '';
+    return `<div class="tool-section"><label>Subagent Activity</label>${liveSummary}${monitor}${sections}${liveOnlySections}</div>`;
+}
 
-    if (!sections) return '';
-    return `<div class="tool-section"><label>Subagent Activity</label>${liveSummary}${sections}</div>`;
+function renderDelegateOpenDrawerGrid(tool) {
+    if (!tool || tool.name !== 'delegate_task') return '';
+    const delegateCallId = tool.call_id || '';
+    const childEntries = liveChildSessionMap.get(delegateCallId) || [];
+    const openedDrawers = Array.from(openDrawerSet)
+        .map(childSessionId => childDrawerRegistry.get(childSessionId) || childEntries.find(entry => entry.childSessionId === childSessionId) || null)
+        .filter(entry => entry && entry.childSessionId && (!entry.delegateCallId || !delegateCallId || entry.delegateCallId === delegateCallId || childEntries.some(child => child.childSessionId === entry.childSessionId)));
+    if (!openedDrawers.length) return '';
+    return `<div class="child-session-drawer-grid" data-inline-drawer-host="${escapeHtml(delegateCallId || 'delegate')}">${openedDrawers.map(entry => renderChildSessionDrawerShell(entry.childSessionId, entry.label || '')).join('')}</div>`;
 }
 
 // Global mapping for child sessions discovered via live stream
 const liveChildSessionMap = new Map();
+const drawerEventSources = new Map();
+const childDrawerEventCache = new Map();
+const childDrawerPausedSet = new Set();
+const childDrawerPausedQueue = new Map();
 // Track which drawers are open so they survive re-renders
 const openDrawerSet = new Set();
+const childDrawerRegistry = new Map();
+
+function rememberChildDrawer(childSessionId, data = {}) {
+    if (!childSessionId) return;
+    const existing = childDrawerRegistry.get(childSessionId) || {};
+    childDrawerRegistry.set(childSessionId, { ...existing, childSessionId, label: data.label ?? existing.label ?? '', delegateCallId: data.delegateCallId ?? existing.delegateCallId ?? '', taskIndex: data.taskIndex ?? existing.taskIndex ?? null, parentSessionId: data.parentSessionId ?? existing.parentSessionId ?? '' });
+}
+
+function renderChildSessionDrawerShell(childSessionId, label = '') {
+    if (!childSessionId) return '';
+    return `<div class="child-session-drawer" data-child-session-id="${escapeHtml(childSessionId)}">
+        <div class="drawer-header"><div class="drawer-header-info"><span class="drawer-header-id">${escapeHtml(childSessionId.slice(0, 16))}</span>${label ? `<span class="drawer-header-label">${escapeHtml(label)}</span>` : ''}</div>
+        <div class="drawer-header-actions"><span class="live-badge active" data-badge="${escapeHtml(childSessionId)}"><span class="live-dot"></span>LIVE</span><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft pause</button><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard pause</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft steer</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard steer</button><button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}">Stop</button><button class="drawer-close-btn" type="button" onclick="closeChildSessionDrawer('${escapeHtml(childSessionId)}')">×</button></div></div>
+        <div class="drawer-transcript" data-drawer-transcript="${escapeHtml(childSessionId)}"></div>
+    </div>`;
+}
+
+function getDrawerTranscript(childSessionId) {
+    if (!childSessionId) return null;
+    return document.querySelector(`[data-drawer-transcript="${CSS.escape(childSessionId)}"]`);
+}
+
+function appendDrawerEventRow(childSessionId, transcriptEl, parsed) {
+    if (!childSessionId || !transcriptEl || !parsed) return;
+    const cache = childDrawerEventCache.get(childSessionId) || [];
+    cache.push(parsed);
+    if (cache.length > 300) cache.splice(0, cache.length - 300);
+    childDrawerEventCache.set(childSessionId, cache);
+    if (transcriptEl.textContent.trim() === 'No activity recorded yet.' || transcriptEl.textContent.trim() === 'Loading session...') transcriptEl.innerHTML = '';
+    const row = document.createElement('div');
+    row.className = 'drawer-tool-row';
+    const meta = getEventMetadata(parsed);
+    if (parsed.type === 'tool_call' || parsed.type === 'tool_output') {
+        row.innerHTML = `<strong>${escapeHtml(parsed.name || 'tool')}</strong> <span class="meta-pill">${escapeHtml(parsed.type)}</span>${parsed.output ? `<pre style="margin-top:0.25rem;font-size:0.7rem;">${escapeHtml(summarizeValue(parsed.output, 400))}</pre>` : ''}`;
+    } else if (parsed.type === 'tool_progress') {
+        row.innerHTML = `<span class="meta-pill">progress</span> ${escapeHtml(parsed.progress || parsed.label || meta.message || '')}`;
+    } else if (parsed.type === 'steer') {
+        row.innerHTML = `<span class="meta-pill">${escapeHtml(parsed.mode === 'hard' ? 'hard steer queued' : 'soft steer queued')}</span> ${escapeHtml(parsed.message || '')}`;
+    } else {
+        row.innerHTML = `<span class="meta-pill">${escapeHtml(parsed.type || 'event')}</span> ${escapeHtml(JSON.stringify(parsed))}`;
+    }
+    transcriptEl.appendChild(row);
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+function renderCachedDrawerEvents(childSessionId, transcriptEl) {
+    const events = childDrawerEventCache.get(childSessionId) || [];
+    if (!events.length || !transcriptEl) return false;
+    transcriptEl.innerHTML = '';
+    events.forEach(event => appendDrawerEventRow(childSessionId, transcriptEl, event));
+    return true;
+}
+
+function appendLiveDrawerEventIfOpen(parsed) {
+    const metadata = getEventMetadata(parsed);
+    const childSessionId = metadata.child_session_id || metadata.session_id || metadata.subagent_id || '';
+    const transcript = getDrawerTranscript(childSessionId);
+    if (!transcript) return false;
+    appendDrawerEventRow(childSessionId, transcript, parsed);
+    return true;
+}
+
+async function togglePauseSubagentStream(childSessionId, mode = 'soft') {
+    if (!childSessionId) return;
+    mode = mode === 'hard' ? 'hard' : 'soft';
+    const paused = childDrawerPausedSet.has(childSessionId);
+    const action = paused ? 'resume' : 'pause';
+    try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(childSessionId)}/interrupt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, mode }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.status || `HTTP ${res.status}`);
+        if (paused) childDrawerPausedSet.delete(childSessionId); else childDrawerPausedSet.add(childSessionId);
+        document.querySelectorAll(`.subagent-pause-btn[data-child-session-id="${CSS.escape(childSessionId)}"]`).forEach(button => { button.textContent = paused ? (button.dataset.controlMode === 'hard' ? 'Hard pause' : 'Soft pause') : 'Resume'; });
+        showToast(`${paused ? 'Resume' : mode + ' pause'} requested`);
+    } catch (err) { showToast(`Could not ${action} subagent: ${err.message}`, true); }
+}
+
+async function requestSteerSubagent(childSessionId, mode = 'soft') {
+    if (!childSessionId) return;
+    mode = mode === 'hard' ? 'hard' : 'soft';
+    const message = prompt(mode === 'hard' ? 'Hard steer: abort current work and deliver this guidance immediately:' : 'Soft steer: queue guidance for the next safe opportunity:');
+    if (!message || !message.trim()) return;
+    try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(childSessionId)}/steer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: message.trim(), mode }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.status || `HTTP ${res.status}`);
+        appendDrawerEventRow(childSessionId, getDrawerTranscript(childSessionId), { type: 'steer', mode, message: message.trim() });
+        showToast(data.status === 'queued' ? `${mode} steer queued` : (data.status || 'Steer request sent'));
+    } catch (err) { showToast(`Could not queue steer guidance: ${err.message}`, true); }
+}
+
+async function requestStopSubagent(childSessionId) {
+    if (!childSessionId) return;
+    if (!confirm(`Stop live subagent ${childSessionId.slice(0, 8)}?`)) return;
+    try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(childSessionId)}/interrupt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop', mode: 'hard' }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.status || `HTTP ${res.status}`);
+        updateDrawerBadge(childSessionId, 'DONE');
+        showToast(data.status || 'Stop requested');
+    } catch (err) { showToast(`Could not stop subagent: ${err.message}`, true); }
+}
 
 function openChildSessionDrawer(childSessionId, anchorEl, label) {
     if (!childSessionId || !anchorEl) return;
     const existing = document.querySelector(`.child-session-drawer[data-child-session-id="${CSS.escape(childSessionId)}"]`);
-    if (existing) {
-        closeChildSessionDrawer(childSessionId);
-        return;
-    }
+    if (existing) { existing.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
     openDrawerSet.add(childSessionId);
-    const drawer = document.createElement('div');
-    drawer.className = 'child-session-drawer';
-    drawer.dataset.childSessionId = childSessionId;
-    // Position the drawer fixed so it survives chat re-renders
-    const rect = anchorEl.getBoundingClientRect();
-    drawer.style.position = 'fixed';
-    drawer.style.top = rect.bottom + 'px';
-    drawer.style.left = rect.left + 'px';
-    drawer.style.width = rect.width + 'px';
-    drawer.style.zIndex = '1000';
-    drawer.style.maxHeight = '60vh';
-    drawer.style.overflowY = 'auto';
-    const header = document.createElement('div');
-    header.className = 'drawer-header';
-    header.innerHTML = `
-        <div class="drawer-header-info">
-            <span class="drawer-header-id">${escapeHtml(childSessionId.slice(0, 16))}</span>
-            ${label ? `<span class="drawer-header-label">${escapeHtml(label)}</span>` : ''}
-        </div>
-        <div class="drawer-header-actions">
-            <span class="live-badge active" data-badge="${escapeHtml(childSessionId)}">
-                <span class="live-dot"></span>LIVE
-            </span>
-            <button class="drawer-close-btn" onclick="closeChildSessionDrawer('${escapeHtml(childSessionId)}')">×</button>
-        </div>
-    `;
-    const transcript = document.createElement('div');
-    transcript.className = 'drawer-transcript';
-    transcript.id = `drawer-transcript-${CSS.escape(childSessionId)}`;
-    drawer.appendChild(header);
-    drawer.appendChild(transcript);
-    document.body.appendChild(drawer);
-    fetch(`/api/sessions/${encodeURIComponent(childSessionId)}`)
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                transcript.innerHTML = `<div class="drawer-error">${escapeHtml(data.error)}</div>`;
-                return;
-            }
-            const trace = buildHistoricalExecutionTrace(data);
-            let html = renderSessionTranscript(trace);
-            if (!html.trim()) {
-                html = '<div style="color:var(--text-dim);font-size:0.8rem;">No activity recorded yet.</div>';
-            }
-            transcript.innerHTML = html;
-            transcript.scrollTop = transcript.scrollHeight;
-            if (data.ended_at) {
-                updateDrawerBadge(childSessionId, 'DONE');
-                return;
-            }
-            openDrawerEventSource(childSessionId, transcript);
-        })
-        .catch(err => {
-            transcript.innerHTML = `<div class="drawer-error">Failed to load session: ${escapeHtml(err.message)}</div>`;
-            updateDrawerBadge(childSessionId, 'ERROR');
-        });
+    rememberChildDrawer(childSessionId, { label: label || '', delegateCallId: anchorEl?.dataset?.delegateCallId || '' });
+    const host = anchorEl.closest('details, .tool-call-block, .tool-section') || anchorEl.parentElement || document.body;
+    host.insertAdjacentHTML('beforeend', renderChildSessionDrawerShell(childSessionId, label || ''));
+    const transcript = getDrawerTranscript(childSessionId);
+    if (transcript) transcript.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">Loading session...</div>';
+    openDrawerEventSource(childSessionId, transcript);
 }
 
 function closeChildSessionDrawer(childSessionId) {
-    const drawer = document.querySelector(`.child-session-drawer[data-child-session-id="${CSS.escape(childSessionId)}"]`);
-    if (drawer) {
-        const es = drawer.dataset.eventSource;
-        if (es && es !== 'active') {
-            try { const source = JSON.parse(es); if (source && typeof source.close === 'function') source.close(); } catch (e) { /* ignore */ }
-        }
-        drawer.remove();
-    }
+    const source = drawerEventSources.get(childSessionId);
+    if (source) { source.close(); drawerEventSources.delete(childSessionId); }
+    document.querySelectorAll(`.child-session-drawer[data-child-session-id="${CSS.escape(childSessionId)}"]`).forEach(drawer => drawer.remove());
     openDrawerSet.delete(childSessionId);
 }
 
 function updateDrawerBadge(childSessionId, status) {
-    const badge = document.querySelector(`.live-badge[data-badge="${CSS.escape(childSessionId)}"]`);
-    if (!badge) return;
-    if (status === 'DONE') {
+    document.querySelectorAll(`.live-badge[data-badge="${CSS.escape(childSessionId)}"]`).forEach(badge => {
         badge.classList.remove('active');
-        badge.innerHTML = '<span class="live-dot" style="animation:none;background:var(--success);"></span>DONE';
-    } else if (status === 'ERROR') {
-        badge.classList.remove('active');
-        badge.innerHTML = '<span class="live-dot" style="animation:none;background:var(--error);"></span>ERROR';
-    }
+        badge.innerHTML = `<span class="live-dot" style="animation:none;background:${status === 'ERROR' ? 'var(--error)' : 'var(--success)'};"></span>${escapeHtml(status)}`;
+    });
 }
 
 function openDrawerEventSource(childSessionId, transcriptEl) {
-    const drawer = document.querySelector(`.child-session-drawer[data-child-session-id="${CSS.escape(childSessionId)}"]`);
-    if (!drawer) return;
+    if (!childSessionId || drawerEventSources.has(childSessionId)) return;
     const es = new EventSource(`/api/sessions/${encodeURIComponent(childSessionId)}/stream`);
-    drawer.dataset.eventSource = 'active';
+    drawerEventSources.set(childSessionId, es);
+    if (transcriptEl && !renderCachedDrawerEvents(childSessionId, transcriptEl)) transcriptEl.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">No activity recorded yet.</div>';
     es.onmessage = (event) => {
         if (!event.data) return;
-        if (event.data === '[DONE]') {
-            updateDrawerBadge(childSessionId, 'DONE');
-            es.close();
-            if (drawer) drawer.dataset.eventSource = '';
-            return;
-        }
+        if (event.data === '[DONE]') { updateDrawerBadge(childSessionId, 'DONE'); es.close(); drawerEventSources.delete(childSessionId); return; }
         try {
             const parsed = JSON.parse(event.data);
-            if (parsed.type === 'run_state') {
-                if (parsed.status === 'complete' || parsed.status === 'error') {
-                    updateDrawerBadge(childSessionId, parsed.status === 'error' ? 'ERROR' : 'DONE');
-                    es.close();
-                    if (drawer) drawer.dataset.eventSource = '';
-                }
-                return;
-            }
-            const row = document.createElement('div');
-            row.className = 'drawer-tool-row';
-            if (parsed.type === 'tool_call' || parsed.type === 'tool_output') {
-                row.innerHTML = `<strong>${escapeHtml(parsed.name || 'tool')}</strong> <span class="meta-pill">${escapeHtml(parsed.type)}</span>`;
-                if (parsed.output) {
-                    row.innerHTML += `<pre style="margin-top:0.25rem;font-size:0.7rem;">${escapeHtml(summarizeValue(parsed.output, 200))}</pre>`;
-                }
-            } else if (parsed.type === 'tool_progress') {
-                row.innerHTML = `<span class="meta-pill">progress</span> ${escapeHtml(parsed.progress || parsed.label || '')}`;
-            } else if (parsed.type === 'meta') {
-                row.innerHTML = `<span class="meta-pill">meta</span> ${escapeHtml(JSON.stringify(parsed.usage || {}))}`;
-            } else {
-                row.innerHTML = `<span class="meta-pill">${escapeHtml(parsed.type || 'event')}</span> ${escapeHtml(JSON.stringify(parsed))}`;
-            }
-            transcriptEl.appendChild(row);
-            transcriptEl.scrollTop = transcriptEl.scrollHeight;
-        } catch (e) {
-            // ignore parse errors
-        }
+            if (parsed.type === 'run_state' && (parsed.status === 'complete' || parsed.status === 'error')) { updateDrawerBadge(childSessionId, parsed.status === 'error' ? 'ERROR' : 'DONE'); es.close(); drawerEventSources.delete(childSessionId); return; }
+            appendDrawerEventRow(childSessionId, getDrawerTranscript(childSessionId), parsed);
+        } catch (e) { /* ignore parse errors */ }
     };
-    es.onerror = () => {
-        updateDrawerBadge(childSessionId, 'ERROR');
-        es.close();
-        if (drawer) drawer.dataset.eventSource = '';
-    };
+    es.onerror = () => { updateDrawerBadge(childSessionId, 'ERROR'); es.close(); drawerEventSources.delete(childSessionId); };
+}
+
+function renderDelegateLiveActionStrip(childEntries, tool, rawToolKey) {
+    if (!Array.isArray(childEntries) || !childEntries.length) return '';
+    const delegateCallId = tool?.call_id || rawToolKey || '';
+    const liveButtons = childEntries.map((entry, childIdx) => {
+        const taskIndex = normalizeTaskIndex(entry?.taskIndex);
+        const label = Number.isInteger(taskIndex) ? `Task ${taskIndex + 1}` : `Subagent ${childIdx + 1}`;
+        return `<button type="button" class="tool-call-action-badge live-view-btn" data-child-session-id="${escapeHtml(entry.childSessionId)}" data-delegate-call-id="${escapeHtml(delegateCallId)}" data-tool-key="${escapeHtml(rawToolKey)}" data-label="${escapeHtml(entry.label || label)}">${escapeHtml(label)}</button>`;
+    }).join('');
+    const countLabel = `${childEntries.length} live subagent${childEntries.length === 1 ? '' : 's'}`;
+    return `<span class="delegate-live-actions" aria-label="${escapeHtml(countLabel)}"><span class="delegate-live-count">${escapeHtml(countLabel)}</span>${liveButtons}</span>`;
+}
+
+function findLatestDelegateToolCallId(state) {
+    const tools = state?.tools || [];
+    for (let i = tools.length - 1; i >= 0; i -= 1) {
+        if (tools[i]?.name === 'delegate_task' && tools[i]?.call_id) return tools[i].call_id;
+    }
+    return '';
 }
 
 function ensureAssistantTracePendingDelegateChildren(state) {
@@ -3199,10 +3260,7 @@ function renderToolBlock(tool, idx, options = {}) {
         state.renderedPanels.add('output');
     }
     const childEntries = toolName === 'delegate_task' ? (liveChildSessionMap.get(tool.call_id || '') || []) : [];
-    console.log('[DASHBOARD] renderToolBlock for', toolName, 'call_id:', tool.call_id, 'entries:', childEntries);
-    const drawerBtn = childEntries.length ? `
-        <button type="button" class="tool-call-action-badge live-view-btn" style="margin-left:auto;margin-right:0.5rem;background:var(--primary-dim);color:var(--primary);border-color:var(--primary-border);" data-child-session-id="${escapeHtml(childEntries[0].childSessionId)}" data-tool-key="${escapeHtml(rawToolKey)}" data-label="${escapeHtml(childEntries[0].label || '')}">Live view</button>
-    ` : '';
+    const drawerBtn = renderDelegateLiveActionStrip(childEntries, tool, rawToolKey);
     return `
         <div class="tool-call-block${state.expanded ? ' active' : ''}${executionClass}" data-tool-id="${escapeHtml(rawToolKey)}"${domId}>
             <button type="button" class="tool-call-pill" onclick="toggleToolCall('${escapeHtml(rawToolKey)}')">
@@ -4977,27 +5035,25 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                         log('img', `Image (${img.type}, ${Math.round(img.data.length / 1024)}KB)`, false, null, img.full);
                     });
                 } else if (parsed.type === 'child_session_started' || (parsed.type === 'tool_progress' && parsed.name === 'child_session_started')) {
-                    const args = parsed.arguments || parsed.args || {};
-                    const delegateCallId = parsed.delegate_call_id || parsed.call_id || args.delegate_call_id || '';
-                    const childSessionId = parsed.child_session_id || args.child_session_id || '';
-                    console.log('[DASHBOARD] child_session_started event:', { delegateCallId, childSessionId, args });
+                    const args = getEventMetadata(parsed);
+                    const delegateCallId = parsed.delegate_call_id || parsed.call_id || args.delegate_call_id || findLatestDelegateToolCallId(assistantState) || '';
+                    const childSessionId = parsed.child_session_id || args.child_session_id || parsed.session_id || args.session_id || parsed.subagent_id || args.subagent_id || '';
                     if (childSessionId) {
                         const entry = liveChildSessionMap.get(delegateCallId) || [];
-                        entry.push({
-                            childSessionId: childSessionId,
-                            label: parsed.label || args.label || 'delegate_task',
-                            taskIndex: parsed.task_index ?? args.task_index ?? null,
-                            parentSessionId: parsed.parent_session_id || args.parent_session_id || activeRun.sessionId || '',
-                        });
+                        if (!entry.some(item => item.childSessionId === childSessionId)) {
+                            entry.push({ childSessionId, label: parsed.label || args.label || 'delegate_task', taskIndex: parsed.task_index ?? args.task_index ?? null, parentSessionId: parsed.parent_session_id || args.parent_session_id || activeRun.sessionId || '', delegateCallId });
+                        }
                         liveChildSessionMap.set(delegateCallId, entry);
+                        rememberChildDrawer(childSessionId, { label: parsed.label || args.label || 'delegate_task', taskIndex: parsed.task_index ?? args.task_index ?? null, parentSessionId: parsed.parent_session_id || args.parent_session_id || activeRun.sessionId || '', delegateCallId });
+                        appendLiveDrawerEventIfOpen(parsed);
                         renderDirty = true;
                         log('tool', `[child_session_started] ${childSessionId.slice(0, 8)}...`, false, { result: parsed });
-                        console.log('[DASHBOARD] liveChildSessionMap updated:', delegateCallId, entry);
                         saveActiveRun();
                     }
                     continue;
                 } else if (parsed.type === 'tool_call') {
                     const isSubagent = parsed.arguments?.subagent || parsed.arguments?.delegate_call_id;
+                    appendLiveDrawerEventIfOpen(parsed);
                     if (isSubagent && appendDelegateChildEvent(assistantState, parsed)) {
                         startToolTimer(parsed.call_id || parsed.name, true);
                         renderDirty = true;
@@ -5016,6 +5072,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                     }
                 } else if (parsed.type === 'tool_output') {
                     const isSubagentOutput = parsed.arguments?.subagent || parsed.arguments?.delegate_call_id;
+                    appendLiveDrawerEventIfOpen(parsed);
                     if (isSubagentOutput && appendDelegateChildEvent(assistantState, parsed)) {
                         stopToolTimer(parsed.call_id || parsed.name, true);
                         renderDirty = true;
@@ -5028,6 +5085,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                     renderDirty = true;
                     log('tool', describeToolLog(tool.name, 'output', tool.output), false, { result: tool.output });
                 } else if (parsed.type === 'tool_progress') {
+                    appendLiveDrawerEventIfOpen(parsed);
                     if ((parsed.arguments?.delegate_call_id || parsed.arguments?.call_id) && appendDelegateChildEvent(assistantState, parsed)) {
                         renderDirty = true;
                         log('tool', `[subagent] ${parsed.name || 'progress'}: ${summarizeValue(parsed.progress || parsed.arguments || '', 100)}`, false, { result: parsed.progress || parsed.arguments || '' });
@@ -8117,20 +8175,29 @@ function initGraphSettingsControls() {
   if (!document.body.dataset.liveViewDelegated) {
     document.body.dataset.liveViewDelegated = 'true';
     document.addEventListener('click', (e) => {
+      const stopBtn = e.target.closest('.subagent-stop-btn');
+      if (stopBtn) { e.preventDefault(); e.stopPropagation(); requestStopSubagent(stopBtn.dataset.childSessionId || ''); return; }
+      const pauseBtn = e.target.closest('.subagent-pause-btn');
+      if (pauseBtn) { e.preventDefault(); e.stopPropagation(); togglePauseSubagentStream(pauseBtn.dataset.childSessionId || '', pauseBtn.dataset.controlMode || 'soft'); return; }
+      const steerBtn = e.target.closest('.subagent-steer-btn');
+      if (steerBtn) { e.preventDefault(); e.stopPropagation(); requestSteerSubagent(steerBtn.dataset.childSessionId || '', steerBtn.dataset.controlMode || 'soft'); return; }
       const btn = e.target.closest('.live-view-btn');
       if (!btn) return;
+      e.preventDefault();
       e.stopPropagation();
       const childSessionId = btn.dataset.childSessionId;
       const label = btn.dataset.label || '';
       let anchorEl = btn;
-      if (btn.dataset.anchorSelector) {
-        anchorEl = document.querySelector(btn.dataset.anchorSelector) || btn;
-      } else if (btn.dataset.toolKey) {
-        anchorEl = document.querySelector(`[data-tool-id="${CSS.escape(btn.dataset.toolKey)}"]`) || btn;
-      } else if (btn.dataset.useParent) {
-        anchorEl = btn.closest('details') || btn;
-      }
+      if (btn.dataset.anchorSelector) anchorEl = document.querySelector(btn.dataset.anchorSelector) || btn;
+      else if (btn.dataset.toolKey) anchorEl = document.querySelector(`[data-tool-id="${CSS.escape(btn.dataset.toolKey)}"]`) || btn;
+      else if (btn.dataset.useParent) anchorEl = btn.closest('details') || btn;
       openChildSessionDrawer(childSessionId, anchorEl, label);
+    });
+    document.addEventListener('keydown', (e) => {
+      const btn = e.target.closest?.('.live-view-btn[role="button"]');
+      if (!btn || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      btn.click();
     });
   }
 
