@@ -63,6 +63,11 @@ from dashboard_backend.services.dashboard_state import (
     save_dashboard_state as _save_dashboard_state_impl,
     validate_dashboard_state_key as _validate_dashboard_state_key_impl,
 )
+from dashboard_backend.services.games_catalog import (
+    categorize_game_skill as _categorize_game_skill_impl,
+    get_games_catalog as _get_games_catalog_impl,
+    parse_game_skill_frontmatter as _parse_game_skill_frontmatter_impl,
+)
 from dashboard_backend.services.message_board import (
     _load_message_board_post as _load_message_board_post_impl,
     _message_board_connection as _message_board_connection_impl,
@@ -3240,89 +3245,15 @@ async def get_skill_content(request):
 
 
 def _parse_game_skill_frontmatter(skill_md: Path) -> dict:
-    """Return YAML frontmatter from a game SKILL.md file, tolerating plain markdown."""
-    try:
-        content = skill_md.read_text(encoding="utf-8")
-    except Exception:
-        return {}
-    if not content.startswith("---"):
-        return {}
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return {}
-    try:
-        meta = yaml.safe_load(parts[1]) or {}
-    except Exception:
-        return {}
-    return meta if isinstance(meta, dict) else {}
+    return _parse_game_skill_frontmatter_impl(skill_md)
 
 
 def _categorize_game_skill(tags: list[str], description: str) -> str:
-    haystack = " ".join(tags + [description]).lower()
-
-    def has_any(words: tuple[str, ...]) -> bool:
-        return any(re.search(r"(?<![a-z0-9])" + re.escape(word) + r"(?![a-z0-9])", haystack) for word in words)
-
-    if has_any(("watch", "doom", "vizdoom", "fps", "stream")):
-        return "Watch"
-    if has_any(("emulator", "pokemon", "gameboy", "rom")):
-        return "Emulator"
-    if has_any(("server", "minecraft", "modpack")):
-        return "Server"
-    if has_any(("stats", "analytics", "coach", "strategy")):
-        return "Analysis"
-    return "Tool"
+    return _categorize_game_skill_impl(tags, description)
 
 
 def get_games_catalog() -> dict:
-    """Discover gaming-related Hermes skills for the dashboard Games tab."""
-    gaming_dir = HERMES_HOME / "skills" / "gaming"
-    games = []
-    if gaming_dir.exists():
-        for item in sorted(gaming_dir.iterdir(), key=lambda p: p.name.lower()):
-            if not item.is_dir() or item.name.startswith("."):
-                continue
-            skill_md = item / "SKILL.md"
-            meta = _parse_game_skill_frontmatter(skill_md) if skill_md.exists() else {}
-            name = str(meta.get("name") or item.name)
-            description = str(meta.get("description") or "")
-            tags = meta.get("tags") or []
-            if isinstance(tags, str):
-                tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
-            tags = [str(tag) for tag in tags]
-            dashboard_meta = meta.get("dashboard") if isinstance(meta.get("dashboard"), dict) else {}
-            game = {
-                "id": item.name,
-                "name": name.replace("-", " ").replace("_", " ").title(),
-                "description": description,
-                "tags": tags,
-                "category": _categorize_game_skill(tags, description),
-                "skill_path": str(skill_md if skill_md.exists() else item),
-            }
-            if dashboard_meta:
-                upload_url = dashboard_meta.get("upload_url")
-                upload_label = dashboard_meta.get("upload_label")
-                watch_url = dashboard_meta.get("watch_url")
-                launch_label = dashboard_meta.get("launch_label")
-                control_url = dashboard_meta.get("control_url")
-                control_label = dashboard_meta.get("control_label")
-                status_hint = dashboard_meta.get("status_hint")
-                if upload_url:
-                    game["upload_url"] = str(upload_url)
-                if upload_label:
-                    game["upload_label"] = str(upload_label)
-                if watch_url:
-                    game["watch_url"] = str(watch_url)
-                if launch_label:
-                    game["launch_label"] = str(launch_label)
-                if control_url:
-                    game["control_url"] = str(control_url)
-                if control_label:
-                    game["control_label"] = str(control_label)
-                if status_hint:
-                    game["status_hint"] = str(status_hint)
-            games.append(game)
-    return {"games": games, "count": len(games)}
+    return _get_games_catalog_impl(hermes_home=HERMES_HOME)
 
 
 async def get_games_endpoint(request):

@@ -32,6 +32,9 @@ This copy is the safe refactor target for the dashboard monolith. The original d
 - `dashboard_backend/services/scrolls.py` owns the read-only Scrolls snapshot state projection delegation to the standalone Vesuvius `research_dashboard` package.
   - `app.py` keeps the `/api/scrolls/snapshot` route wrapper and passes `_SCROLLS_PROJECT_ROOT` into the service at call time.
   - Targeted regression gate: `python -m pytest tests/test_scrolls_snapshot.py tests/test_scrolls_panel_navigation.py`.
+- `dashboard_backend/services/games_catalog.py` owns the read-only Games tab skill catalog/frontmatter projection.
+  - `app.py` keeps the `/api/games` route wrapper plus compatibility helper names, and passes live `HERMES_HOME` into the service at call time.
+  - Targeted regression gate: `python -m pytest tests/test_games_catalog_service.py tests/test_games_tab.py`.
 
 ## Backend follow-up plan
 

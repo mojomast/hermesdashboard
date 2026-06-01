@@ -94,7 +94,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | dashboard_backend/services/cron.py | cron list/create/update/delete/run/pause/resume proxy | Hermes API, cron files | /api/cron* | cron tests/full pytest |
 | dashboard_backend/services/graph.py | graph node/edge/search projections | memory/skills/session stores | /api/graph* | graph/execution tests |
 | dashboard_backend/services/dnd.py | campaign/narrative state APIs | campaign JSON/files | /api/dnd* | DND tests if present/full pytest |
-| dashboard_backend/services/games.py | Pokemon/MiniHack/Doom proxy/status/save helpers | emulator/proxy process/files | /api/pokemon*, /minihack/*, /doom/* | Pokemon/game tests |
+| dashboard_backend/services/games_catalog.py | ✅ PARTIAL: read-only Games tab skill catalog/frontmatter projection; Pokemon/MiniHack/Doom proxy/process helpers remain in app.py | `HERMES_HOME` injected at call time | /api/games via app wrapper | tests/test_games_catalog_service.py, tests/test_games_tab.py |
 | dashboard_backend/services/scrolls.py | ✅ PARTIAL: read-only `/api/scrolls/snapshot` state projection delegation; broader Scrolls status/artifact/loop helpers remain in app.py | scrolls project root injected at call time | /api/scrolls/snapshot via app wrapper; other /api/scrolls* via app.py | tests/test_scrolls_snapshot.py, tests/test_scrolls_panel_navigation.py |
 | dashboard_backend/routes/*.py | route wrappers that parse Request and call services | imports services only | same public paths | route presence tests |
 
@@ -645,6 +645,35 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 - `dashboard_backend/services/token_usage.py`: token usage aggregation and projection helpers are extracted; `/api/token-usage` and app-level helper names remain as wrappers. Gate: `python -m pytest tests/test_token_usage_dashboard.py`.
 - `dashboard_backend/services/message_board.py`: message-board SQLite post/message persistence is extracted; `/api/message-board*` endpoint wrappers and `generate_message_board_agent_reply` remain in `app.py`. Gate: `python -m pytest tests/test_message_board.py`.
 - `dashboard_backend/services/scrolls.py`: read-only Scrolls snapshot projection delegation is extracted; `GET /api/scrolls/snapshot` is restored as a parity API route while app-owned `_SCROLLS_PROJECT_ROOT` remains injected by the wrapper. Gate: `python -m pytest tests/test_scrolls_snapshot.py tests/test_scrolls_panel_navigation.py`.
+- `dashboard_backend/services/games_catalog.py`: read-only Games tab skill catalog/frontmatter projection is extracted; `/api/games` remains wrapped in `app.py` and app-owned `HERMES_HOME` is injected at call time. Gate: `python -m pytest tests/test_games_catalog_service.py tests/test_games_tab.py`.
+
+## Games catalog extraction pass
+
+### Task frame
+Extract the low-risk Games tab catalog projection from `app.py` while preserving the `/api/games` API route, payload shape, and all Doom/MiniHack/Pokemon proxy/process surfaces in the app orchestrator.
+
+### Vocabulary map
+- **API route:** `GET /api/games`, the external route that returns the dashboard Games catalog projection.
+- **Service:** `dashboard_backend/services/games_catalog.py`, bounded read-only filesystem/frontmatter projection logic for gaming skills.
+- **Message:** not involved; catalog entries are skill metadata records, not chat/forum/IRC messages.
+- **State:** catalog response is a derived projection over `HERMES_HOME/skills/gaming`, not a durable ledger and not mutable runtime state.
+- **Workflow:** user opens the Games tab and sees available gaming tools; watch/proxy/restart workflows remain separate and were not moved.
+
+### Structural model
+`app.py` imports service implementations as `_parse_game_skill_frontmatter_impl`, `_categorize_game_skill_impl`, and `_get_games_catalog_impl`. Compatibility wrappers keep the old app-level helper names and inject live `HERMES_HOME`; `get_games_endpoint` and route registration are unchanged.
+
+### Change set
+- Added `dashboard_backend/services/games_catalog.py` with frontmatter parsing, category inference, and catalog projection helpers.
+- Replaced the app-level Games helper bodies with compatibility delegates.
+- Added `tests/test_games_catalog_service.py` to validate injected-root behavior, invalid-frontmatter tolerance, and no `app.py` import direction.
+
+### Drift audit
+- No public route, DOM, CSS, JavaScript, or payload-shape changes intended.
+- `/api/games` remains compatible and existing proxy routes remain untouched.
+- Games proxy/process contexts (`/doom/*`, `/minihack/*`, `/pokemon/*`, `/api/pokemon/restart`, `/pokemon/chat`) remain in `app.py` for separate design/gating.
+
+### Next step
+After this pass is committed and clean, the safest remaining low-risk refactor pass is dashboard-state route-wrapper extraction using injected app compatibility wrappers. The highest-value remaining parity pass is still self-improvement repair/anomaly read-only projection.
 
 ## Scrolls snapshot parity pass
 

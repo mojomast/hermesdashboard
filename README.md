@@ -209,6 +209,7 @@ Extracted backend modules so far:
 - `dashboard_backend/services/token_usage.py` owns read-only token/cost aggregation ledgers and projections; `/api/token-usage` and app-level helper names remain stable.
 - `dashboard_backend/services/message_board.py` owns message-board SQLite post/message persistence; `/api/message-board*` route handlers and Hermes reply generation remain in `app.py` for compatibility.
 - `dashboard_backend/services/scrolls.py` owns read-only Scrolls snapshot projection delegation; `GET /api/scrolls/snapshot` remains wrapped in `app.py` and injects the configured Vesuvius project root at call time.
+- `dashboard_backend/services/games_catalog.py` owns read-only Games tab skill catalog/frontmatter projection; `/api/games` remains wrapped in `app.py` and injects `HERMES_HOME` at call time while game proxy/process routes stay in the app orchestrator.
 
 Refactor passes follow `AUDIT -> MAP -> EXTRACT -> VERIFY -> DOCUMENT -> COMMIT`. For backend extraction passes, run the focused context tests first, then the full gate:
 
