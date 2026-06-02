@@ -1,0 +1,18 @@
+        <!-- Games Panel -->
+        <div class="panel" id="games-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Games</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Gaming launchpads and play/run skills installed in Hermes.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadGames()">Refresh</button>
+                    <button class="btn danger" id="pokemon-restart-btn" onclick="restartPokemonAgent()">Restart Pokémon Agent</button>
+                </div>
+            </div>
+            <div class="stats" id="games-stats"></div>
+            <div class="skills-list" id="games-list">
+                <div style="color:var(--text-dim);">Loading games...</div>
+            </div>
+            <iframe id="games-watch-frame" title="Game Watch" style="display:none;width:100%;min-height:640px;border:1px solid var(--border);border-radius:12px;margin-top:1rem;background:#050505;"></iframe>
+        </div>

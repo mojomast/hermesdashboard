@@ -1,0 +1,27 @@
+        <!-- Memory Panel -->
+        <div class="panel" id="memory-panel">
+            <div class="memory-editor">
+                <div class="memory-section">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <h3>Agent Memory</h3>
+                        <span style="font-size:0.75rem;color:var(--text-dim);" id="memory-chars">0 chars</span>
+                    </div>
+                    <textarea id="memory-text" placeholder="Agent's persistent notes..." oninput="updateMemoryCharCount()"></textarea>
+                </div>
+                <div class="memory-section">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <h3>User Profile</h3>
+                        <span style="font-size:0.75rem;color:var(--text-dim);" id="user-chars">0 chars</span>
+                    </div>
+                    <textarea id="user-profile-text" placeholder="User preferences and profile..." oninput="updateMemoryCharCount()"></textarea>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;">
+                <span id="memory-autosave-status" style="font-size:0.8rem;color:var(--text-dim);"></span>
+                <div style="display:flex;gap:0.5rem;">
+                    <button class="btn" onclick="toggleMemoryPreview()">Preview</button>
+                    <button class="btn primary" onclick="saveMemory()">Save Memory</button>
+                </div>
+            </div>
+            <div id="memory-preview" style="display:none;margin-top:1rem;background:var(--bg-card);padding:1rem;border-radius:8px;border:1px solid var(--border-subtle);max-height:40vh;overflow:auto;"></div>
+        </div>

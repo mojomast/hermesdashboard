@@ -76,6 +76,7 @@ def _install_framework_stubs() -> None:
 _install_framework_stubs()
 
 import app as dashboard_app
+from tests.dashboard_sources import dashboard_source
 
 
 class FakeRequest:
@@ -622,7 +623,7 @@ def test_dnd_auto_turn_job_start_validates_and_rejects_duplicate_active_job(tmp_
 
 
 def test_dnd_frontend_panel_uses_backend_contract():
-    html = (dashboard_app.Path(__file__).resolve().parents[1] / "templates" / "index.html").read_text(encoding="utf-8")
+    html = dashboard_source()
 
     assert 'data-panel="dnd"' in html
     assert 'id="dnd-panel"' in html
@@ -743,7 +744,7 @@ def test_dnd_character_generation_and_world_builder_endpoints(tmp_path, monkeypa
 
 
 def test_dnd_manual_character_and_world_entity_endpoints_and_contract():
-    html = (dashboard_app.Path(__file__).resolve().parents[1] / "templates" / "index.html").read_text(encoding="utf-8")
+    html = dashboard_source()
     paths = [getattr(route, "path", None) for route in dashboard_app.routes]
 
     assert "/dnd/popout" in paths

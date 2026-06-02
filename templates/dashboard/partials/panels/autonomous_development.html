@@ -1,0 +1,31 @@
+        <!-- Autonomous Development Panel -->
+        <div class="panel" id="autonomous-development-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Autonomous Development Pipelines</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Create, inspect, schedule, enable, and disable autonomous research → tournament → build/curation pipelines from one registry.</p>
+                </div>
+                <button class="btn" onclick="loadAutonomousDevelopment()">Refresh</button>
+            </div>
+            <div class="stats" id="autonomous-development-stats"></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,0.65fr);gap:1rem;margin-top:1rem;align-items:start;">
+                <div class="card" style="overflow:auto;">
+                    <h4>Pipeline Registry</h4>
+                    <div id="autonomous-development-pipelines"><p style="color:var(--text-dim);">Loading pipelines...</p></div>
+                </div>
+                <div class="card">
+                    <h4>Add Pipeline</h4>
+                    <form class="message-board-form" id="autonomous-development-form" onsubmit="submitAutonomousDevelopmentPipeline(event)">
+                        <input id="ad-name" type="text" placeholder="Pipeline name" required>
+                        <textarea id="ad-description" placeholder="What this pipeline manages"></textarea>
+                        <input id="ad-jobs" type="text" placeholder="Linked cron job names, comma-separated">
+                        <input id="ad-schedule" type="text" placeholder="Schedule, e.g. every 120m">
+                        <textarea id="ad-research-spec" placeholder="Research specification"></textarea>
+                        <textarea id="ad-tournament-spec" placeholder="Tournament specification"></textarea>
+                        <textarea id="ad-build-spec" placeholder="Build / curation specification"></textarea>
+                        <textarea id="ad-safety-policy" placeholder="Safety policy / activation guardrails"></textarea>
+                        <button class="btn primary" type="submit">Create Pipeline</button>
+                    </form>
+                </div>
+            </div>
+        </div>

@@ -1,0 +1,35 @@
+        <div class="session-detail" id="session-detail">
+        <div class="session-detail-header">
+            <h2 id="session-detail-title">Session</h2>
+            <span id="token-badge" class="token-badge"></span>
+            <div class="session-detail-actions">
+                <button class="btn" id="session-regenerate-summary-btn" onclick="regenerateSessionSummary()">Regenerate Title + Summary</button>
+                <button class="btn" onclick="closeSessionDetail()">Close</button>
+            </div>
+        </div>
+        <div class="session-detail-content">
+            <div class="session-detail-messages" id="session-detail-messages"></div>
+            <div class="session-activity">
+                <div class="session-files-list">
+                    <h3 style="margin-bottom:0.75rem;">Files Touched</h3>
+                    <div id="session-files-list" style="color:var(--text-dim);">Select a session to inspect files.</div>
+                </div>
+                <div class="file-preview">
+                    <h3 id="file-preview-title">File Preview</h3>
+                    <div id="file-preview-body" style="color:var(--text-dim);margin-top:0.5rem;">Choose a file to preview its contents.</div>
+                </div>
+                <div class="session-activity-panel">
+                    <h3 style="margin-bottom:0.75rem;">Background Self-Improvement</h3>
+                    <div id="session-background-reviews" style="color:var(--text-dim);">No background review activity yet.</div>
+                </div>
+                <div class="session-activity-panel">
+                    <h3 style="margin-bottom:0.75rem;">Skill Changes</h3>
+                    <div id="session-skill-events" style="color:var(--text-dim);">No skill creation or update activity yet.</div>
+                </div>
+                <div class="session-activity-panel">
+                    <h3 style="margin-bottom:0.75rem;">Session Search</h3>
+                    <div id="session-search-events" style="color:var(--text-dim);">No session recall activity yet.</div>
+                </div>
+            </div>
+        </div>
+    </div>

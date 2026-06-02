@@ -1,0 +1,49 @@
+<!-- Roguelike Panel -->
+<div class="panel" id="roguelike-panel">
+    <div class="card hermes-rogue-card" id="hermes-rogue">
+        <div class="hermes-rogue-header">
+            <div>
+                <h3>Hermes Labyrinth</h3>
+                <p class="hermes-rogue-subtitle">A tiny dashboard roguelike about keeping cognition coherent.</p>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button class="btn primary" id="rogue-new-run">New Run</button>
+                <button class="btn" id="rogue-seeded-run">Seeded Run</button>
+                <button class="btn" id="rogue-help-toggle">Help</button>
+                <button class="btn" id="rogue-copy-summary">Copy Summary</button>
+            </div>
+        </div>
+        <div class="hermes-rogue-stats" id="roguelike-status" aria-label="Hermes Labyrinth run status">
+            <span class="hermes-rogue-stat">Depth <strong id="rogue-depth">1</strong></span>
+            <span class="hermes-rogue-stat">HP <strong id="rogue-hp">10/10</strong></span>
+            <span class="hermes-rogue-stat">Focus <strong id="rogue-focus">3</strong></span>
+            <span class="hermes-rogue-stat">Keys <strong id="rogue-keys">0</strong></span>
+            <span class="hermes-rogue-stat">Shards <strong id="rogue-shards">0</strong></span>
+            <span class="hermes-rogue-stat">Turns <strong id="rogue-turns">0</strong></span>
+            <span class="hermes-rogue-stat">Best <strong id="rogue-best">0</strong></span>
+            <span class="hermes-rogue-stat">W/L <strong id="rogue-record">0/0</strong></span>
+        </div>
+        <div class="hermes-rogue-shell">
+            <div class="hermes-rogue-map" id="rogue-map" role="grid" tabindex="0" aria-label="Hermes Labyrinth map"></div>
+            <div class="hermes-rogue-side">
+                <div class="hermes-rogue-panellet" id="rogue-tile">Tile: initialization chamber.</div>
+                <div class="hermes-rogue-panellet" id="rogue-inventory">Inventory: no cache keys yet.</div>
+                <div class="hermes-rogue-panellet rogue-log" id="rogue-log">Open the Roguelike tab to begin.</div>
+                <div class="hermes-rogue-panellet rogue-help" id="rogue-help">
+                    Controls: WASD/arrow keys move, Space or . waits, R restarts, ? toggles help. Collect 6 memory shards and reach the Exit Kernel on depth 3.
+                </div>
+                <div class="rogue-dpad" aria-label="Mobile roguelike controls">
+                    <button class="btn" data-rogue-move="0,-1">↑</button>
+                    <button class="btn" data-rogue-move="-1,0">←</button>
+                    <button class="btn" data-rogue-wait>Wait</button>
+                    <button class="btn" data-rogue-move="1,0">→</button>
+                    <button class="btn" data-rogue-move="0,1">↓</button>
+                </div>
+            </div>
+        </div>
+        <div class="hermes-rogue-controls" style="margin-top:1rem;color:var(--text-dim);font-size:0.86rem;">
+            <span>Goal: descend 3 depths, collect 6+ Memory Shards, and stabilize the Exit Kernel.</span>
+            <span id="rogue-live-status" class="rogue-live-status" aria-live="polite">Ready.</span>
+        </div>
+    </div>
+</div>

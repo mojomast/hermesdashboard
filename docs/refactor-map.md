@@ -1,87 +1,87 @@
-# Refactor Map: Dashboard Templates/index.html → Modular JS
+# Hermes Dashboard refactor map
 
-## Target
-- **Monolith**: `templates/index.html` (16,820 lines, ~820KB)
-- **Module root**: `templates/js/`
-- **Test command**: `cd ~/.hermes/dashboard-refactor-work && python -m pytest tests/ -q --tb=short 2>/dev/null || echo "no tests"`
+This copy is the safe refactor target for the dashboard monolith. The original dashboard directories must remain untouched.
 
-## Summary
-- Total lines: 16,820
-- Total top-level JS functions/consts in `<script>` block: ~300+
-- The file contains: CSS themes, dashboard layout HTML, 6+ panel tabs, command palette,
-  settings modals, IRC chat panel, agent chat panel, games panel, session browser,
-  diagnostics panel, message board, and ~300 inline JS functions.
+## Current monolith shape
 
-## Focus: Agent Chat Concern
-For the multimodal image insertion fix, we only need to extract the **agent chat**
-concern. Other concerns (IRC chat, games, sessions, diagnostics, message board,
-command palette, settings, theme) can remain in the monolith for now.
+- `app.py` owns the Starlette application, route table, backend API handlers, proxy handlers, persistence helpers, and dashboard template rendering.
+- `templates/index.html` owns the visible dashboard markup and previously embedded all dashboard CSS and JavaScript inline.
+- Static frontend assets now live under `static/` and are served from `/static` by Starlette `StaticFiles`.
 
-### Agent Chat Function Registry
+## First safe pass completed/targeted
 
-| Name | Line Range | Responsibility | Target Module | Shared State Dependencies |
-|------|-----------|----------------|---------------|--------------------------|
-| `sendMessage` | 13390-13452 | Send user message + images to backend stream | `agent-chat.js` | `userInput`, `sendBtn`, `pendingChatImages`, `conversation`, `activeRun`, `activeChatSessionId` |
-| `clearChat` | 13454-13465 | Clear conversation state | `agent-chat.js` | `chat`, `conversation`, `activeRun` |
-| `renderPendingChatImages` | 13476-13489 | Render image preview thumbnails | `agent-chat.js` | `chatImagePreviews`, `pendingChatImages` |
-| `addChatImage` | 13491-13499 | Read file as base64 data URL | `agent-chat.js` | `pendingChatImages` |
-| `addMessage` | 9131-9160 | Render a message bubble into DOM | `agent-chat.js` | `chat` |
-| `renderConversation` | 6246-6264 | Replay conversation into DOM | `agent-chat.js` | `chat`, `conversation` |
-| `buildChatRequestMessages` | 10519-10538 | Sanitize messages for API payload | `agent-chat.js` | — |
-| `streamChatRun` | ~10600-10700 | SSE stream handler for chat runs | `agent-chat.js` | `activeRun`, `chatRunStatus*` |
-| `updateContextDisplay` | ~13300-13388 | Render token/context usage | `agent-chat.js` | `contextSummary`, `contextPills`, `contextBreakdown` |
-| `updateActiveRunBanner` | 6174-6193 | Show/hide active run banner | `agent-chat.js` | `activeRun`, `chatRunStatus*` |
-| `summarizeActiveRunPreview` | 6157-6173 | Summarize active run for banner | `agent-chat.js` | `activeRun` |
-| `saveConversation` | 6072-6075 | Persist conversation to server | `agent-chat.js` | `conversation` |
-| `loadConversation` | 6076-6092 | Restore conversation from server | `agent-chat.js` | `conversation` |
-| `hydrateChatFromSession` | 7500-7577 | Load session into chat | `agent-chat.js` | `conversation`, `activeRun` |
-| `attachChatToSession` | 6150-6156 | Attach chat to session ID | `agent-chat.js` | `activeChatSessionId` |
-| `escapeHtml` | 13144-13155 | Utility: escape HTML entities | `utils.js` | — |
-| `formatMessageContent` | 13310-13340 | Utility: format markdown-like text | `utils.js` | — |
+1. Keep backend behavior and route contracts unchanged except for adding the `/static` mount.
+2. Extract only mechanical frontend assets:
+   - `static/css/dashboard.css` contains the previous full inline `<style>` block from `templates/index.html`.
+   - `static/js/dashboard.js` contains the previous full main dashboard inline script from the bottom of `templates/index.html`.
+3. Load `dashboard.js` as a classic deferred script, not an ES module, so existing inline `onclick` handlers and global function lookups continue to work.
+4. Leave third-party CDN assets in the template for now.
+5. Update focused tests that inspect raw template/source text so they intentionally include extracted static assets where appropriate.
 
-### Shared Mutable State (Agent Chat)
-| Variable | Line | Type | Readers | Writers |
-|----------|------|------|---------|---------|
-| `conversation` | 5980 | Array | renderConversation, addMessage, sendMessage, loadConversation, saveConversation | sendMessage, clearChat, hydrateChatFromSession |
-| `pendingChatImages` | 5993 | Array | renderPendingChatImages, sendMessage | addChatImage, sendMessage |
-| `activeRun` | 5990 | Object | updateActiveRunBanner, summarizeActiveRunPreview, sendMessage | sendMessage, clearActiveRun, streamChatRun |
-| `activeChatSessionId` | 5991 | String | updateActiveChatBanner, attachChatToSession, sendMessage | attachChatToSession, detachChatSession, sendMessage |
-| `userInput` | 5956 | DOM | sendMessage, event listeners | — |
-| `sendBtn` | 5957 | DOM | sendMessage, event listeners | — |
-| `chat` | 5955 | DOM | renderConversation, addMessage | — |
+## Backend extraction passes completed
 
-### Module Assignment Plan
+- `dashboard_backend/services/dashboard_state.py` owns dashboard-state SQLite schema creation and load/save/delete persistence.
+  - `dashboard_backend/routes/dashboard_state.py` owns `/api/dashboard-state/{key}` request parsing, JSON response envelopes, and `ValueError` to `404` mapping.
+  - `app.py` keeps compatibility wrappers (`_load_dashboard_state`, `_save_dashboard_state`, etc.) plus app-level endpoint names (`get_dashboard_state`, `set_dashboard_state`, `delete_dashboard_state`) that pass live `DASHBOARD_STATE_DB_PATH`, `DASHBOARD_STATE_LOCK`, and `DASHBOARD_STATE_KEYS` into the service so existing monkeypatch-based tests and callers keep working.
+  - Targeted regression gate: `python -m pytest tests/test_dashboard_state_persistence.py tests/test_dashboard_state_routes.py`.
+- `dashboard_backend/services/token_usage.py` owns token usage constants, read-only aggregation helpers, and token/cost projection construction.
+  - `app.py` keeps compatibility wrappers (`_empty_token_usage_window`, `_token_usage_total`, `_aggregate_token_usage_api_calls`, `_aggregate_token_usage_sessions`, `get_token_usage_summary`) and the `/api/token-usage` route wrapper.
+  - Targeted regression gate: `python -m pytest tests/test_token_usage_dashboard.py`.
+- `dashboard_backend/services/message_board.py` owns message-board SQLite post/message persistence.
+  - `app.py` keeps compatibility wrappers for public/private message-board helper names, plus the `/api/message-board*` route handlers and Hermes agent-reply generation.
+  - Targeted regression gate: `python -m pytest tests/test_message_board.py`.
+- `dashboard_backend/services/scrolls.py` owns the read-only Scrolls snapshot state projection delegation to the standalone Vesuvius `research_dashboard` package.
+  - `app.py` keeps the `/api/scrolls/snapshot` route wrapper and passes `_SCROLLS_PROJECT_ROOT` into the service at call time.
+  - Targeted regression gate: `python -m pytest tests/test_scrolls_snapshot.py tests/test_scrolls_panel_navigation.py`.
+- `dashboard_backend/services/games_catalog.py` owns the read-only Games tab skill catalog/frontmatter projection.
+  - `app.py` keeps the `/api/games` route wrapper plus compatibility helper names, and passes live `HERMES_HOME` into the service at call time.
+  - Targeted regression gate: `python -m pytest tests/test_games_catalog_service.py tests/test_games_tab.py`.
+- Self-improvement repair/anomaly parity restored bounded read-only event-coverage projections.
+  - `app.py` surfaces `repair_hint` / `event_coverage_repair_hint` without adding mutation routes.
+  - `static/js/dashboard.js` renders Repair Readiness, Anomaly Samples, and inert Next repair commands while the tab remains hidden-by-default.
+  - Targeted regression gate: `python -m pytest tests/test_self_improvement_panel.py`.
 
-#### `templates/js/utils.js` (shared utilities)
-- `escapeHtml`
-- `formatMessageContent`
-- `scrollChatToBottom` (if chat-scoped)
+## Backend follow-up plan
 
-#### `templates/js/agent-chat.js` (agent chat concern)
-- All agent-chat functions listed above
-- Event listener setup for paste/drop/attach/send
-- State: `conversation`, `pendingChatImages`, `activeRun`, `activeChatSessionId`
-- Exports: `initAgentChat()`, `sendMessage()`, `clearChat()`, `addMessage()`,
-  `renderConversation()`, `hydrateChatFromSession()`, `attachChatToSession()`,
-  `updateActiveRunBanner()`, `buildChatRequestMessages()`
+- Split `app.py` by stable bounded contexts without changing public API paths:
+  - application/bootstrap and route registration
+  - dashboard state persistence and route-wrapper parsing/envelopes
+  - sessions/files/memory/skills/games APIs
+  - diagnostics and execution trace APIs
+  - autonomous development/self-improvement/scrolls APIs
+  - D&D campaign APIs
+  - proxy integrations (`doom`, `minihack`, `pokemon`)
+- Add route-registration tests before each extraction to compare the route table before/after each move.
+- Prefer small modules with pure helpers first, then endpoint moves once imports and monkeypatch seams are clear.
+- Keep `app.py -> routes -> services -> core` as the dependency direction; route modules parse `Request` objects and delegate to services, while services never import `app.py`.
 
-## Risk Flags
-- `sendMessage` touches 4+ shared variables (high coupling)
-- `streamChatRun` is deeply coupled to `activeRun` state and DOM elements
-- Several assistant trace rendering functions (buildAssistantTrace*, renderTool*) are
-  used by BOTH agent chat rendering and session transcript rendering — they must stay
-  in the monolith or be extracted to a shared `trace-render.js` module.
-- The agent chat event listeners are wired at parse time in the monolith; extracting
-  them requires moving the listener setup into an `initAgentChat()` function called
-  after DOM ready.
+## Frontend template partial pass completed
 
-## Current Bug: Multimodal Image Insertion
-The frontend already supports image paste/drop/attach and builds multimodal content
-arrays. The backend `_sanitize_chat_messages` preserves arrays. The gateway
-`_handle_chat_completions` preserves arrays. However, two crashes remain in the
-core agent (`run_agent.py` in `~/.hermes/hermes-agent-push/`):
+- `templates/index.html` is now a Jinja shell that includes dashboard partials from `templates/dashboard/partials/`.
+- Shell/navigation partials own head assets, top navigation, mobile navigation, modal overlays, the session drawer, and the classic dashboard script tag.
+- Panel markup moved to `templates/dashboard/partials/panels/` with one file per dashboard panel while preserving panel IDs and `data-panel` values.
+- Tests now render the Jinja template before inspecting dashboard markup, then concatenate extracted CSS/JS for source-contract checks.
+- Compatibility constraints remain: `/static/js/dashboard.js` is still a classic deferred script, `type="module"` is not used, and inline handler globals are preserved.
 
-1. `_looks_like_codex_intermediate_ack` (line ~1627) does `(user_message or "").strip().lower()`
-   which crashes when `user_message` is a list.
-2. Ephemeral context injection (line ~7340-7343) only handles `isinstance(_base, str)`,
-   so memory prefetch and plugin context are silently lost for multimodal messages.
+## Frontend follow-up plan
+
+- Keep globals stable while extracting by feature area; avoid `type="module"` until inline handlers are removed or explicitly bridged.
+- CSS next safest pass: mechanically split order-preserving static imports, starting with self-contained/bracketed blocks such as graph, command palette, interrupt, token-cost, and D&D styles.
+- JavaScript next safest pass: map hoisting/initialization first and move top-level boot into a final classic bootstrap script before splitting feature files.
+- Replace inline event handlers with delegated listeners in later passes, then consider modules/bundling.
+
+## Frontend parity pass completed
+
+- Restored chat image attachment/paste controls in the refactored chat panel, CSS, JavaScript rendering/sending path, and backend chat-message sanitizer.
+- Restored Chat emergency-stop parity for active main-agent runs: static `#chat-run-stop-btn`, `.emergency-stop-btn` styling, `requestInterrupt(sessionId, runId = null)` stop semantics with `/api/runs/{run_id}/stop` fallback, route/handler tests, and cooperative `stop_requested` polling in the sync upstream SSE reader.
+- Added optional Dashboard Chat / IRC availability as a hidden-by-default tab with privacy-preserving settings, masked channel keys in status/settings/config payloads, invalid-port fallback, gated `/api/dashboard-chat/ws`, pure sanitizer/parser services, websocket cleanup coverage, PM activity that does not steal compose focus, no-network disabled tests, and source-contract coverage via `dashboard_source()`.
+- Restored the dirty reference's frontend-only Roguelike/Hermes Labyrinth tab as an experimental hidden-by-default panel with partialized HTML, extracted CSS/JS, and no backend API route.
+- New installs now default to a safer tab set: chat, message board, config, secrets, sessions, memory, skills, cron, schedule, and graph.
+- Local-tooling-specific tabs remain registered and can be enabled from dashboard settings with experimental warnings: agent observability, games, roguelike, diagnostics, D&D campaigns, self-improvement, autonomous development, and Vesuvius AutoResearch.
+- Existing users with an explicit `hermes_dashboard_hidden_tabs_v1` localStorage value keep their customized visibility; only browsers with no stored preference receive the safer defaults.
+
+## Guardrails
+
+- Do not modify `/home/mojo/.hermes/dashboard` or `/home/mojo/.hermes/repos/hermesdashboard`.
+- Preserve existing route paths, response payload shapes, and dashboard global function names.
+- Run `python -m py_compile app.py`, `node --check static/js/dashboard.js`, and `python -m pytest` after each pass.

@@ -1,12 +1,13 @@
 from pathlib import Path
 
+from tests.dashboard_sources import dashboard_source
 
-TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "index.html"
+
 APP = Path(__file__).resolve().parents[1] / "app.py"
 
 
 def test_vesuvius_autoresearch_tab_is_registered_with_hash_router_and_breadcrumbs():
-    html = TEMPLATE.read_text(encoding="utf-8")
+    html = dashboard_source()
 
     assert 'data-panel="scrolls"' in html
     assert 'id="scrolls-panel"' in html
@@ -16,7 +17,7 @@ def test_vesuvius_autoresearch_tab_is_registered_with_hash_router_and_breadcrumb
 
 
 def test_vesuvius_autoresearch_features_are_rendered_in_scrolls_panel():
-    html = TEMPLATE.read_text(encoding="utf-8")
+    html = dashboard_source()
     app = APP.read_text(encoding="utf-8")
 
     assert "Vesuvius AutoResearch Feature Inventory" in html

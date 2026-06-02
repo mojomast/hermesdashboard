@@ -23,11 +23,25 @@ import yaml
 from starlette.applications import Starlette
 from starlette.routing import Route
 try:
+    from starlette.routing import Mount
+except Exception:  # Lightweight test stubs may omit Mount.
+    class Mount:
+        def __init__(self, path, app=None, name=None, **kwargs):
+            self.path = path
+            self.app = app
+            self.name = name
+            self.kwargs = kwargs
+try:
+    from starlette.staticfiles import StaticFiles
+except Exception:  # Lightweight test stubs may omit StaticFiles.
+    class StaticFiles:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+try:
     from starlette.routing import WebSocketRoute
 except Exception:
-    # Lightweight tests may stub only Route; use it as a structural fallback
-    # so websocket route wiring remains inspectable without a live ASGI stack.
-    WebSocketRoute = Route
+    WebSocketRoute = None
 from starlette.templating import Jinja2Templates
 from starlette.responses import JSONResponse, PlainTextResponse
 try:
@@ -41,6 +55,65 @@ try:
 except Exception:  # Lightweight test stubs may omit StreamingResponse.
     StreamingResponse = PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
+
+from dashboard_backend.routes.dashboard_chat import (
+    dashboard_chat_status_endpoint as _dashboard_chat_status_endpoint_impl,
+    dashboard_chat_websocket_endpoint as _dashboard_chat_websocket_endpoint_impl,
+)
+from dashboard_backend.routes.dashboard_state import (
+    delete_dashboard_state_endpoint as _delete_dashboard_state_endpoint_impl,
+    get_dashboard_state_endpoint as _get_dashboard_state_endpoint_impl,
+    set_dashboard_state_endpoint as _set_dashboard_state_endpoint_impl,
+)
+from dashboard_backend.services.dashboard_chat import (
+    _dashboard_chat_runtime_config as _dashboard_chat_runtime_config_impl,
+    _dashboard_chat_status_payload as _dashboard_chat_status_payload_impl,
+    _dashboard_chat_truncate_message as _dashboard_chat_truncate_message_impl,
+    _dashboard_chat_user_command as _dashboard_chat_user_command_impl,
+    _parse_irc_message as _parse_irc_message_impl,
+    _parse_irc_prefix as _parse_irc_prefix_impl,
+    _sanitize_dashboard_chat_identity_token as _sanitize_dashboard_chat_identity_token_impl,
+    _sanitize_dashboard_chat_nick as _sanitize_dashboard_chat_nick_impl,
+    _sanitize_dashboard_chat_pm_target as _sanitize_dashboard_chat_pm_target_impl,
+)
+from dashboard_backend.services.dashboard_state import (
+    dashboard_state_connect as _dashboard_state_connect_impl,
+    delete_dashboard_state as _delete_dashboard_state_impl,
+    load_dashboard_state as _load_dashboard_state_impl,
+    save_dashboard_state as _save_dashboard_state_impl,
+    validate_dashboard_state_key as _validate_dashboard_state_key_impl,
+)
+from dashboard_backend.services.games_catalog import (
+    categorize_game_skill as _categorize_game_skill_impl,
+    get_games_catalog as _get_games_catalog_impl,
+    parse_game_skill_frontmatter as _parse_game_skill_frontmatter_impl,
+)
+from dashboard_backend.services.message_board import (
+    _load_message_board_post as _load_message_board_post_impl,
+    _message_board_connection as _message_board_connection_impl,
+    _message_board_db_path as _message_board_db_path_impl,
+    _message_board_now as _message_board_now_impl,
+    _message_board_row_to_message as _message_board_row_to_message_impl,
+    add_message_board_reply as _add_message_board_reply_impl,
+    add_message_board_user_message as _add_message_board_user_message_impl,
+    create_message_board_post as _create_message_board_post_impl,
+    get_message_board_post as _get_message_board_post_impl,
+    list_message_board_posts as _list_message_board_posts_impl,
+)
+from dashboard_backend.services.scrolls import (
+    ScrollsSnapshotUnavailable,
+    build_scrolls_snapshot as _build_scrolls_snapshot_impl,
+)
+from dashboard_backend.services.token_usage import (
+    TOKEN_USAGE_FIELDS as TOKEN_USAGE_FIELDS,
+    _aggregate_token_usage_api_calls as _aggregate_token_usage_api_calls_impl,
+    _aggregate_token_usage_sessions as _aggregate_token_usage_sessions_impl,
+    _empty_token_usage_window as _empty_token_usage_window_impl,
+    _token_usage_total as _token_usage_total_impl,
+    _window_from_row as _window_from_row_impl,
+    get_token_usage_summary as _get_token_usage_summary_impl,
+)
+
 
 def _hermes_agent_path() -> Path:
     configured = os.getenv("HERMES_AGENT_PATH")
@@ -87,15 +160,6 @@ except Exception:
             "flush_min_turns": 6,
         },
         "display": {"personality": "helpful", "skin": "default"},
-        "dashboard_chat": {
-            "hosts": ["irc.ussyco.de", "irc.ussy.host"],
-            "port": 6697,
-            "tls": True,
-            "channel_key": "hermesdashboard",
-            "default_nick_prefix": "HermesDash",
-            "ident": "hermesdash",
-            "realname": "Hermes Dashboard",
-        },
         "browser": {
             "inactivity_timeout": 120,
             "command_timeout": 30,
@@ -113,6 +177,16 @@ except Exception:
         },
         "session_reset": {"mode": "both", "idle_minutes": 1440, "at_hour": 4},
         "skills": {"external_dirs": [], "disabled": [], "creation_nudge_interval": 15},
+        "dashboard_chat": {
+            "enabled": False,
+            "hosts": ["irc.ussyco.de", "irc.ussy.host"],
+            "port": 6697,
+            "tls": True,
+            "channel_key": "",
+            "default_nick_prefix": "HermesDash",
+            "ident": "hermesdash",
+            "realname": "Hermes Dashboard",
+        },
         "platform_toolsets": {},
     }
     OPTIONAL_ENV_VARS = {
@@ -286,24 +360,12 @@ templates = Jinja2Templates(
 
 ACTIVE_RUN_TTL_SECONDS = 1800
 ACTIVE_RUNS: dict[str, dict] = {}
+ACTIVE_CHILD_STREAMS: dict[str, dict] = {}
+ACTIVE_SESSION_STEER_MESSAGES: dict[str, list[dict]] = {}
 _STARTUP_METADATA_BACKFILL_STARTED = False
 DASHBOARD_STATE_DB_PATH = HERMES_HOME / "dashboard_state.db"
 DASHBOARD_STATE_KEYS = {"conversation", "active_run"}
 DASHBOARD_STATE_LOCK = threading.Lock()
-
-DASHBOARD_CHAT_IRC_HOSTS = [
-    host.strip()
-    for host in os.getenv("DASHBOARD_CHAT_IRC_HOSTS", "irc.ussyco.de,irc.ussy.host").split(",")
-    if host.strip()
-]
-DASHBOARD_CHAT_IRC_PORT = int(os.getenv("DASHBOARD_CHAT_IRC_PORT", "6697"))
-DASHBOARD_CHAT_IRC_TLS = os.getenv("DASHBOARD_CHAT_IRC_TLS", "1").lower() not in {"0", "false", "no", "off"}
-DASHBOARD_CHAT_CHANNEL = "#hermesdashboard"
-DASHBOARD_CHAT_CHANNEL_KEY = os.getenv("DASHBOARD_CHAT_CHANNEL_KEY", "hermesdashboard")
-DASHBOARD_CHAT_DEFAULT_NICK_PREFIX = "HermesDash"
-DASHBOARD_CHAT_DEFAULT_IDENT = "hermesdash"
-DASHBOARD_CHAT_DEFAULT_REALNAME = "Hermes Dashboard"
-DASHBOARD_CHAT_MAX_MESSAGE_CHARS = 500
 
 # Track D: Interrupt control for live runs.
 # NOTE: The actual agent (run_agent.py) must check check_interrupt_flag()
@@ -409,6 +471,98 @@ def _cleanup_active_runs() -> None:
     for run_id in expired:
         ACTIVE_RUNS.pop(run_id, None)
 
+    expired_children = []
+    for child_session_id, state in ACTIVE_CHILD_STREAMS.items():
+        updated_at = state.get("updated_at", 0)
+        if not state.get("done") and now - updated_at <= ACTIVE_RUN_TTL_SECONDS:
+            continue
+        if now - updated_at > ACTIVE_RUN_TTL_SECONDS:
+            expired_children.append(child_session_id)
+    for child_session_id in expired_children:
+        ACTIVE_CHILD_STREAMS.pop(child_session_id, None)
+
+
+def _event_metadata(payload: dict) -> dict:
+    metadata = {}
+    args = payload.get("arguments")
+    if isinstance(args, dict):
+        metadata.update(args)
+    raw_args = payload.get("args")
+    if isinstance(raw_args, dict):
+        metadata.update(raw_args)
+    for key in (
+        "delegate_call_id",
+        "child_session_id",
+        "subagent_id",
+        "parent_session_id",
+        "task_index",
+        "task_count",
+        "goal",
+        "label",
+        "parent_id",
+        "depth",
+    ):
+        if payload.get(key) is not None:
+            metadata[key] = payload.get(key)
+    return metadata
+
+
+def _register_child_stream(run_id: str, payload: dict) -> None:
+    metadata = _event_metadata(payload)
+    child_session_id = str(
+        metadata.get("child_session_id") or metadata.get("session_id") or metadata.get("subagent_id") or ""
+    ).strip()
+    if not child_session_id:
+        return
+    state = ACTIVE_CHILD_STREAMS.setdefault(
+        child_session_id,
+        {
+            "events": deque(),
+            "done": False,
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "parent_run_id": run_id,
+            "child_session_id": child_session_id,
+            "delegate_call_id": metadata.get("delegate_call_id") or "",
+        },
+    )
+    state["updated_at"] = time.time()
+    if metadata.get("delegate_call_id") and not state.get("delegate_call_id"):
+        state["delegate_call_id"] = metadata.get("delegate_call_id")
+    state["events"].append({"data": json.dumps(payload)})
+
+
+def _route_child_stream_event(run_id: str, payload: dict) -> None:
+    payload_type = payload.get("type")
+    if payload_type == "child_session_started":
+        _register_child_stream(run_id, payload)
+        return
+    if payload_type not in {"tool_call", "tool_output", "tool_progress", "meta", "run_state"}:
+        return
+    metadata = _event_metadata(payload)
+    child_session_id = str(
+        metadata.get("child_session_id") or metadata.get("session_id") or metadata.get("subagent_id") or ""
+    ).strip()
+    if not child_session_id:
+        return
+    state = ACTIVE_CHILD_STREAMS.setdefault(
+        child_session_id,
+        {
+            "events": deque(),
+            "done": False,
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "parent_run_id": run_id,
+            "child_session_id": child_session_id,
+            "delegate_call_id": metadata.get("delegate_call_id") or "",
+        },
+    )
+    state["updated_at"] = time.time()
+    state["events"].append({"data": json.dumps(payload)})
+    if payload_type == "run_state" and payload.get("status") in {"complete", "error"}:
+        state["done"] = True
+        state["events"].append({"data": "[DONE]"})
+
 
 def _normalize_sse_payload(parsed: dict) -> list[dict]:
     payloads: list[dict] = []
@@ -453,8 +607,10 @@ def _sanitize_chat_messages(messages: list) -> list:
         if not isinstance(msg, dict):
             continue
         role = msg.get("role")
+        if role not in {"system", "user", "assistant", "tool"}:
+            continue
         content = msg.get("content")
-        # Preserve multimodal content arrays with valid text/image_url parts
+        # Preserve multimodal content arrays with valid text/image_url parts.
         if isinstance(content, list):
             valid_parts = []
             for part in content:
@@ -463,10 +619,7 @@ def _sanitize_chat_messages(messages: list) -> list:
             if valid_parts:
                 sanitized.append({"role": role, "content": valid_parts})
             continue
-        # Fall back to string for everything else
         content = str(content or "")
-        if role not in {"system", "user", "assistant", "tool"}:
-            continue
         if role == "assistant" and content.startswith("Error: Hermes gateway"):
             continue
         if not content and role != "assistant":
@@ -475,114 +628,115 @@ def _sanitize_chat_messages(messages: list) -> list:
     return sanitized
 
 
+def _sanitize_dashboard_chat_identity_token(value, fallback, max_len=32):
+    return _sanitize_dashboard_chat_identity_token_impl(value, fallback, max_len)
+
+
+def _dashboard_chat_runtime_config():
+    return _dashboard_chat_runtime_config_impl(get_config())
+
+
+def _sanitize_dashboard_chat_nick(value, prefix=None):
+    return _sanitize_dashboard_chat_nick_impl(value, prefix)
+
+
+def _dashboard_chat_user_command(nick, config=None):
+    return _dashboard_chat_user_command_impl(nick, config or _dashboard_chat_runtime_config())
+
+
+def _dashboard_chat_truncate_message(value):
+    return _dashboard_chat_truncate_message_impl(value)
+
+
+def _sanitize_dashboard_chat_pm_target(value):
+    return _sanitize_dashboard_chat_pm_target_impl(value)
+
+
+def _parse_irc_prefix(line):
+    return _parse_irc_prefix_impl(line)
+
+
+def _parse_irc_message(line, current_nick=None):
+    return _parse_irc_message_impl(line, current_nick)
+
+
+def _dashboard_chat_status_payload():
+    return _dashboard_chat_status_payload_impl(get_config())
+
+
+async def dashboard_chat_status_endpoint(request):
+    return await _dashboard_chat_status_endpoint_impl(
+        request,
+        status_payload=_dashboard_chat_status_payload,
+    )
+
+
+async def dashboard_chat_websocket_endpoint(websocket):
+    return await _dashboard_chat_websocket_endpoint_impl(
+        websocket,
+        runtime_config=_dashboard_chat_runtime_config,
+    )
+
+
 def _log_stream(run_id: str, message: str) -> None:
     print(f"[dashboard:/chat:{run_id}] {message}", file=sys.stderr, flush=True)
 
 
 def _dashboard_state_connect() -> sqlite3.Connection:
-    DASHBOARD_STATE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DASHBOARD_STATE_DB_PATH))
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS dashboard_state (
-            key TEXT PRIMARY KEY,
-            value_json TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    return conn
+    return _dashboard_state_connect_impl(DASHBOARD_STATE_DB_PATH)
 
 
 def _validate_dashboard_state_key(key: str) -> str:
-    normalized = str(key or "").strip()
-    if normalized not in DASHBOARD_STATE_KEYS:
-        raise ValueError(f"Unsupported dashboard state key: {normalized}")
-    return normalized
+    return _validate_dashboard_state_key_impl(key, DASHBOARD_STATE_KEYS)
 
 
 def _load_dashboard_state(key: str):
-    key = _validate_dashboard_state_key(key)
-    with DASHBOARD_STATE_LOCK:
-        conn = _dashboard_state_connect()
-        try:
-            row = conn.execute(
-                "SELECT value_json FROM dashboard_state WHERE key = ?", (key,)
-            ).fetchone()
-        finally:
-            conn.close()
-    if not row:
-        return False, None
-    try:
-        return True, json.loads(row[0])
-    except json.JSONDecodeError:
-        return False, None
+    return _load_dashboard_state_impl(
+        key,
+        db_path=DASHBOARD_STATE_DB_PATH,
+        lock=DASHBOARD_STATE_LOCK,
+        allowed_keys=DASHBOARD_STATE_KEYS,
+    )
 
 
 def _save_dashboard_state(key: str, value) -> None:
-    key = _validate_dashboard_state_key(key)
-    value_json = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    updated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    with DASHBOARD_STATE_LOCK:
-        conn = _dashboard_state_connect()
-        try:
-            conn.execute(
-                """
-                INSERT INTO dashboard_state(key, value_json, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value_json = excluded.value_json,
-                    updated_at = excluded.updated_at
-                """,
-                (key, value_json, updated_at),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+    _save_dashboard_state_impl(
+        key,
+        value,
+        db_path=DASHBOARD_STATE_DB_PATH,
+        lock=DASHBOARD_STATE_LOCK,
+        allowed_keys=DASHBOARD_STATE_KEYS,
+    )
 
 
 def _delete_dashboard_state(key: str) -> None:
-    key = _validate_dashboard_state_key(key)
-    with DASHBOARD_STATE_LOCK:
-        conn = _dashboard_state_connect()
-        try:
-            conn.execute("DELETE FROM dashboard_state WHERE key = ?", (key,))
-            conn.commit()
-        finally:
-            conn.close()
+    _delete_dashboard_state_impl(
+        key,
+        db_path=DASHBOARD_STATE_DB_PATH,
+        lock=DASHBOARD_STATE_LOCK,
+        allowed_keys=DASHBOARD_STATE_KEYS,
+    )
 
 
 async def get_dashboard_state(request):
-    key = request.path_params["key"]
-    try:
-        found, value = _load_dashboard_state(key)
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=404)
-    return JSONResponse({"found": found, "value": value})
+    return await _get_dashboard_state_endpoint_impl(
+        request,
+        load_state=_load_dashboard_state,
+    )
 
 
 async def set_dashboard_state(request):
-    key = request.path_params["key"]
-    try:
-        data = json.loads(await request.body())
-    except json.JSONDecodeError:
-        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
-    if not isinstance(data, dict) or "value" not in data:
-        return JSONResponse({"error": "Expected JSON object with a value field"}, status_code=400)
-    try:
-        _save_dashboard_state(key, data.get("value"))
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=404)
-    return JSONResponse({"success": True})
+    return await _set_dashboard_state_endpoint_impl(
+        request,
+        save_state=_save_dashboard_state,
+    )
 
 
 async def delete_dashboard_state(request):
-    key = request.path_params["key"]
-    try:
-        _delete_dashboard_state(key)
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=404)
-    return JSONResponse({"success": True})
+    return await _delete_dashboard_state_endpoint_impl(
+        request,
+        delete_state=_delete_dashboard_state,
+    )
 
 
 def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]) -> None:
@@ -637,6 +791,18 @@ def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]
                 first_useful_event_at = time.time()
                 saw_useful_event = False
                 for line in response.iter_lines():
+                    if state.get("stop_requested"):
+                        _log_stream(run_id, "sync stopped by dashboard request")
+                        state["events"].append(
+                            {
+                                "data": json.dumps(
+                                    {"type": "content", "content": "Stopped by user."}
+                                )
+                            }
+                        )
+                        state["done"] = True
+                        state["events"].append({"data": "[DONE]"})
+                        break
                     if (
                         not saw_useful_event
                         and time.time() - first_useful_event_at > HERMES_USEFUL_EVENT_TIMEOUT
@@ -802,6 +968,7 @@ async def _run_chat_stream(
                             tool_events += 1
                         event = {"data": json.dumps(payload)}
                         state["events"].append(event)
+                        _route_child_stream_event(run_id, payload)
                 if not state.get("done"):
                     state["done"] = True
                     state["events"].append({"data": "[DONE]"})
@@ -1807,6 +1974,15 @@ def _resolved_platform_toolsets(config: dict) -> dict[str, list[str]]:
     return resolved
 
 
+def _settings_safe_config(config: dict) -> dict:
+    safe = json.loads(json.dumps(config or {}))
+    dashboard_chat = safe.get("dashboard_chat")
+    if isinstance(dashboard_chat, dict) and dashboard_chat.get("channel_key"):
+        dashboard_chat["channel_key"] = ""
+        dashboard_chat["channel_key_configured"] = True
+    return safe
+
+
 def _settings_payload() -> dict:
     effective = get_config()
     raw = get_raw_config()
@@ -1843,8 +2019,8 @@ def _settings_payload() -> dict:
             ),
             "secrets_by_category": by_category,
         },
-        "config": effective,
-        "raw_config": raw,
+        "config": _settings_safe_config(effective),
+        "raw_config": _settings_safe_config(raw),
         "model": {
             "default": model.get("default", ""),
             "provider": model.get("provider", "auto"),
@@ -2066,7 +2242,7 @@ async def get_status(request):
 
 
 async def get_config_endpoint(request):
-    return JSONResponse(get_raw_config())
+    return JSONResponse(_settings_safe_config(get_raw_config()))
 
 
 async def get_settings(request):
@@ -2233,6 +2409,42 @@ async def get_agent_observability_endpoint(request):
     except Exception:
         trace_limit = 8
     return JSONResponse(get_agent_observability_report(window_hours, trace_limit))
+
+
+TOKEN_USAGE_FIELDS = TOKEN_USAGE_FIELDS
+
+
+def _empty_token_usage_window(label: str, *, start: float | None = None, end: float | None = None, source: str = "api_calls") -> dict:
+    return _empty_token_usage_window_impl(label, start=start, end=end, source=source)
+
+
+def _token_usage_total(row: dict) -> int:
+    return _token_usage_total_impl(row)
+
+
+def _window_from_row(label: str, row: sqlite3.Row | dict | None, *, start: float | None = None, end: float | None = None, source: str = "api_calls") -> dict:
+    return _window_from_row_impl(label, row, start=start, end=end, source=source)
+
+
+def _aggregate_token_usage_api_calls(conn: sqlite3.Connection, label: str, *, start: float | None = None, end: float | None = None, session_id: str | None = None) -> dict:
+    return _aggregate_token_usage_api_calls_impl(conn, label, start=start, end=end, session_id=session_id)
+
+
+def _aggregate_token_usage_sessions(conn: sqlite3.Connection, label: str, *, start: float | None = None, end: float | None = None, session_id: str | None = None) -> dict:
+    return _aggregate_token_usage_sessions_impl(conn, label, start=start, end=end, session_id=session_id)
+
+
+def get_token_usage_summary(*, now: datetime.datetime | None = None, current_session_id: str | None = None) -> dict:
+    return _get_token_usage_summary_impl(
+        hermes_home=HERMES_HOME,
+        now=now,
+        current_session_id=current_session_id,
+    )
+
+
+async def get_token_usage_endpoint(request):
+    session_id = str(request.query_params.get("session_id") or "").strip() or None
+    return JSONResponse(get_token_usage_summary(current_session_id=session_id))
 
 
 async def get_sessions(request):
@@ -3122,89 +3334,15 @@ async def get_skill_content(request):
 
 
 def _parse_game_skill_frontmatter(skill_md: Path) -> dict:
-    """Return YAML frontmatter from a game SKILL.md file, tolerating plain markdown."""
-    try:
-        content = skill_md.read_text(encoding="utf-8")
-    except Exception:
-        return {}
-    if not content.startswith("---"):
-        return {}
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return {}
-    try:
-        meta = yaml.safe_load(parts[1]) or {}
-    except Exception:
-        return {}
-    return meta if isinstance(meta, dict) else {}
+    return _parse_game_skill_frontmatter_impl(skill_md)
 
 
 def _categorize_game_skill(tags: list[str], description: str) -> str:
-    haystack = " ".join(tags + [description]).lower()
-
-    def has_any(words: tuple[str, ...]) -> bool:
-        return any(re.search(r"(?<![a-z0-9])" + re.escape(word) + r"(?![a-z0-9])", haystack) for word in words)
-
-    if has_any(("watch", "doom", "vizdoom", "fps", "stream")):
-        return "Watch"
-    if has_any(("emulator", "pokemon", "gameboy", "rom")):
-        return "Emulator"
-    if has_any(("server", "minecraft", "modpack")):
-        return "Server"
-    if has_any(("stats", "analytics", "coach", "strategy")):
-        return "Analysis"
-    return "Tool"
+    return _categorize_game_skill_impl(tags, description)
 
 
 def get_games_catalog() -> dict:
-    """Discover gaming-related Hermes skills for the dashboard Games tab."""
-    gaming_dir = HERMES_HOME / "skills" / "gaming"
-    games = []
-    if gaming_dir.exists():
-        for item in sorted(gaming_dir.iterdir(), key=lambda p: p.name.lower()):
-            if not item.is_dir() or item.name.startswith("."):
-                continue
-            skill_md = item / "SKILL.md"
-            meta = _parse_game_skill_frontmatter(skill_md) if skill_md.exists() else {}
-            name = str(meta.get("name") or item.name)
-            description = str(meta.get("description") or "")
-            tags = meta.get("tags") or []
-            if isinstance(tags, str):
-                tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
-            tags = [str(tag) for tag in tags]
-            dashboard_meta = meta.get("dashboard") if isinstance(meta.get("dashboard"), dict) else {}
-            game = {
-                "id": item.name,
-                "name": name.replace("-", " ").replace("_", " ").title(),
-                "description": description,
-                "tags": tags,
-                "category": _categorize_game_skill(tags, description),
-                "skill_path": str(skill_md if skill_md.exists() else item),
-            }
-            if dashboard_meta:
-                upload_url = dashboard_meta.get("upload_url")
-                upload_label = dashboard_meta.get("upload_label")
-                watch_url = dashboard_meta.get("watch_url")
-                launch_label = dashboard_meta.get("launch_label")
-                control_url = dashboard_meta.get("control_url")
-                control_label = dashboard_meta.get("control_label")
-                status_hint = dashboard_meta.get("status_hint")
-                if upload_url:
-                    game["upload_url"] = str(upload_url)
-                if upload_label:
-                    game["upload_label"] = str(upload_label)
-                if watch_url:
-                    game["watch_url"] = str(watch_url)
-                if launch_label:
-                    game["launch_label"] = str(launch_label)
-                if control_url:
-                    game["control_url"] = str(control_url)
-                if control_label:
-                    game["control_label"] = str(control_label)
-                if status_hint:
-                    game["status_hint"] = str(status_hint)
-            games.append(game)
-    return {"games": games, "count": len(games)}
+    return _get_games_catalog_impl(hermes_home=HERMES_HOME)
 
 
 async def get_games_endpoint(request):
@@ -3899,6 +4037,50 @@ def _read_self_improvement_candidate_events(limit: int = 20) -> dict:
     }
 
 
+def _bounded_candidate_event_repair_hint(
+    helper: Any,
+    queue_path: Path,
+    event_ledger_path: Path,
+    replay_result: dict,
+    *,
+    sample_limit: int = 5,
+) -> dict | None:
+    """Mirror canonical read-only event-coverage repair commands for dashboards."""
+    if bool(replay_result.get("coverage_ok")):
+        return None
+    repair_hint: dict[str, Any] = {}
+    if helper is not None and hasattr(helper, "backlog_gate"):
+        try:
+            gate = helper.backlog_gate(queue_path, event_ledger_path=event_ledger_path)
+            event_coverage = dict((gate or {}).get("event_coverage") or {})
+            repair_hint = dict(event_coverage.get("repair_hint") or {})
+        except Exception:
+            repair_hint = {}
+    if not repair_hint:
+        return None
+    samples = list(repair_hint.get("sample_missing_candidates") or [])[:sample_limit]
+    anomaly_details = list(repair_hint.get("anomaly_details") or [])[:sample_limit]
+    apply_readiness = dict(repair_hint.get("apply_readiness") or {})
+    next_commands = list(apply_readiness.get("next_commands") or repair_hint.get("next_commands") or [])[:5]
+    return {
+        "mutation": False,
+        "reason": repair_hint.get("reason") or "review a read-only event backfill preview before applying synthetic lifecycle events",
+        "missing_count": repair_hint.get("missing_count"),
+        "status_counts": dict(repair_hint.get("status_counts") or {}),
+        "sample_missing_candidates": samples,
+        "sample_truncated": bool(repair_hint.get("sample_truncated")) or len(samples) < len(repair_hint.get("sample_missing_candidates") or []),
+        "anomaly_count": repair_hint.get("anomaly_count"),
+        "structural_summary": dict(repair_hint.get("structural_summary") or {}),
+        "anomaly_details": anomaly_details,
+        "anomaly_details_truncated": bool(repair_hint.get("anomaly_details_truncated")) or len(anomaly_details) < len(repair_hint.get("anomaly_details") or []),
+        "apply_readiness": apply_readiness,
+        "next_commands": next_commands,
+        "dry_run_command": repair_hint.get("dry_run_command"),
+        "apply_command": repair_hint.get("apply_command"),
+        "verify_after_apply_command": repair_hint.get("verify_after_apply_command"),
+    }
+
+
 def _read_self_improvement_candidate_event_coverage() -> dict:
     """Return compact read-only event-ledger replay coverage for the dashboard.
 
@@ -3918,6 +4100,10 @@ def _read_self_improvement_candidate_event_coverage() -> dict:
                 result.setdefault("source", "self_improvement_queue.replay_events")
                 result.setdefault("queue_path", str(queue_path))
                 result.setdefault("event_ledger_path", str(event_ledger_path))
+                repair_hint = _bounded_candidate_event_repair_hint(helper, queue_path, event_ledger_path, result)
+                if repair_hint:
+                    result["repair_hint"] = repair_hint
+                    result["event_coverage_repair_hint"] = repair_hint
                 return result
         except Exception as exc:
             return {
@@ -6199,25 +6385,60 @@ async def interrupt_session(request):
         data = {}
 
     action = data.get("action", "")
-    if action != "pause":
+    mode = str(data.get("mode") or "soft").strip().lower()
+    if mode not in {"soft", "hard"}:
+        mode = "soft"
+    if action not in {"pause", "resume", "stop"}:
         return JSONResponse(
             {"status": "invalid_action", "session_id": session_id}, status_code=400
         )
 
-    # Check if session has an active run in ACTIVE_RUNS
-    has_active_run = False
-    for state in ACTIVE_RUNS.values():
-        if state.get("session_id") == session_id and not state.get("done"):
-            has_active_run = True
-            break
+    child_state = ACTIVE_CHILD_STREAMS.get(session_id)
+    if child_state and not child_state.get("done"):
+        backend_status = "not_sent"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{HERMES_API}/api/subagents/{session_id}/control",
+                    headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                    json={"action": action, "mode": mode},
+                )
+                backend_status = resp.json().get("status", resp.text)
+        except Exception as exc:
+            backend_status = f"error: {exc}"
+        child_state["updated_at"] = time.time()
+        child_state["events"].append(
+            {
+                "data": json.dumps(
+                    {
+                        "type": "run_state",
+                        "status": "complete" if action == "stop" else action,
+                        "mode": mode,
+                        "session_id": session_id,
+                        "content": f"Subagent {action} requested.",
+                        "backend_status": backend_status,
+                    }
+                )
+            }
+        )
+        if action == "stop":
+            set_interrupt_flag(session_id, True)
+            child_state["done"] = True
+            child_state["events"].append({"data": "[DONE]"})
+        return JSONResponse({"status": f"{action}_queued", "mode": mode, "session_id": session_id, "backend_status": backend_status})
 
-    if not has_active_run:
+    active_states = [
+        state
+        for state in ACTIVE_RUNS.values()
+        if state.get("session_id") == session_id and not state.get("done")
+    ]
+
+    if not active_states:
         return JSONResponse({"status": "not_running", "session_id": session_id})
 
     set_interrupt_flag(session_id, True)
-    for state in ACTIVE_RUNS.values():
-        if state.get("session_id") != session_id or state.get("done"):
-            continue
+    for state in active_states:
+        state["stop_requested"] = True
         task = state.get("task")
         if task is not None and not task.done():
             task.cancel()
@@ -6233,31 +6454,125 @@ async def interrupt_session(request):
             }
         )
         state["events"].append({"data": "[DONE]"})
-    return JSONResponse({"status": "interrupt_queued", "session_id": session_id})
+    return JSONResponse({"status": "stop_queued" if action == "stop" else "interrupt_queued", "session_id": session_id})
+
+
+async def steer_session(request):
+    session_id = request.path_params["session_id"]
+    try:
+        body = await request.body()
+        data = json.loads(body) if body else {}
+    except Exception:
+        data = {}
+    message = str(data.get("message") or "").strip()
+    mode = str(data.get("mode") or "soft").strip().lower()
+    if mode not in {"soft", "hard"}:
+        mode = "soft"
+    if not message:
+        return JSONResponse(
+            {"status": "empty_message", "session_id": session_id}, status_code=400
+        )
+
+    item = {"message": message, "created_at": time.time(), "session_id": session_id}
+    queue = ACTIVE_SESSION_STEER_MESSAGES.setdefault(session_id, [])
+    queue.append(item)
+    del queue[:-20]
+
+    backend_status = "not_sent"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{HERMES_API}/api/subagents/{session_id}/steer",
+                headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                json={"message": message, "mode": mode},
+            )
+            backend_status = resp.json().get("status", resp.text)
+    except Exception as exc:
+        backend_status = f"error: {exc}"
+
+    child_state = ACTIVE_CHILD_STREAMS.get(session_id)
+    if child_state is not None:
+        child_state.setdefault("steer_messages", []).append(item)
+        child_state["updated_at"] = time.time()
+        child_state.setdefault("events", []).append(
+            {
+                "data": json.dumps(
+                    {
+                        "type": "steer",
+                        "session_id": session_id,
+                        "mode": mode,
+                        "message": message,
+                    }
+                )
+            }
+        )
+
+    return JSONResponse(
+        {
+            "status": "queued",
+            "session_id": session_id,
+            "queued": len(queue),
+            "mode": mode,
+            "backend_status": backend_status,
+            "note": "Guidance is queued for the live subagent's next model turn when backend_status is queued.",
+        }
+    )
+
+
+async def stop_run(request):
+    run_id = request.path_params["run_id"]
+    state = ACTIVE_RUNS.get(run_id)
+    if not state or state.get("done"):
+        return JSONResponse({"status": "not_running", "run_id": run_id})
+    state["stop_requested"] = True
+    session_id = state.get("session_id")
+    if session_id:
+        set_interrupt_flag(str(session_id), True)
+    task = state.get("task")
+    if task is not None and not task.done():
+        task.cancel()
+    state["done"] = True
+    state["events"].append(
+        {
+            "data": json.dumps(
+                {
+                    "type": "content",
+                    "content": "\n\nStopped by user.",
+                }
+            )
+        }
+    )
+    state["events"].append({"data": "[DONE]"})
+    return JSONResponse({"status": "stop_queued", "run_id": run_id, "session_id": session_id})
 
 
 async def session_stream(request):
     session_id = request.path_params["session_id"]
     db_path = HERMES_HOME / "state.db"
 
+    active_run = ACTIVE_CHILD_STREAMS.get(session_id)
+    if active_run and active_run.get("done"):
+        active_run = None
+    if not active_run:
+        for state in ACTIVE_RUNS.values():
+            if state.get("session_id") == session_id and not state.get("done"):
+                active_run = state
+                break
+
     if not db_path.exists():
-        return JSONResponse({"error": "No sessions database"}, status_code=404)
+        if not active_run:
+            return JSONResponse({"error": "No sessions database"}, status_code=404)
+        session_row = None
+    else:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        session_row = conn.execute(
+            "SELECT id, ended_at FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        conn.close()
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    session_row = conn.execute(
-        "SELECT id, ended_at FROM sessions WHERE id = ?", (session_id,)
-    ).fetchone()
-    conn.close()
-
-    if not session_row:
+    if not session_row and not active_run:
         return JSONResponse({"error": "Session not found"}, status_code=404)
-
-    active_run = None
-    for state in ACTIVE_RUNS.values():
-        if state.get("session_id") == session_id and not state.get("done"):
-            active_run = state
-            break
 
     async def generate():
         if active_run:
@@ -6275,7 +6590,7 @@ async def session_stream(request):
                     return
                 await asyncio.sleep(0.1)
         else:
-            status = "complete" if session_row["ended_at"] else "unknown"
+            status = "complete" if session_row and session_row["ended_at"] else "unknown"
             yield {
                 "data": json.dumps(
                     {
@@ -6299,151 +6614,39 @@ async def session_stream(request):
 
 
 def _message_board_db_path() -> Path:
-    return HERMES_HOME / "dashboard_message_board.sqlite3"
+    return _message_board_db_path_impl(HERMES_HOME)
 
 
 def _message_board_now() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return _message_board_now_impl()
 
 
 def _message_board_connection() -> sqlite3.Connection:
-    db_path = _message_board_db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS message_board_posts (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            author TEXT NOT NULL,
-            status TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS message_board_messages (
-            id TEXT PRIMARY KEY,
-            post_id TEXT NOT NULL REFERENCES message_board_posts(id) ON DELETE CASCADE,
-            role TEXT NOT NULL,
-            author TEXT NOT NULL,
-            content TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    return conn
+    return _message_board_connection_impl(HERMES_HOME)
 
 
 def _message_board_row_to_message(row: sqlite3.Row) -> dict:
-    return {
-        "id": row["id"],
-        "post_id": row["post_id"],
-        "role": row["role"],
-        "author": row["author"],
-        "content": row["content"],
-        "created_at": row["created_at"],
-    }
+    return _message_board_row_to_message_impl(row)
 
 
 def _load_message_board_post(conn: sqlite3.Connection, post_id: str) -> Optional[dict]:
-    post_row = conn.execute(
-        """
-        SELECT id, title, author, status, created_at, updated_at
-        FROM message_board_posts
-        WHERE id = ?
-        """,
-        (post_id,),
-    ).fetchone()
-    if not post_row:
-        return None
-    message_rows = conn.execute(
-        """
-        SELECT id, post_id, role, author, content, created_at
-        FROM message_board_messages
-        WHERE post_id = ?
-        ORDER BY created_at, rowid
-        """,
-        (post_id,),
-    ).fetchall()
-    post = dict(post_row)
-    post["messages"] = [_message_board_row_to_message(row) for row in message_rows]
-    post["reply_count"] = sum(1 for msg in post["messages"] if msg["role"] == "assistant")
-    return post
+    return _load_message_board_post_impl(conn, post_id)
 
 
 def get_message_board_post(post_id: str) -> Optional[dict]:
-    with _message_board_connection() as conn:
-        return _load_message_board_post(conn, post_id)
+    return _get_message_board_post_impl(post_id, hermes_home=HERMES_HOME)
 
 
 def list_message_board_posts(limit: int = 50) -> list[dict]:
-    with _message_board_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT p.id, p.title, p.author, p.status, p.created_at, p.updated_at,
-                   COUNT(CASE WHEN m.role = 'assistant' THEN 1 END) AS reply_count,
-                   (
-                       SELECT mm.content
-                       FROM message_board_messages mm
-                       WHERE mm.post_id = p.id AND mm.role = 'assistant'
-                       ORDER BY mm.created_at DESC, mm.rowid DESC
-                       LIMIT 1
-                   ) AS last_reply_preview
-            FROM message_board_posts p
-            LEFT JOIN message_board_messages m ON m.post_id = p.id
-            GROUP BY p.id
-            ORDER BY p.updated_at DESC
-            LIMIT ?
-            """,
-            (int(limit),),
-        ).fetchall()
-        posts = []
-        for row in rows:
-            item = dict(row)
-            preview = item.get("last_reply_preview") or ""
-            item["last_reply_preview"] = preview[:240]
-            item["reply_count"] = int(item.get("reply_count") or 0)
-            posts.append(item)
-        return posts
+    return _list_message_board_posts_impl(limit=limit, hermes_home=HERMES_HOME)
 
 
 def add_message_board_reply(post_id: str, content: str, author: str = "Hermes", role: str = "assistant") -> dict:
-    content = str(content or "").strip()
-    if not content:
-        raise ValueError("Reply content is required")
-    if role not in {"assistant", "user"}:
-        raise ValueError("Reply role must be assistant or user")
-    now = _message_board_now()
-    with _message_board_connection() as conn:
-        if not _load_message_board_post(conn, post_id):
-            raise KeyError(post_id)
-        conn.execute(
-            """
-            INSERT INTO message_board_messages (id, post_id, role, author, content, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (f"msg_{uuid.uuid4().hex}", post_id, role, author, content, now),
-        )
-        status = "answered" if role == "assistant" else "open"
-        conn.execute(
-            """
-            UPDATE message_board_posts
-            SET status = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (status, now, post_id),
-        )
-        conn.commit()
-        return _load_message_board_post(conn, post_id)
+    return _add_message_board_reply_impl(post_id, content, author=author, role=role, hermes_home=HERMES_HOME)
 
 
 def add_message_board_user_message(post_id: str, content: str, author: str = "mojo") -> dict:
-    return add_message_board_reply(post_id, content, author=author, role="user")
+    return _add_message_board_user_message_impl(post_id, content, author=author, hermes_home=HERMES_HOME)
 
 
 def create_message_board_post(
@@ -6452,37 +6655,13 @@ def create_message_board_post(
     author: str = "mojo",
     agent_reply: Optional[str] = None,
 ) -> dict:
-    title = str(title or "").strip()
-    body = str(body or "").strip()
-    author = str(author or "mojo").strip() or "mojo"
-    if not title:
-        raise ValueError("Post title is required")
-    if not body:
-        raise ValueError("Post body is required")
-    post_id = f"post_{uuid.uuid4().hex}"
-    now = _message_board_now()
-    with _message_board_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO message_board_posts (id, title, author, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (post_id, title, author, "open", now, now),
-        )
-        conn.execute(
-            """
-            INSERT INTO message_board_messages (id, post_id, role, author, content, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (f"msg_{uuid.uuid4().hex}", post_id, "user", author, body, now),
-        )
-        conn.commit()
-    if agent_reply:
-        return add_message_board_reply(post_id, agent_reply, author="Hermes", role="assistant")
-    loaded = get_message_board_post(post_id)
-    if not loaded:
-        raise RuntimeError("Created message board post could not be loaded")
-    return loaded
+    return _create_message_board_post_impl(
+        title,
+        body,
+        author=author,
+        agent_reply=agent_reply,
+        hermes_home=HERMES_HOME,
+    )
 
 
 def _extract_non_stream_chat_content(payload: dict) -> str:
@@ -6632,9 +6811,29 @@ async def get_session_tokens(request):
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
 
+    def _available_columns(table: str) -> set[str]:
+        try:
+            return _sqlite_table_columns(conn, table)
+        except Exception:
+            return set()
+
+    session_columns = _available_columns("sessions")
+    session_select = ["input_tokens", "output_tokens"]
+    optional_session_columns = [
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "reasoning_tokens",
+        "estimated_cost_usd",
+        "cost_status",
+        "cost_source",
+        "model",
+    ]
+    for column in optional_session_columns:
+        if column in session_columns:
+            session_select.append(column)
     session_row = conn.execute(
-        """
-        SELECT input_tokens, output_tokens, estimated_cost_usd, model
+        f"""
+        SELECT {', '.join(session_select)}
         FROM sessions
         WHERE id = ?
         """,
@@ -6646,61 +6845,99 @@ async def get_session_tokens(request):
         return JSONResponse({"error": "Session not found"}, status_code=404)
 
     session = dict(session_row)
-    cursor = conn.execute(
-        """
-        SELECT id, role, token_count, timestamp
-        FROM messages
-        WHERE session_id = ? AND token_count IS NOT NULL
-        ORDER BY timestamp, id
-        """,
-        (session_id,),
-    )
-
     steps = []
     step_index = 0
-    for row in cursor.fetchall():
-        item = dict(row)
-        token_count = item.get("token_count")
-        if token_count is None:
-            continue
-        steps.append(
-            {
-                "step_index": step_index,
-                "role": item.get("role") or "unknown",
-                "input_tokens": None,
-                "output_tokens": None,
-                "total_tokens": int(token_count),
-                "model": session.get("model"),
-            }
+
+    api_call_columns = _available_columns("api_calls")
+    if {"session_id", "start_time", *TOKEN_USAGE_FIELDS}.issubset(api_call_columns):
+        api_select = ["api_call_id" if "api_call_id" in api_call_columns else "id", "start_time", "model" if "model" in api_call_columns else "NULL AS model", *TOKEN_USAGE_FIELDS]
+        cursor = conn.execute(
+            f"""
+            SELECT {', '.join(api_select)}
+            FROM api_calls
+            WHERE session_id = ?
+            ORDER BY start_time, 1
+            """,
+            (session_id,),
         )
-        step_index += 1
+        for row in cursor.fetchall():
+            item = dict(row)
+            step_total = _token_usage_total(item)
+            if step_total <= 0:
+                continue
+            steps.append(
+                {
+                    "step_index": step_index,
+                    "role": "assistant",
+                    "input_tokens": int(item.get("input_tokens") or 0),
+                    "output_tokens": int(item.get("output_tokens") or 0),
+                    "cache_read_tokens": int(item.get("cache_read_tokens") or 0),
+                    "cache_write_tokens": int(item.get("cache_write_tokens") or 0),
+                    "reasoning_tokens": int(item.get("reasoning_tokens") or 0),
+                    "total_tokens": step_total,
+                    "model": item.get("model") or session.get("model"),
+                }
+            )
+            step_index += 1
+
+    message_columns = _available_columns("messages")
+    if not steps and {"session_id", "role", "token_count", "timestamp", "id"}.issubset(message_columns):
+        cursor = conn.execute(
+            """
+            SELECT id, role, token_count, timestamp
+            FROM messages
+            WHERE session_id = ? AND token_count IS NOT NULL
+            ORDER BY timestamp, id
+            """,
+            (session_id,),
+        )
+        for row in cursor.fetchall():
+            item = dict(row)
+            token_count = item.get("token_count")
+            if token_count is None:
+                continue
+            steps.append(
+                {
+                    "step_index": step_index,
+                    "role": item.get("role") or "unknown",
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "cache_read_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "total_tokens": int(token_count),
+                    "model": session.get("model"),
+                }
+            )
+            step_index += 1
 
     conn.close()
 
-    input_tokens = session.get("input_tokens")
-    output_tokens = session.get("output_tokens")
+    token_totals = {
+        field: session.get(field) if field in session else None
+        for field in TOKEN_USAGE_FIELDS
+    }
     estimated_cost_usd = session.get("estimated_cost_usd")
 
     has_step_data = bool(steps)
-    has_session_totals = (
-        input_tokens is not None
-        and output_tokens is not None
-        and (input_tokens > 0 or output_tokens > 0 or has_step_data)
-    )
+    has_session_totals = any(value is not None and int(value or 0) > 0 for value in token_totals.values())
 
     if has_session_totals:
-        input_tokens = int(input_tokens)
-        output_tokens = int(output_tokens)
-        total_tokens = input_tokens + output_tokens
+        for field, value in list(token_totals.items()):
+            token_totals[field] = int(value or 0)
+        total_tokens = _token_usage_total(token_totals)
     elif has_step_data:
-        input_tokens = None
-        output_tokens = None
+        for field in TOKEN_USAGE_FIELDS:
+            values = [step.get(field) for step in steps]
+            token_totals[field] = sum(int(value or 0) for value in values) if any(value is not None for value in values) else None
         total_tokens = sum((s["total_tokens"] or 0) for s in steps)
     else:
-        input_tokens = None
-        output_tokens = None
+        for field in TOKEN_USAGE_FIELDS:
+            token_totals[field] = None
         total_tokens = None
 
+    input_tokens = token_totals["input_tokens"]
+    output_tokens = token_totals["output_tokens"]
     if estimated_cost_usd is None and total_tokens is not None:
         rates = MODEL_COST_TABLE.get("default")
         est_input = (input_tokens or 0) * (rates["input"] / 1_000_000)
@@ -6712,8 +6949,13 @@ async def get_session_tokens(request):
             "session_id": session_id,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "cache_read_tokens": token_totals["cache_read_tokens"],
+            "cache_write_tokens": token_totals["cache_write_tokens"],
+            "reasoning_tokens": token_totals["reasoning_tokens"],
             "total_tokens": total_tokens,
             "estimated_cost_usd": estimated_cost_usd,
+            "cost_status": session.get("cost_status"),
+            "cost_source": session.get("cost_source"),
             "steps": steps,
         }
     )
@@ -9087,6 +9329,19 @@ async def get_scrolls_artifact_endpoint(request):
         return JSONResponse({"error": str(exc)}, status_code=400)
 
 
+async def get_scrolls_snapshot_endpoint(request):
+    try:
+        snapshot = await asyncio.to_thread(_build_scrolls_snapshot_impl, _SCROLLS_PROJECT_ROOT)
+        return JSONResponse(snapshot)
+    except ScrollsSnapshotUnavailable as exc:
+        return JSONResponse(
+            {"error": "research_dashboard not available", "detail": str(exc)},
+            status_code=503,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 def _scrolls_spawn(command: list[str], project_root: Path):
     if not project_root.exists():
         return JSONResponse({"error": f"Scrolls project not found: {project_root}"}, status_code=404)
@@ -9282,327 +9537,12 @@ async def dashboard_auto_update_endpoint(request):
     return JSONResponse(payload, status_code=status_code)
 
 
-
-def _sanitize_dashboard_chat_identity_token(value: str | None, fallback: str, max_len: int = 32) -> str:
-    token = re.sub(r"[^A-Za-z0-9_`^{}\[\]|.-]", "", (value or "").strip())[:max_len]
-    if not token or not re.match(r"^[A-Za-z_`^{}\[\]|]", token):
-        token = fallback[:max_len]
-    return token
-
-
-def _dashboard_chat_runtime_config() -> dict[str, Any]:
-    effective_config = get_config()
-    cfg = (effective_config.get("dashboard_chat") or {}) if isinstance(effective_config, dict) else {}
-    hosts_value = os.getenv("DASHBOARD_CHAT_IRC_HOSTS") or cfg.get("hosts") or DASHBOARD_CHAT_IRC_HOSTS
-    if isinstance(hosts_value, str):
-        hosts = [host.strip() for host in hosts_value.split(",") if host.strip()]
-    elif isinstance(hosts_value, list):
-        hosts = [str(host).strip() for host in hosts_value if str(host).strip()]
-    else:
-        hosts = DASHBOARD_CHAT_IRC_HOSTS
-    port = int(os.getenv("DASHBOARD_CHAT_IRC_PORT") or cfg.get("port") or DASHBOARD_CHAT_IRC_PORT)
-    tls_raw = os.getenv("DASHBOARD_CHAT_IRC_TLS")
-    tls = DASHBOARD_CHAT_IRC_TLS if tls_raw is None else tls_raw.lower() not in {"0", "false", "no", "off"}
-    if tls_raw is None and "tls" in cfg:
-        tls = bool(cfg.get("tls"))
-    return {
-        "hosts": hosts or DASHBOARD_CHAT_IRC_HOSTS,
-        "port": port,
-        "tls": tls,
-        "channel": DASHBOARD_CHAT_CHANNEL,
-        "channel_key": os.getenv("DASHBOARD_CHAT_CHANNEL_KEY") or cfg.get("channel_key") or DASHBOARD_CHAT_CHANNEL_KEY,
-        "default_nick_prefix": _sanitize_dashboard_chat_identity_token(
-            cfg.get("default_nick_prefix"), DASHBOARD_CHAT_DEFAULT_NICK_PREFIX, 18
-        ),
-        "ident": _sanitize_dashboard_chat_identity_token(
-            cfg.get("ident"), DASHBOARD_CHAT_DEFAULT_IDENT, 16
-        ),
-        "realname": str(cfg.get("realname") or DASHBOARD_CHAT_DEFAULT_REALNAME).replace("\r", " ").replace("\n", " ")[:64],
-    }
-
-
-def _sanitize_dashboard_chat_nick(value: str | None, prefix: str | None = None) -> str:
-    nick = re.sub(r"[^A-Za-z0-9_`^{}\[\]|-]", "", (value or "").strip())[:24]
-    if not nick or not re.match(r"^[A-Za-z_`^{}\[\]|-]", nick):
-        safe_prefix = _sanitize_dashboard_chat_identity_token(prefix, DASHBOARD_CHAT_DEFAULT_NICK_PREFIX, 18)
-        nick = safe_prefix + uuid.uuid4().hex[:6]
-    return nick
-
-
-def _dashboard_chat_user_command(nick: str, config: dict[str, Any] | None = None) -> str:
-    cfg = config or _dashboard_chat_runtime_config()
-    ident = _sanitize_dashboard_chat_identity_token(cfg.get("ident"), DASHBOARD_CHAT_DEFAULT_IDENT, 16)
-    realname = str(cfg.get("realname") or DASHBOARD_CHAT_DEFAULT_REALNAME).replace("\r", " ").replace("\n", " ")[:64]
-    return f"USER {ident} 0 * :{realname}"
-
-
-def _dashboard_chat_truncate_message(value: str | None) -> str:
-    message = (value or "").replace("\r", " ").replace("\n", " ").strip()
-    return message[:DASHBOARD_CHAT_MAX_MESSAGE_CHARS]
-
-
-def _sanitize_dashboard_chat_pm_target(value: str | None) -> str:
-    return re.sub(r"[^A-Za-z0-9_`^{}\[\]|-]", "", (value or "").strip())[:24]
-
-
-def _parse_irc_prefix(line: str) -> tuple[str, str, str]:
-    prefix = ""
-    command = ""
-    rest = line
-    if rest.startswith(":"):
-        prefix, _, rest = rest[1:].partition(" ")
-    command, _, rest = rest.partition(" ")
-    return prefix, command.upper(), rest
-
-
-def _parse_irc_message(line: str, current_nick: str | None = None) -> dict[str, Any] | None:
-    prefix, command, rest = _parse_irc_prefix(line)
-    nick = prefix.split("!", 1)[0] if prefix else "server"
-    if command == "PRIVMSG":
-        target, _, body = rest.partition(" :")
-        if target == DASHBOARD_CHAT_CHANNEL:
-            return {"type": "message", "scope": "channel", "nick": nick, "text": body}
-        payload = {"type": "message", "scope": "pm", "nick": nick, "target": target, "text": body}
-        if current_nick and nick == current_nick:
-            payload["self"] = True
-        return payload
-    if command == "NOTICE":
-        _target, _, body = rest.partition(" :")
-        return {"type": "notice", "nick": nick, "text": body or rest}
-    if command == "JOIN":
-        channel = rest.lstrip(":").strip()
-        if channel == DASHBOARD_CHAT_CHANNEL:
-            return {"type": "presence", "action": "join", "nick": nick}
-    if command == "PART":
-        channel = rest.split(" ", 1)[0]
-        if channel == DASHBOARD_CHAT_CHANNEL:
-            return {"type": "presence", "action": "part", "nick": nick}
-    if command == "QUIT":
-        return {"type": "presence", "action": "quit", "nick": nick}
-    if command == "NICK":
-        new_nick = rest.lstrip(":").strip()
-        if new_nick:
-            return {"type": "presence", "action": "nick", "nick": nick, "new_nick": new_nick}
-    if command == "353":
-        _before, _, names = rest.partition(" :")
-        return {"type": "names", "names": [name.lstrip("@+%&~") for name in names.split() if name]}
-    if command == "433":
-        return {"type": "error", "text": "Nickname is already in use. Pick another nick and reconnect."}
-    if command in {"471", "473", "474", "475"}:
-        return {"type": "error", "text": "Unable to join #hermesdashboard with the dashboard channel key."}
-    return None
-
-
-def _dashboard_chat_status_payload() -> dict[str, Any]:
-    cfg = _dashboard_chat_runtime_config()
-    return {
-        "channel": cfg["channel"],
-        "hosts": cfg["hosts"],
-        "port": cfg["port"],
-        "tls": cfg["tls"],
-        "default_nick_prefix": cfg["default_nick_prefix"],
-        "ident": cfg["ident"],
-        "realname": cfg["realname"],
-        "channel_key_configured": bool(cfg["channel_key"]),
-        "jail": "channel-only plus PMs to users present in #hermesdashboard; arbitrary JOIN/RAW commands are blocked by the dashboard proxy",
-    }
-
-
-async def dashboard_chat_status_endpoint(request):
-    return JSONResponse(_dashboard_chat_status_payload())
-
-
-async def dashboard_chat_websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    chat_cfg = _dashboard_chat_runtime_config()
-    nick = _sanitize_dashboard_chat_nick(
-        websocket.query_params.get("nick") if hasattr(websocket, "query_params") else None,
-        chat_cfg["default_nick_prefix"],
-    )
-    reader = writer = None
-    connected_host = None
-
-    async def send_client(payload: dict[str, Any]) -> None:
-        try:
-            await websocket.send_text(json.dumps(payload))
-        except Exception:
-            pass
-
-    async def send_irc(command: str) -> None:
-        if writer is None:
-            return
-        writer.write((command + "\r\n").encode("utf-8", "ignore"))
-        await writer.drain()
-
-    try:
-        last_error = None
-        for host in chat_cfg["hosts"]:
-            try:
-                reader, writer = await asyncio.open_connection(
-                    host,
-                    chat_cfg["port"],
-                    ssl=chat_cfg["tls"],
-                )
-                connected_host = host
-                break
-            except Exception as exc:
-                last_error = exc
-        if reader is None or writer is None:
-            await send_client({"type": "error", "text": f"IRC connection failed: {last_error}"})
-            await websocket.close()
-            return
-
-        await send_client({"type": "status", "state": "connecting", "nick": nick, "channel": chat_cfg["channel"], "host": connected_host})
-        await send_irc(f"NICK {nick}")
-        await send_irc(_dashboard_chat_user_command(nick, chat_cfg))
-
-        registered = False
-        join_sent = False
-        joined = False
-        allowed_pm_targets: set[str] = set()
-
-        async def send_join_once() -> None:
-            nonlocal join_sent
-            if join_sent:
-                return
-            join_sent = True
-            if chat_cfg["channel_key"]:
-                await send_irc(f"JOIN {chat_cfg['channel']} {chat_cfg['channel_key']}")
-            else:
-                await send_irc(f"JOIN {chat_cfg['channel']}")
-            await send_client({"type": "status", "state": "joining", "nick": nick, "channel": chat_cfg["channel"], "host": connected_host})
-
-        async def mark_joined() -> None:
-            nonlocal joined
-            if joined:
-                return
-            joined = True
-            await send_client({"type": "status", "state": "joined", "nick": nick, "channel": chat_cfg["channel"], "host": connected_host, "text": f"Joined {chat_cfg['channel']}."})
-
-        async def irc_to_ws() -> None:
-            nonlocal registered, nick
-            while True:
-                raw = await reader.readline()
-                if not raw:
-                    await send_client({"type": "status", "state": "disconnected", "text": "IRC server closed the connection."})
-                    break
-                line = raw.decode("utf-8", "ignore").rstrip("\r\n")
-                if line.startswith("PING "):
-                    await send_irc("PONG " + line.split(" ", 1)[1])
-                    continue
-                prefix, command, rest = _parse_irc_prefix(line)
-                if command == "001":
-                    registered = True
-                    # 001 RPL_WELCOME means the NICK/USER registration handshake is complete.
-                    # Only now JOIN the keyed channel; do not pretend the browser joined until
-                    # the server sends our JOIN echo or end-of-NAMES (366).
-                    parts = rest.split(" ", 1)
-                    if parts and parts[0]:
-                        nick = parts[0]
-                    await send_client({"type": "status", "state": "registered", "nick": nick, "channel": chat_cfg["channel"], "host": connected_host})
-                    await send_join_once()
-                    continue
-                if command in {"376", "422"} and registered:
-                    await send_join_once()
-                if command == "366" and chat_cfg["channel"] in rest:
-                    await mark_joined()
-                parsed = _parse_irc_message(line, current_nick=nick)
-                if parsed:
-                    if parsed.get("type") == "names":
-                        allowed_pm_targets.clear()
-                        allowed_pm_targets.update(
-                            target for target in (_sanitize_dashboard_chat_pm_target(name) for name in parsed.get("names", []))
-                            if target and target != nick
-                        )
-                    elif parsed.get("type") == "presence":
-                        action = parsed.get("action")
-                        parsed_nick = _sanitize_dashboard_chat_pm_target(parsed.get("nick"))
-                        if action == "join":
-                            if parsed_nick == nick:
-                                await mark_joined()
-                            elif parsed_nick:
-                                allowed_pm_targets.add(parsed_nick)
-                        elif action in {"part", "quit"} and parsed_nick:
-                            allowed_pm_targets.discard(parsed_nick)
-                        elif action == "nick" and parsed_nick:
-                            new_target = _sanitize_dashboard_chat_pm_target(parsed.get("new_nick"))
-                            allowed_pm_targets.discard(parsed_nick)
-                            if parsed_nick == nick and new_target:
-                                nick = new_target
-                                await send_client({"type": "status", "state": "nick", "nick": nick})
-                            elif new_target:
-                                allowed_pm_targets.add(new_target)
-                    await send_client(parsed)
-
-        async def ws_to_irc() -> None:
-            nonlocal nick
-            while True:
-                text = await websocket.receive_text()
-                try:
-                    data = json.loads(text)
-                except Exception:
-                    data = {"type": "say", "text": text}
-                kind = data.get("type")
-                if kind == "say":
-                    message = _dashboard_chat_truncate_message(data.get("text"))
-                    if message:
-                        if not joined:
-                            await send_client({"type": "error", "text": "Still joining IRC; wait for the server-confirmed #hermesdashboard join."})
-                            continue
-                        await send_irc(f"PRIVMSG {chat_cfg['channel']} :{message}")
-                        # Most IRCds do not echo a channel PRIVMSG back to its sender, so
-                        # provide a local echo after writing the IRC command successfully.
-                        await send_client({"type": "message", "scope": "channel", "nick": nick, "text": message, "self": True})
-                elif kind == "selfpm":
-                    message = _dashboard_chat_truncate_message(data.get("text"))
-                    if message:
-                        if not registered:
-                            await send_client({"type": "error", "text": "Still registering with IRC; try again in a moment."})
-                            continue
-                        await send_irc(f"PRIVMSG {nick} :{message}")
-                        await send_client({"type": "message", "scope": "pm", "nick": nick, "target": nick, "text": message, "self": True})
-                elif kind == "pm":
-                    message = _dashboard_chat_truncate_message(data.get("text"))
-                    target = _sanitize_dashboard_chat_pm_target(data.get("target"))
-                    if message and target:
-                        if not joined:
-                            await send_client({"type": "error", "text": "Join #hermesdashboard before sending private messages."})
-                            continue
-                        if target != nick and target not in allowed_pm_targets:
-                            await send_client({"type": "error", "text": "PM target must be your own nick or a user currently visible in #hermesdashboard."})
-                            continue
-                        await send_irc(f"PRIVMSG {target} :{message}")
-                        await send_client({"type": "message", "scope": "pm", "nick": nick, "target": target, "text": message, "self": True})
-                elif kind == "nick":
-                    new_nick = _sanitize_dashboard_chat_nick(data.get("nick"))
-                    nick = new_nick
-                    await send_irc(f"NICK {new_nick}")
-                    await send_client({"type": "status", "state": "nick", "nick": new_nick})
-                elif kind == "ping":
-                    await send_client({"type": "pong"})
-                else:
-                    await send_client({"type": "error", "text": "Unsupported command. Dashboard chat is jailed to #hermesdashboard and self-PM only."})
-
-        tasks = [asyncio.create_task(irc_to_ws()), asyncio.create_task(ws_to_irc())]
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in pending:
-            task.cancel()
-        for task in done:
-            task.result()
-    except WebSocketDisconnect:
-        pass
-    except Exception as exc:
-        await send_client({"type": "error", "text": str(exc)})
-    finally:
-        if writer is not None:
-            try:
-                await send_irc(f"PART {chat_cfg['channel']} :Hermes Dashboard disconnect")
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
-
 routes = [
+    Mount(
+        "/static",
+        StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")),
+        name="static",
+    ),
     Route("/", homepage),
     # Campaigns is implemented as a hash-routed dashboard panel (#dnd), but
     # users/bookmarks can land on path-style URLs after navigation or refresh.
@@ -9614,13 +9554,14 @@ routes = [
     Route("/campaigns", homepage),
     Route("/campaigns/", homepage),
     Route("/chat", chat_stream, methods=["POST"]),
+    Route("/api/runs/{run_id}/stop", stop_run, methods=["POST"]),
     Route("/api/dashboard-state/{key}", get_dashboard_state),
     Route("/api/dashboard-state/{key}", set_dashboard_state, methods=["PUT"]),
     Route("/api/dashboard-state/{key}", delete_dashboard_state, methods=["DELETE"]),
     Route("/api/dashboard/update", dashboard_auto_update_endpoint, methods=["POST"]),
-    Route("/api/dashboard-chat/status", dashboard_chat_status_endpoint),
     Route("/health", health),
     Route("/api/status", get_status),
+    Route("/api/dashboard-chat/status", dashboard_chat_status_endpoint),
     Route("/api/config", get_config_endpoint),
     Route("/api/settings", get_settings),
     Route("/api/config", update_config, methods=["POST"]),
@@ -9629,6 +9570,7 @@ routes = [
     Route("/api/personality", set_personality, methods=["POST"]),
     Route("/api/model", set_model, methods=["POST"]),
     Route("/api/agent-observability", get_agent_observability_endpoint),
+    Route("/api/token-usage", get_token_usage_endpoint),
     Route("/api/sessions", get_sessions),
     Route("/api/sessions/search", search_sessions),
     Route("/api/sessions/sources", get_session_sources),
@@ -9651,6 +9593,7 @@ routes = [
         interrupt_session,
         methods=["POST"],
     ),
+    Route("/api/sessions/{session_id}/steer", steer_session, methods=["POST"]),
     Route("/api/sessions/{session_id}", delete_session, methods=["DELETE"]),
     Route("/api/message-board", get_message_board_posts_endpoint),
     Route("/api/message-board", create_message_board_post_endpoint, methods=["POST"]),
@@ -9698,6 +9641,7 @@ routes = [
     Route("/api/scrolls/console", get_scrolls_console_endpoint),
     Route("/api/scrolls/loop/status", get_scrolls_loop_status_endpoint),
     Route("/api/scrolls/artifact", get_scrolls_artifact_endpoint),
+    Route("/api/scrolls/snapshot", get_scrolls_snapshot_endpoint),
     Route("/api/scrolls/autoresearch/trigger", trigger_scrolls_autoresearch_endpoint, methods=["POST"]),
     Route("/api/scrolls/autoresearch/loop/start", start_scrolls_timed_loop_endpoint, methods=["POST"]),
     Route("/api/scrolls/autoresearch/loop/stop", stop_scrolls_timed_loop_endpoint, methods=["POST"]),

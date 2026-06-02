@@ -1,123 +1,202 @@
-from pathlib import Path
+import asyncio
+import json
 
 import app as dashboard_app
+from tests.dashboard_sources import dashboard_source
 
 
-TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "index.html"
+class FakeTask:
+    def __init__(self):
+        self.cancelled = False
+
+    def done(self):
+        return False
+
+    def cancel(self):
+        self.cancelled = True
 
 
-def _html() -> str:
-    return TEMPLATE.read_text(encoding="utf-8")
+class FakeRequest:
+    def __init__(self, *, path_params=None, body=None):
+        self.path_params = path_params or {}
+        self._body = body if body is not None else b"{}"
+
+    async def body(self):
+        return self._body
 
 
-def test_dashboard_chat_tab_is_registered_with_navigation_and_router():
-    html = _html()
-
-    assert 'data-panel="dashboard-chat"' in html
-    assert 'id="dashboard-chat-panel"' in html
-    assert "{ id: 'dashboard-chat', label: 'Dashboard Chat' }" in html
-    assert "'dashboard-chat'" in html.split("const validPanels =", 1)[1].split(";", 1)[0]
-    assert "'dashboard-chat':'Dashboard Chat'" in html
-    assert "case 'dashboard-chat': loadDashboardChat(); break;" in html
+def response_json(response):
+    return json.loads(response.body.decode("utf-8"))
 
 
-def test_dashboard_chat_frontend_is_jailed_to_channel_and_pm_tabs():
-    html = _html()
+def test_chat_message_sanitizer_preserves_multimodal_image_content():
+    messages = dashboard_app._sanitize_chat_messages([
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "what is this?"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+                {"type": "unsupported", "value": "drop me"},
+            ],
+        },
+        {"role": "assistant", "content": "ok"},
+    ])
 
-    assert "/api/dashboard-chat/ws" in html
-    assert "/api/dashboard-chat/status" in html
-    assert "#hermesdashboard" in html
-    assert "PM yourself" in html
-    assert "type: 'say'" in html
-    assert "type: 'selfpm'" in html
-    assert "type: 'pm'" in html
-    assert "openDashboardChatPmTab(name)" in html
-    assert "dashboard-chat-targets" in html
-    assert ".dashboard-chat-tab.blink" in html
-    assert "Blocked: arbitrary" in html
-    assert "dashboardChatJoined" in html
-    assert "Wait for the server-confirmed #hermesdashboard join" in html
-    assert "Connected to dashboard IRC bridge. Waiting for IRC registration" in html
-
-
-def test_dashboard_chat_settings_are_visible_and_privacy_labeled():
-    html = _html()
-
-    assert "Dashboard Chat / IRC" in html
-    assert 'id="dashboard-chat-hosts"' in html
-    assert 'id="dashboard-chat-port"' in html
-    assert 'id="dashboard-chat-tls"' in html
-    assert 'id="dashboard-chat-nick-prefix"' in html
-    assert 'id="dashboard-chat-ident"' in html
-    assert 'id="dashboard-chat-realname"' in html
-    assert 'id="dashboard-chat-channel-key"' in html
-    assert "Defaults avoid local usernames, hostnames" in html
-    assert "function saveDashboardChatSettings()" in html
-    assert "dashboard_chat.ident" in html
+    assert isinstance(messages[0]["content"], list)
+    assert messages[0]["content"] == [
+        {"type": "text", "text": "what is this?"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+    ]
+    assert messages[1] == {"role": "assistant", "content": "ok"}
 
 
-def test_dashboard_chat_backend_routes_and_policy_are_registered():
-    status_route = next((route for route in dashboard_app.routes if getattr(route, "path", "") == "/api/dashboard-chat/status"), None)
-    assert status_route is not None
-    assert getattr(status_route, "endpoint", None) is dashboard_app.dashboard_chat_status_endpoint
+def test_chat_message_sanitizer_keeps_string_messages_and_filters_gateway_errors():
+    messages = dashboard_app._sanitize_chat_messages([
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "Error: Hermes gateway unavailable"},
+        {"role": "nonsense", "content": "drop"},
+    ])
 
-    ws_route = next((route for route in dashboard_app.routes if getattr(route, "path", "") == "/api/dashboard-chat/ws"), None)
-    assert ws_route is not None
-    assert getattr(ws_route, "endpoint", None) is dashboard_app.dashboard_chat_websocket_endpoint
-
-    payload = dashboard_app._dashboard_chat_status_payload()
-    assert payload["channel"] == "#hermesdashboard"
-    assert payload["channel_key_configured"] is True
-    assert payload["default_nick_prefix"] == "HermesDash"
-    assert payload["ident"] == "hermesdash"
-    assert payload["realname"] == "Hermes Dashboard"
-    assert "PMs to users present" in payload["jail"]
+    assert messages == [{"role": "user", "content": "hello"}]
 
 
-def test_dashboard_chat_helpers_sanitize_and_parse_allowed_messages():
-    assert dashboard_app._sanitize_dashboard_chat_nick("bad nick;/JOIN #other") == "badnickJOINother"
-    assert dashboard_app._dashboard_chat_truncate_message("hello\r\nthere") == "hello  there"
+def test_chat_emergency_stop_frontend_contract():
+    source = dashboard_source()
 
-    user_command = dashboard_app._dashboard_chat_user_command(
-        "ChosenNick",
-        {"ident": "hermesdash", "realname": "Hermes Dashboard"},
+    assert 'id="chat-run-stop-btn"' in source
+    assert 'class="btn emergency-stop-btn"' in source
+    assert "Stop main agent" in source
+    assert "requestInterrupt(activeRun?.sessionId || null, activeRun?.runId || null)" in source
+    assert "const chatRunStopBtn = document.getElementById('chat-run-stop-btn');" in source
+    assert "function requestInterrupt(sessionId, runId = null)" in source
+    assert "if (!sessionId && !runId) return;" in source
+    assert "Emergency stop the running main agent?" in source
+    assert "'/api/runs/' + encodeURIComponent(runId) + '/stop'" in source
+    assert "body: JSON.stringify({ action: 'stop', run_id: runId || '' })" in source
+    assert "data.status === 'interrupt_queued' || data.status === 'stop_queued'" in source
+    assert "btn.textContent = 'Stopping…'" in source
+    assert "msg.textContent = 'Emergency stop queued.'" in source
+    assert ".emergency-stop-btn" in source
+    assert "type=\"module\"" not in source
+
+
+def test_chat_stop_routes_are_registered():
+    routes = set()
+    for route in dashboard_app.routes:
+        path = getattr(route, "path", None) or (route.args[0] if getattr(route, "args", None) else None)
+        methods = getattr(route, "methods", None)
+        if methods is None:
+            methods = getattr(route, "kwargs", {}).get("methods", ["GET"])
+        routes.add((path, tuple(sorted(methods))))
+
+    assert ("/api/sessions/{session_id}/interrupt", ("POST",)) in routes
+    assert ("/api/runs/{run_id}/stop", ("POST",)) in routes
+
+
+def test_stop_run_marks_active_run_done_and_sets_interrupt_flag(monkeypatch):
+    task = FakeTask()
+    state = {
+        "session_id": "sess-stop",
+        "task": task,
+        "done": False,
+        "events": [],
+    }
+    monkeypatch.setitem(dashboard_app.ACTIVE_RUNS, "run-stop", state)
+    dashboard_app.INTERRUPT_FLAGS.pop("sess-stop", None)
+
+    response = asyncio.run(
+        dashboard_app.stop_run(FakeRequest(path_params={"run_id": "run-stop"}))
     )
-    assert user_command == "USER hermesdash 0 * :Hermes Dashboard"
-    assert "ChosenNick" not in user_command
-    assert "mojo" not in user_command.lower()
+    payload = response_json(response)
 
-    default_nick = dashboard_app._sanitize_dashboard_chat_nick("", "HermesDash")
-    assert default_nick.startswith("HermesDash")
-    assert "mojo" not in default_nick.lower()
+    assert payload["status"] == "stop_queued"
+    assert state["stop_requested"] is True
+    assert state["done"] is True
+    assert task.cancelled is True
+    assert dashboard_app.INTERRUPT_FLAGS["sess-stop"] is True
+    assert any("Stopped by user." in event.get("data", "") for event in state["events"])
+    assert state["events"][-1] == {"data": "[DONE]"}
 
-    channel = dashboard_app._parse_irc_message(":alice!u@h PRIVMSG #hermesdashboard :hi")
-    assert channel == {"type": "message", "scope": "channel", "nick": "alice", "text": "hi"}
+    dashboard_app.ACTIVE_RUNS.pop("run-stop", None)
+    dashboard_app.INTERRUPT_FLAGS.pop("sess-stop", None)
 
-    self_pm = dashboard_app._parse_irc_message(":alice!u@h PRIVMSG HermesDash123 :secret", current_nick="HermesDash123")
-    assert self_pm == {"type": "message", "scope": "pm", "nick": "alice", "target": "HermesDash123", "text": "secret"}
 
-    own_pm_echo = dashboard_app._parse_irc_message(":HermesDash123!u@h PRIVMSG alice :secret", current_nick="HermesDash123")
-    assert own_pm_echo == {"type": "message", "scope": "pm", "nick": "HermesDash123", "target": "alice", "text": "secret", "self": True}
-
-    names = dashboard_app._parse_irc_message(":irc.example 353 HermesDash123 = #hermesdashboard :@alice +bob HermesDash123")
-    assert names == {"type": "names", "names": ["alice", "bob", "HermesDash123"]}
-    assert dashboard_app._sanitize_dashboard_chat_pm_target("al ice;/JOIN") == "aliceJOIN"
-
-    assert dashboard_app._parse_irc_prefix(":irc.example 001 HermesDash123 :Welcome") == (
-        "irc.example",
-        "001",
-        "HermesDash123 :Welcome",
+def test_interrupt_session_stop_matches_active_main_run(monkeypatch):
+    task = FakeTask()
+    state = {
+        "session_id": "sess-main",
+        "task": task,
+        "done": False,
+        "events": [],
+    }
+    monkeypatch.setitem(dashboard_app.ACTIVE_RUNS, "run-main", state)
+    dashboard_app.INTERRUPT_FLAGS.pop("sess-main", None)
+    request = FakeRequest(
+        path_params={"session_id": "sess-main"},
+        body=json.dumps({"action": "stop"}).encode("utf-8"),
     )
 
+    response = asyncio.run(dashboard_app.interrupt_session(request))
+    payload = response_json(response)
 
-def test_dashboard_chat_backend_waits_for_irc_registration_before_joining():
-    source = Path(dashboard_app.__file__).read_text(encoding="utf-8")
-    registration_block = source.split('if command == "001":', 1)[1].split('if command in {"376", "422"}', 1)[0]
-    assert "registered = True" in registration_block
-    assert "await send_join_once()" in registration_block
-    assert "state\": \"joined" not in registration_block
-    assert "MODE {chat_cfg['channel']} +k" not in source
-    assert "self\": True" in source
-    assert "allowed_pm_targets" in source
-    assert "PRIVMSG {target} :{message}" in source
-    assert "not in allowed_pm_targets" in source
+    assert payload["status"] == "stop_queued"
+    assert payload["session_id"] == "sess-main"
+    assert state["stop_requested"] is True
+    assert state["done"] is True
+    assert task.cancelled is True
+    assert dashboard_app.INTERRUPT_FLAGS["sess-main"] is True
+    assert state["events"][-1] == {"data": "[DONE]"}
+
+    dashboard_app.ACTIVE_RUNS.pop("run-main", None)
+    dashboard_app.INTERRUPT_FLAGS.pop("sess-main", None)
+
+
+def test_run_chat_stream_sync_honors_stop_requested(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        headers = {}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            yield 'data: {"type":"content","content":"should not render"}'
+            yield 'data: [DONE]'
+
+    class FakeStream:
+        def __enter__(self):
+            return FakeResponse()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, *args, **kwargs):
+            return FakeStream()
+
+    state = {
+        "session_id": "sess-sync",
+        "stop_requested": True,
+        "done": False,
+        "events": [],
+    }
+    monkeypatch.setitem(dashboard_app.ACTIVE_RUNS, "run-sync-stop", state)
+    monkeypatch.setattr(dashboard_app.httpx, "Client", FakeClient)
+
+    dashboard_app._run_chat_stream_sync("run-sync-stop", [], "sess-sync")
+
+    assert state["done"] is True
+    assert any("Stopped by user." in event.get("data", "") for event in state["events"])
+    assert not any("should not render" in event.get("data", "") for event in state["events"])
+    assert state["events"][-1] == {"data": "[DONE]"}
+
+    dashboard_app.ACTIVE_RUNS.pop("run-sync-stop", None)

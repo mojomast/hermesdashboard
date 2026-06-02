@@ -1,11 +1,8 @@
-from pathlib import Path
-
-
-TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "index.html"
+from tests.dashboard_sources import dashboard_source
 
 
 def _html() -> str:
-    return TEMPLATE.read_text(encoding="utf-8")
+    return dashboard_source()
 
 
 def test_dashboard_settings_button_and_menu_are_rendered():
@@ -43,11 +40,17 @@ def test_dashboard_tab_visibility_settings_are_persistent_and_safe():
     html = _html()
 
     assert "DASHBOARD_TAB_SETTINGS_KEY = 'hermes_dashboard_hidden_tabs_v1'" in html
+    assert "DEFAULT_VISIBLE_DASHBOARD_TABS" in html
+    assert "function getDefaultHiddenDashboardTabs()" in html
     assert "function getHiddenDashboardTabs()" in html
+    assert "raw === null" in html
     assert "function setDashboardTabVisible(panel, visible)" in html
     assert "localStorage.setItem(DASHBOARD_TAB_SETTINGS_KEY" in html
     assert "panel === 'chat'" in html
     assert "dashboard-tab-hidden" in html
+    assert "Experimental" in html
+    assert "local tooling" in html
+    assert "showAllDashboardTabs()" in html
 
 
 def test_hidden_tabs_are_respected_by_hash_routing():
@@ -63,5 +66,32 @@ def test_hidden_tabs_are_respected_by_hash_routing():
 def test_scrollprize_tab_is_available_in_dashboard_settings_registry():
     html = _html()
 
-    assert "{ id: 'scrolls', label: 'Vesuvius AutoResearch' }" in html
+    assert "id: 'scrolls', label: 'Vesuvius AutoResearch', experimental: true" in html
     assert 'data-panel="scrolls"' in html
+
+
+def test_token_usage_top_bar_widget_is_rendered_before_theme_options():
+    html = _html()
+
+    assert 'id="token-usage-widget"' in html
+    assert 'id="token-usage-summary"' in html
+    assert 'id="token-usage-current-session"' in html
+    assert 'id="token-usage-current-day"' in html
+    assert 'id="token-usage-current-week"' in html
+    assert 'id="token-usage-current-month"' in html
+    assert 'id="token-usage-overall"' in html
+
+    assert html.index('id="token-usage-widget"') < html.index('id="theme-toggle"')
+    assert html.index('id="theme-toggle"') < html.index('id="dashboard-settings-button"')
+
+    assert '.token-usage-widget' in html
+    assert '.token-usage-popover' in html
+    assert 'function formatTokenCount(' in html
+    assert 'function tokenUsageTopline(' in html
+    assert 'return `O ${formatTokenCount(overallTotal)}`;' in html
+    assert 'summary.textContent = tokenUsageTopline(windows);' in html
+    assert 'function loadTokenUsageSummary(' in html
+    assert 'function renderTokenUsageSummary(' in html
+    assert '/api/token-usage' in html
+    assert 'startTokenUsagePolling();' in html
+

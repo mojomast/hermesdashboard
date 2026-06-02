@@ -1,0 +1,30 @@
+        <!-- Sessions Panel -->
+        <div class="panel" id="sessions-panel">
+            <div class="search-box">
+                <input type="text" id="session-search" placeholder="Search sessions...">
+            </div>
+            <div class="sessions-toolbar">
+                <select id="session-sort" onchange="sessionsPage=0;loadSessions()">
+                    <option value="date_desc">Newest First</option>
+                    <option value="date_asc">Oldest First</option>
+                </select>
+                <select id="session-source" onchange="sessionsPage=0;loadSessions()">
+                    <option value="">All Sources</option>
+                </select>
+                <span class="stats" id="sessions-stats"></span>
+            </div>
+            <div class="search-bar-container" id="session-search-bar-container">
+                <input type="text" id="session-search-input" class="search-input" placeholder="Search sessions..." oninput="debounceSessionSearch()">
+                <select id="session-search-status" class="search-filter-select" onchange="runSessionSearch()">
+                    <option value="all">All Statuses</option>
+                    <option value="complete">Complete</option>
+                    <option value="running">Running</option>
+                    <option value="error">Error</option>
+                </select>
+                <input type="date" id="session-search-date-from" class="search-input" style="min-width:140px;" onchange="runSessionSearch()">
+                <input type="date" id="session-search-date-to" class="search-input" style="min-width:140px;" onchange="runSessionSearch()">
+                <button class="btn" onclick="clearSessionSearch()">Clear</button>
+            </div>
+            <div class="sessions-list" id="sessions-list"></div>
+            <div class="sessions-pagination" id="sessions-pagination"></div>
+        </div>

@@ -1,0 +1,55 @@
+        <!-- Chat Panel -->
+        <div class="panel active" id="chat-panel">
+            <div class="chat-layout">
+                <div class="chat-main">
+                    <button class="btn debug-reopen" id="debug-reopen" onclick="toggleDebug()">Show Debug</button>
+                    <div class="chat-run-status" id="chat-run-status">
+                        <div class="chat-run-status-main">
+                            <div class="chat-run-status-title"><span class="chat-run-status-dot"></span><span id="chat-run-status-title">Hermes is working</span></div>
+                            <div class="chat-run-status-text" id="chat-run-status-text">Reload detected an in-flight run.</div>
+                            <div class="chat-run-status-meta" id="chat-run-status-meta"></div>
+                        </div>
+                        <div class="chat-run-status-actions">
+                            <button class="btn emergency-stop-btn" type="button" id="chat-run-stop-btn" onclick="requestInterrupt(activeRun?.sessionId || null, activeRun?.runId || null)">Stop main agent</button>
+                            <button class="btn" type="button" id="chat-run-reattach-btn" onclick="reattachActiveRunSession()">Reattach Session</button>
+                            <button class="btn" type="button" id="chat-run-resume-btn" onclick="resumeActiveRunFromBanner()">Resume Stream</button>
+                            <button class="btn" type="button" onclick="dismissActiveRunBanner()">Dismiss</button>
+                        </div>
+                    </div>
+                    <details class="chat-context" id="chat-context-panel">
+                        <summary>
+                            <div class="section-toggle">
+                                <span class="section-toggle-arrow">▶</span>
+                                <div style="min-width:0;">
+                                    <h3 style="margin-bottom:0.35rem;">Chat Context</h3>
+                                    <div id="chat-context-summary" style="font-size:0.85rem;color:var(--text-dim);">Waiting for a response...</div>
+                                </div>
+                            </div>
+                        </summary>
+                        <div class="chat-context-body">
+                            <div class="message-meta" id="chat-context-pills"></div>
+                            <div id="chat-context-breakdown" style="margin-top:0.9rem;color:var(--text-dim);font-size:0.82rem;"></div>
+                        </div>
+                    </details>
+                    <div class="chat-container" id="chat"></div>
+                    <div id="chat-attachment-preview-bar" class="chat-attachment-preview-bar" aria-live="polite"></div>
+                    <div class="input-container">
+                        <input id="chat-image-input" type="file" accept="image/*" multiple hidden>
+                        <button id="chat-image-btn" class="chat-image-btn" type="button" title="Attach images" aria-label="Attach images">Image</button>
+                        <textarea id="user-input" placeholder="Message Hermes..." rows="1"></textarea>
+                        <button id="send-btn">Send</button>
+                    </div>
+                </div>
+                <div class="debug-panel" id="debug-panel">
+                    <div class="debug-header">
+                        <h3><span class="indicator"></span> Debug Log</h3>
+                        <div class="debug-actions">
+                            <button onclick="clearLog()">Clear</button>
+                            <button onclick="toggleDebug()">Hide</button>
+                        </div>
+                    </div>
+                    <div class="debug-log" id="debug-log"></div>
+                </div>
+            </div>
+            <button class="clear-btn" onclick="clearChat()">Clear Chat</button>
+        </div>

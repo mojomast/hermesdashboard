@@ -87,7 +87,7 @@ Important values:
 Examples:
 
 - if `DASHBOARD_HOST=127.0.0.1` and `DASHBOARD_PORT=8081`, open `http://127.0.0.1:8081`
-- if `DASHBOARD_HOST=0.0.0.0` and `DASHBOARD_PORT=8081`, open `http://localhost:8081` on the same machine
+- if `DASHBOARD_HOST=0.0.0.0` and `DASHBOARD_PORT=8081`, the server accepts remote access; open `http://localhost:8081` on the same machine
 - if the dashboard is bound externally on another machine, open `http://<that-machine-ip>:<DASHBOARD_PORT>` from your browser
 
 Quick check:
@@ -139,9 +139,10 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - **token & cost accounting** — per-session token usage badge and step-by-step cost breakdown
 - **session search & filter** — full-text search across sessions with status, date range, and real-time filtering
 - **cron schedule viewer** — dedicated Schedule tab showing cron jobs with run history, next-run countdowns, and session links
-- **interrupt/pause live runs** — pause button for in-flight chat runs, queues an interrupt before the next tool call
+- **emergency-stop live runs** — stop controls for in-flight chat runs queue `action: stop` through the active session or run-id fallback
 - **Cmd+K command palette** — keyboard-driven command palette for quick navigation and recent session access
 - **threaded Message Board** — forum-style threads with persistent posts, per-thread replies, and Hermes responses scoped to each thread's own context
+- **optional Dashboard Chat / IRC bridge** — hidden-by-default IRC panel that users can enable explicitly; defaults avoid local usernames/hostnames and jail traffic to `#hermesdashboard`
 - hardened dashboard-to-Hermes streaming bridge for long tool-heavy runs, including tool progress forwarding, heartbeats, clean disconnect handling, and sanitized chat history
 
 ## Message Board
@@ -165,6 +166,31 @@ Relevant endpoints:
 - `GET /api/message-board/{post_id}` — fetch one thread with messages
 - `POST /api/message-board/{post_id}/messages` — add a thread reply, optionally asking Hermes to respond
 
+## Dashboard Chat / IRC
+
+Dashboard Chat is an optional IRC bridge separate from the main Hermes Chat and the persistent Message Board. It is registered as a hidden-by-default tab, so fresh installs only see it after the user enables **Dashboard Chat** from Dashboard Settings.
+
+Safety and privacy defaults:
+
+- Opening the tab reads local status/settings; it does not connect to IRC.
+- The websocket `/api/dashboard-chat/ws` attempts IRC network access only after `dashboard_chat.enabled` is true and the user clicks **Connect**.
+- Default identity strings are generic (`HermesDash*`, `hermesdash`, `Hermes Dashboard`) and do not use local usernames or hostnames.
+- The status, settings, and `/api/config` payloads report only `channel_key_configured`; they do not return the channel key.
+- Invalid IRC ports fall back to the default `6697`.
+- The bridge is jailed to `#hermesdashboard`; arbitrary raw IRC/JOIN commands are blocked, and PMs are limited to yourself or users present in the channel.
+- IRC EOF/failure closes the websocket bridge cleanly, and inbound PM tabs blink without stealing the active compose target.
+
+Relevant config keys:
+
+- `dashboard_chat.enabled`
+- `dashboard_chat.hosts`
+- `dashboard_chat.port`
+- `dashboard_chat.tls`
+- `dashboard_chat.channel_key`
+- `dashboard_chat.default_nick_prefix`
+- `dashboard_chat.ident`
+- `dashboard_chat.realname`
+
 ## Streaming Reliability
 
 The dashboard chat bridge is designed to preserve the entire Hermes run stream instead of dropping after the first tool event.
@@ -177,6 +203,7 @@ Current behavior:
 - cleans stale dashboard transport errors and UI-only trace metadata before sending history back to Hermes
 - uses a synchronous upstream SSE reader in a worker thread to avoid premature async stream closure seen with long tool-heavy runs
 - stores resumable run state so refreshes can reattach or resume explicitly
+- exposes an emergency-stop control in the active-run banner; it posts `action: stop` to `/api/sessions/{session_id}/interrupt` or falls back to `/api/runs/{run_id}/stop`, sets `stop_requested`, appends a user-visible stopped event, and closes the stream with `[DONE]`
 
 ## Upstream Compatibility
 
@@ -188,6 +215,48 @@ Compatibility notes:
 - session summary backfill/regeneration endpoints now fall back to dashboard-local summary generation using `state.db`
 - config/env metadata features use local fallbacks when optional Hermes CLI internals are unavailable
 - if your Hermes install does not expose the bundled API-only launcher internals, use your existing Hermes API and set `HERMES_API`
+
+
+## Architecture and Refactor Status
+
+Hermes Dashboard is being decomposed with vocabulary-first bounded contexts while preserving public behavior. The current dependency direction is:
+
+```text
+app.py bootstrap / route table
+  -> dashboard_backend/routes/* request wrappers (dashboard-state extracted; broader contexts gradual)
+  -> dashboard_backend/services/* bounded-context services
+  -> dashboard_backend/core/* shared path/config/response helpers (planned)
+```
+
+During this refactor, `app.py` remains the Starlette bootstrap, route registry, and compatibility-wrapper owner. Services must not import `app.py`; app-owned mutable dependencies such as `HERMES_HOME`, database paths, locks, and runtime config are passed into services at call time so tests and local callers that monkeypatch app symbols keep working.
+
+Extracted backend modules so far:
+
+- `dashboard_backend/services/dashboard_state.py` owns SQLite persistence for browser/dashboard state projections; `dashboard_backend/routes/dashboard_state.py` owns request parsing/JSON envelopes for `GET`/`PUT`/`DELETE /api/dashboard-state/{key}`; `app.py` keeps `_load_dashboard_state`, `_save_dashboard_state`, `_delete_dashboard_state`, related private wrappers, and app-level endpoint names for route-table/monkeypatch compatibility.
+- `dashboard_backend/services/token_usage.py` owns read-only token/cost aggregation ledgers and projections; `/api/token-usage` and app-level helper names remain stable.
+- `dashboard_backend/services/message_board.py` owns message-board SQLite post/message persistence; `/api/message-board*` route handlers and Hermes reply generation remain in `app.py` for compatibility.
+- `dashboard_backend/services/scrolls.py` owns read-only Scrolls snapshot projection delegation; `GET /api/scrolls/snapshot` remains wrapped in `app.py` and injects the configured Vesuvius project root at call time.
+- `dashboard_backend/services/games_catalog.py` owns read-only Games tab skill catalog/frontmatter projection; `/api/games` remains wrapped in `app.py` and injects `HERMES_HOME` at call time while game proxy/process routes stay in the app orchestrator.
+- The Roguelike/Hermes Labyrinth dirty-reference tab is restored as frontend-only classic JS/CSS plus a partialized panel; it intentionally has no backend API route and remains experimental/hidden-by-default.
+- Self-improvement event-coverage repair/anomaly projections are read-only and test-covered; repair commands render as inert operator guidance while self-improvement/autonomous-development tabs remain hidden-by-default until shipping gates pass.
+
+Refactor passes follow `AUDIT -> MAP -> EXTRACT -> VERIFY -> DOCUMENT -> COMMIT`. For backend extraction passes, run the focused context tests first, then the full gate:
+
+```sh
+python -m py_compile app.py
+node --check static/js/dashboard.js
+python -m pytest
+```
+
+Compatibility contracts for the current refactor copy:
+
+- Preserve public route paths and payload shapes.
+- Preserve DOM IDs, CSS class names, tab IDs, and frontend behavior.
+- Keep `static/js/dashboard.js` as a classic deferred compatibility script; do not switch to `type="module"` yet.
+- Preserve global JavaScript functions while inline handlers still rely on them.
+- Do not introduce npm/Vite/bundler requirements for these passes.
+
+See [`docs/app-refactor-map.md`](docs/app-refactor-map.md) for the backend bounded-context map and [`docs/self-improvement-autonomous-shipping-plan.md`](docs/self-improvement-autonomous-shipping-plan.md) for safety gates before default-visible self-improvement/autonomous-development tabs.
 
 ## First-Run Verification
 
@@ -304,6 +373,9 @@ It depends on an existing Hermes install for:
 - [Setup Guide](SETUP.md)
 - [Operations Guide](OPERATIONS.md)
 - [Implementation Notes](IMPLEMENTATION.md)
+- [Backend Refactor Map](docs/app-refactor-map.md)
+- [Frontend/General Refactor Map](docs/refactor-map.md)
+- [Self-Improvement / Autonomous Development Shipping Plan](docs/self-improvement-autonomous-shipping-plan.md)
 - [Contributing Guide](CONTRIBUTING.md)
 
 ## Contributing

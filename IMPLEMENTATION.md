@@ -77,7 +77,7 @@ If the upstream Hermes runtime changes those import paths, the fallback behavior
 
 The standalone package now depends on the richer dashboard config surface from `app.py`:
 
-- `GET /api/config` returns raw persisted YAML
+- `GET /api/config` returns persisted YAML with sensitive dashboard chat channel keys masked
 - `GET /api/settings` returns the dashboard-oriented settings payload used by the Config tab
 - `POST /api/config` accepts dotted-path updates back into raw config
 
@@ -127,7 +127,8 @@ Current behavior:
 
 - `ACTIVE_RUN_KEY` stores `runId`, `eventOffset`, `startedAt`, `sessionId`, and a reduced assistant state snapshot
 - on reload, the dashboard now shows a visible chat banner when an in-flight run is still present instead of silently resuming immediately
-- the banner summarizes the latest known tool/content activity and exposes `Reattach Session` plus `Resume Stream`
+- the banner summarizes the latest known tool/content activity and exposes `Stop main agent`, `Reattach Session`, and `Resume Stream`
+- `Stop main agent` posts an emergency stop to `/api/sessions/{session_id}/interrupt` with `action: stop`, falling back to `/api/runs/{run_id}/stop` when a session id is not attached yet
 - `Reattach Session` hydrates the persisted transcript for the saved `sessionId` into Chat while preserving the active run record
 - `Resume Stream` reconnects `/chat` with `resume=true` and the stored `eventOffset`
 
@@ -138,6 +139,8 @@ Why it works this way:
 
 Current backend additions in `app.py`:
 
+- `POST /api/runs/{run_id}/stop` marks the active dashboard run stopped, cancels the task, sets the session interrupt flag when known, and appends `[DONE]`
+- `_run_chat_stream_sync` cooperatively honors `stop_requested` while reading upstream SSE so a worker-thread stream can close promptly after the dashboard stop request
 - `GET /api/sessions/{id}` now includes `related_artifacts` for `request_dump_<session_id>_*.json`
 - synthesized `background_reviews`, `skill_events`, and `session_search_events` now include additive `target` metadata when a transcript destination can be inferred
 
@@ -188,6 +191,22 @@ The live subagent drawer lets users inspect child agent sessions in real time wi
 - exact historical reconstruction still depends on persisted `tool_call_id` quality and does not yet have a first-class event log
 - child/review linkage outside persisted `parent_session_id` still relies on current payload shape and has not become a full subagent event graph
 - live SSE rendering and historical hydration are now aligned at the assistant-step reducer level, but not yet backed by a Phase 3 monotonic event store
+
+## Dashboard Chat / IRC Bridge
+
+Dashboard Chat is an optional external IRC bridge, not a Hermes execution run and not a durable Message Board thread.
+
+Current behavior:
+
+- `dashboard-chat` is registered in nav/mobile/settings but omitted from `DEFAULT_VISIBLE_DASHBOARD_TABS`, so new installs can enable it explicitly from Dashboard Settings.
+- `GET /api/dashboard-chat/status` is read-only and reports sanitized hosts/port/TLS/channel/identity plus `channel_key_configured` without returning the key.
+- `/api/config` and `/api/settings` also mask `dashboard_chat.channel_key` and expose only `channel_key_configured`.
+- Invalid configured or environment IRC ports fall back to the default `6697`.
+- `/api/dashboard-chat/ws` is registered when Starlette websocket routes are available, but it is inert until `dashboard_chat.enabled` is true and the user clicks Connect.
+- The bridge defaults to privacy-safe identity strings (`HermesDash*`, `hermesdash`, `Hermes Dashboard`) instead of local usernames/hostnames.
+- The websocket proxy is jailed to `#hermesdashboard`; arbitrary raw IRC/JOIN commands are blocked and PMs are limited to self or users present in the channel.
+- Incoming PM tabs blink without changing the active compose target.
+- Tests use fake websocket/network seams and prove disabled Dashboard Chat does not call `asyncio.open_connection`; IRC EOF/failure cleanup closes the bridge cleanly.
 
 ## Auto-Start UX
 

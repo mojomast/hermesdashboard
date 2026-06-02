@@ -79,6 +79,7 @@ def _install_framework_stubs() -> None:
 _install_framework_stubs()
 
 import app as dashboard_app
+from tests.dashboard_sources import dashboard_source
 
 
 class FakeRequest:
@@ -224,7 +225,7 @@ def test_message_board_routes_and_frontend_are_registered():
     assert "/api/message-board/{post_id}" in route_paths
     assert "/api/message-board/{post_id}/messages" in route_paths
 
-    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html").read_text()
+    html = dashboard_source()
     assert "Message Board" in html
     assert "message-board-form" in html
     assert "/api/message-board" in html

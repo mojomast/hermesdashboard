@@ -1,11 +1,8 @@
-from pathlib import Path
-
-
-TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "index.html"
+from tests.dashboard_sources import dashboard_source
 
 
 def test_diagnostics_tab_is_registered_with_hash_router_and_breadcrumbs():
-    html = TEMPLATE.read_text(encoding="utf-8")
+    html = dashboard_source()
 
     assert 'data-panel="diagnostics"' in html
     assert "id=\"diagnostics-panel\"" in html
