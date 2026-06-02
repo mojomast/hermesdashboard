@@ -5,8 +5,9 @@ from tests.dashboard_sources import DASHBOARD_CSS, DASHBOARD_JS, dashboard_templ
 def test_dashboard_template_links_extracted_static_assets():
     html = dashboard_template()
 
-    assert '<link rel="stylesheet" href="/static/css/dashboard.css">' in html
-    assert '<script src="/static/js/dashboard.js" defer></script>' in html
+    assert '<link rel="stylesheet" href="/static/css/dashboard.css' in html
+    assert '<script src="/static/js/dashboard.js' in html
+    assert 'drawer-dock-20260602' in html
     assert '<style>' not in html
     assert 'type="module"' not in html
     assert '{% include' not in html
@@ -90,6 +91,22 @@ def test_chat_image_paste_contract_is_preserved_across_template_and_assets():
     assert 'pendingImageAttachments' in js
     assert "type: 'image_url'" in js
     assert "userInput.addEventListener('paste', handleUserInputPaste)" in js
+
+
+def test_live_subagent_drawers_use_persistent_side_by_side_dock():
+    css = DASHBOARD_CSS.read_text(encoding="utf-8")
+    js = DASHBOARD_JS.read_text(encoding="utf-8")
+
+    assert "function ensureChildSessionDrawerDock()" in js
+    assert "function renderOpenChildSessionDrawers()" in js
+    assert "child-session-drawer-dock" in js
+    assert "host.insertAdjacentHTML" not in js
+    assert "renderOpenChildSessionDrawers();" in js
+    assert "appendDrawerEventRow(childSessionId, transcriptEl, event, { cache: false })" in js
+    assert ".child-session-drawer-dock" in css
+    assert "position: fixed" in css
+    assert "display: flex" in css
+    assert "flex: 0 0 min(440px" in css
 
 
 def test_static_route_is_registered_with_extracted_asset_directory():

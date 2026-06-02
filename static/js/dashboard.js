@@ -2526,6 +2526,7 @@ const drawerEventSources = new Map();
 const childDrawerEventCache = new Map();
 const childDrawerPausedSet = new Set();
 const childDrawerPausedQueue = new Map();
+const childDrawerStatusMap = new Map();
 // Track which drawers are open so they survive re-renders
 const openDrawerSet = new Set();
 const childDrawerRegistry = new Map();
@@ -2538,11 +2539,44 @@ function rememberChildDrawer(childSessionId, data = {}) {
 
 function renderChildSessionDrawerShell(childSessionId, label = '') {
     if (!childSessionId) return '';
+    const status = childDrawerStatusMap.get(childSessionId) || 'LIVE';
+    const isLive = status === 'LIVE';
+    const dotColor = status === 'ERROR' ? 'var(--error)' : (isLive ? '' : 'var(--success)');
     return `<div class="child-session-drawer" data-child-session-id="${escapeHtml(childSessionId)}">
         <div class="drawer-header"><div class="drawer-header-info"><span class="drawer-header-id">${escapeHtml(childSessionId.slice(0, 16))}</span>${label ? `<span class="drawer-header-label">${escapeHtml(label)}</span>` : ''}</div>
-        <div class="drawer-header-actions"><span class="live-badge active" data-badge="${escapeHtml(childSessionId)}"><span class="live-dot"></span>LIVE</span><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft pause</button><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard pause</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft steer</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard steer</button><button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}">Stop</button><button class="drawer-close-btn" type="button" onclick="closeChildSessionDrawer('${escapeHtml(childSessionId)}')">×</button></div></div>
+        <div class="drawer-header-actions"><span class="live-badge ${isLive ? 'active' : ''}" data-badge="${escapeHtml(childSessionId)}"><span class="live-dot"${dotColor ? ` style="animation:none;background:${dotColor};"` : ''}></span>${escapeHtml(status)}</span><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft pause</button><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard pause</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft steer</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard steer</button><button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}">Stop</button><button class="drawer-close-btn" type="button" onclick="closeChildSessionDrawer('${escapeHtml(childSessionId)}')">×</button></div></div>
         <div class="drawer-transcript" data-drawer-transcript="${escapeHtml(childSessionId)}"></div>
     </div>`;
+}
+
+function ensureChildSessionDrawerDock() {
+    let dock = document.getElementById('child-session-drawer-dock');
+    if (!dock) {
+        dock = document.createElement('div');
+        dock.id = 'child-session-drawer-dock';
+        dock.className = 'child-session-drawer-dock';
+        dock.setAttribute('aria-label', 'Live subagent drawers');
+        document.body.appendChild(dock);
+    }
+    return dock;
+}
+
+function renderOpenChildSessionDrawers() {
+    const dock = ensureChildSessionDrawerDock();
+    const openedDrawers = Array.from(openDrawerSet)
+        .map(childSessionId => childDrawerRegistry.get(childSessionId) || { childSessionId, label: '' })
+        .filter(entry => entry && entry.childSessionId);
+    dock.innerHTML = openedDrawers.map(entry => renderChildSessionDrawerShell(entry.childSessionId, entry.label || '')).join('');
+    dock.classList.toggle('has-drawers', openedDrawers.length > 0);
+    openedDrawers.forEach(entry => {
+        const transcript = getDrawerTranscript(entry.childSessionId);
+        if (!transcript) return;
+        if (!renderCachedDrawerEvents(entry.childSessionId, transcript)) {
+            transcript.innerHTML = drawerEventSources.has(entry.childSessionId)
+                ? '<div style="color:var(--text-dim);font-size:0.8rem;">No activity recorded yet.</div>'
+                : '<div style="color:var(--text-dim);font-size:0.8rem;">Loading session...</div>';
+        }
+    });
 }
 
 function getDrawerTranscript(childSessionId) {
@@ -2550,12 +2584,14 @@ function getDrawerTranscript(childSessionId) {
     return document.querySelector(`[data-drawer-transcript="${CSS.escape(childSessionId)}"]`);
 }
 
-function appendDrawerEventRow(childSessionId, transcriptEl, parsed) {
+function appendDrawerEventRow(childSessionId, transcriptEl, parsed, options = {}) {
     if (!childSessionId || !transcriptEl || !parsed) return;
-    const cache = childDrawerEventCache.get(childSessionId) || [];
-    cache.push(parsed);
-    if (cache.length > 300) cache.splice(0, cache.length - 300);
-    childDrawerEventCache.set(childSessionId, cache);
+    if (options.cache !== false) {
+        const cache = childDrawerEventCache.get(childSessionId) || [];
+        cache.push(parsed);
+        if (cache.length > 300) cache.splice(0, cache.length - 300);
+        childDrawerEventCache.set(childSessionId, cache);
+    }
     if (transcriptEl.textContent.trim() === 'No activity recorded yet.' || transcriptEl.textContent.trim() === 'Loading session...') transcriptEl.innerHTML = '';
     const row = document.createElement('div');
     row.className = 'drawer-tool-row';
@@ -2577,7 +2613,7 @@ function renderCachedDrawerEvents(childSessionId, transcriptEl) {
     const events = childDrawerEventCache.get(childSessionId) || [];
     if (!events.length || !transcriptEl) return false;
     transcriptEl.innerHTML = '';
-    events.forEach(event => appendDrawerEventRow(childSessionId, transcriptEl, event));
+    events.forEach(event => appendDrawerEventRow(childSessionId, transcriptEl, event, { cache: false }));
     return true;
 }
 
@@ -2632,13 +2668,12 @@ async function requestStopSubagent(childSessionId) {
 }
 
 function openChildSessionDrawer(childSessionId, anchorEl, label) {
-    if (!childSessionId || !anchorEl) return;
+    if (!childSessionId) return;
     const existing = document.querySelector(`.child-session-drawer[data-child-session-id="${CSS.escape(childSessionId)}"]`);
     if (existing) { existing.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
     openDrawerSet.add(childSessionId);
     rememberChildDrawer(childSessionId, { label: label || '', delegateCallId: anchorEl?.dataset?.delegateCallId || '' });
-    const host = anchorEl.closest('details, .tool-call-block, .tool-section') || anchorEl.parentElement || document.body;
-    host.insertAdjacentHTML('beforeend', renderChildSessionDrawerShell(childSessionId, label || ''));
+    renderOpenChildSessionDrawers();
     const transcript = getDrawerTranscript(childSessionId);
     if (transcript) transcript.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">Loading session...</div>';
     openDrawerEventSource(childSessionId, transcript);
@@ -2649,9 +2684,11 @@ function closeChildSessionDrawer(childSessionId) {
     if (source) { source.close(); drawerEventSources.delete(childSessionId); }
     document.querySelectorAll(`.child-session-drawer[data-child-session-id="${CSS.escape(childSessionId)}"]`).forEach(drawer => drawer.remove());
     openDrawerSet.delete(childSessionId);
+    renderOpenChildSessionDrawers();
 }
 
 function updateDrawerBadge(childSessionId, status) {
+    if (childSessionId && status) childDrawerStatusMap.set(childSessionId, status);
     document.querySelectorAll(`.live-badge[data-badge="${CSS.escape(childSessionId)}"]`).forEach(badge => {
         badge.classList.remove('active');
         badge.innerHTML = `<span class="live-dot" style="animation:none;background:${status === 'ERROR' ? 'var(--error)' : 'var(--success)'};"></span>${escapeHtml(status)}`;
