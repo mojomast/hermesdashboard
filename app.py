@@ -42,7 +42,16 @@ except Exception:  # Lightweight test stubs may omit StreamingResponse.
     StreamingResponse = PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "hermes-agent"))
+def _hermes_agent_path() -> Path:
+    configured = os.getenv("HERMES_AGENT_PATH")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path(__file__).parent.parent / "hermes-agent").resolve()
+
+
+HERMES_AGENT_PATH = _hermes_agent_path()
+if str(HERMES_AGENT_PATH) not in sys.path:
+    sys.path.insert(0, str(HERMES_AGENT_PATH))
 
 try:
     from hermes_constants import display_hermes_home, get_hermes_home
@@ -1890,7 +1899,29 @@ async def chat_stream(request):
     resume = bool(data.get("resume"))
     session_id = str(data.get("session_id") or "").strip() or None
 
-    if run_id and resume and run_id in ACTIVE_RUNS:
+    if run_id and resume:
+        if run_id not in ACTIVE_RUNS:
+            async def missing_run():
+                yield {
+                    "data": json.dumps(
+                        {
+                            "type": "error",
+                            "run_id": run_id,
+                            "content": (
+                                "Saved run is no longer available on the dashboard "
+                                "server. Start a new message to continue."
+                            ),
+                        }
+                    )
+                }
+                yield {"data": "[DONE]"}
+
+            return EventSourceResponse(
+                missing_run(),
+                headers={"Cache-Control": "no-store"},
+                ping=15,
+                send_timeout=30,
+            )
         state = ACTIVE_RUNS[run_id]
     else:
         messages = _sanitize_chat_messages(data.get("messages", []))
@@ -1982,6 +2013,8 @@ async def chat_stream(request):
 
     return EventSourceResponse(
         generate(),
+        ping=15,
+        send_timeout=30,
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
@@ -2954,47 +2987,83 @@ SKILL_DESCRIPTIONS = {
 }
 
 
+def _iter_skill_dirs(skills_dir: Path):
+    """Yield concrete skill directories from both flat and category/skill layouts."""
+    if not skills_dir.exists():
+        return
+    seen: set[Path] = set()
+    for item in sorted(skills_dir.iterdir()):
+        if not item.is_dir() or item.name.startswith("."):
+            continue
+        if (item / "SKILL.md").exists() or (item / "DESCRIPTION.md").exists():
+            resolved = item.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                yield item
+            continue
+        for child in sorted(item.iterdir()):
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+            if (child / "SKILL.md").exists() or (child / "DESCRIPTION.md").exists():
+                resolved = child.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    yield child
+
+
+def _skill_category(skill_dir: Path, skills_root: Path) -> str:
+    try:
+        rel = skill_dir.relative_to(skills_root)
+    except ValueError:
+        return ""
+    return rel.parts[0] if len(rel.parts) > 1 else ""
+
+
+def _find_skill_dir(skill_id: str) -> Optional[Path]:
+    safe_id = Path(str(skill_id)).name
+    if not safe_id or safe_id != str(skill_id):
+        return None
+    for skill_dir in _iter_skill_dirs(HERMES_HOME / "skills") or []:
+        if skill_dir.name == safe_id:
+            return skill_dir
+    return None
+
+
 async def get_skills(request):
     skills_dir = HERMES_HOME / "skills"
     skills = []
 
-    if skills_dir.exists():
-        for item in skills_dir.iterdir():
-            if item.is_dir() and not item.name.startswith("."):
-                skill_info = {"id": item.name, "path": str(item)}
+    for item in _iter_skill_dirs(skills_dir) or []:
+        category = _skill_category(item, skills_dir)
+        skill_info = {"id": item.name, "path": str(item), "category": category}
 
-                skill_md = item / "SKILL.md"
-                if skill_md.exists():
-                    with open(skill_md) as f:
-                        content = f.read()
-                        for line in content.split("\n")[:15]:
-                            if line.startswith("name:"):
-                                skill_info["name"] = line.split(":", 1)[1].strip()
-                            elif line.startswith("description:"):
-                                skill_info["description"] = line.split(":", 1)[
-                                    1
-                                ].strip()
+        skill_md = item / "SKILL.md"
+        if skill_md.exists():
+            try:
+                fm = _parse_skill_frontmatter(skill_md.read_text())
+            except Exception:
+                fm = {}
+            if fm.get("name"):
+                skill_info["name"] = fm["name"]
+            if fm.get("description"):
+                skill_info["description"] = fm["description"]
 
-                desc_md = item / "DESCRIPTION.md"
-                if desc_md.exists() and "description" not in skill_info:
-                    with open(desc_md) as f:
-                        content = f.read()
-                        for line in content.split("\n"):
-                            if line.startswith("description:"):
-                                skill_info["description"] = line.split(":", 1)[
-                                    1
-                                ].strip()
-                                break
+        desc_md = item / "DESCRIPTION.md"
+        if desc_md.exists() and "description" not in skill_info:
+            with open(desc_md) as f:
+                content = f.read()
+                for line in content.split("\n"):
+                    if line.startswith("description:"):
+                        skill_info["description"] = line.split(":", 1)[1].strip()
+                        break
 
-                if "name" not in skill_info:
-                    skill_info["name"] = (
-                        item.name.replace("-", " ").replace("_", " ").title()
-                    )
+        if "name" not in skill_info:
+            skill_info["name"] = item.name.replace("-", " ").replace("_", " ").title()
 
-                if "description" not in skill_info:
-                    skill_info["description"] = SKILL_DESCRIPTIONS.get(item.name, "")
+        if "description" not in skill_info:
+            skill_info["description"] = SKILL_DESCRIPTIONS.get(item.name, "")
 
-                skills.append(skill_info)
+        skills.append(skill_info)
 
     config = get_config()
     disabled = set(config.get("skills", {}).get("disabled", []))
@@ -3029,9 +3098,9 @@ async def toggle_skill(request):
 
 async def get_skill_content(request):
     skill_id = request.path_params["skill_id"]
-    skills_dir = HERMES_HOME / "skills" / skill_id
+    skills_dir = _find_skill_dir(skill_id)
 
-    if not skills_dir.exists():
+    if not skills_dir:
         return JSONResponse({"error": "Skill not found"}, status_code=404)
 
     content = ""
@@ -5682,6 +5751,27 @@ def _canonical_skill_id(raw_skill_id: str) -> str:
     return value
 
 
+def _timestamp_to_epoch(value) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    try:
+        dt = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
 def _session_label(title, summary, session_id: str) -> str:
     clean_title = " ".join(str(title or "").split()).strip()
     if clean_title:
@@ -5814,22 +5904,19 @@ async def get_graph_data(request):
             )
 
         # --- 1. Session nodes + model nodes + delegation edges ---
+        sessions = conn.execute(
+            """SELECT id, title, source, model, parent_session_id,
+                      summary, started_at, ended_at, message_count, tool_call_count,
+                      input_tokens, output_tokens, estimated_cost_usd
+               FROM sessions ORDER BY started_at DESC"""
+        ).fetchall()
         if since_ts is not None:
-            sessions = conn.execute(
-                """SELECT id, title, source, model, parent_session_id,
-                          summary, started_at, ended_at, message_count, tool_call_count,
-                          input_tokens, output_tokens, estimated_cost_usd
-                   FROM sessions WHERE started_at >= ?
-                   ORDER BY started_at DESC""",
-                (since_ts,),
-            ).fetchall()
-        else:
-            sessions = conn.execute(
-                """SELECT id, title, source, model, parent_session_id,
-                          summary, started_at, ended_at, message_count, tool_call_count,
-                          input_tokens, output_tokens, estimated_cost_usd
-                   FROM sessions ORDER BY started_at DESC"""
-            ).fetchall()
+            sessions = [
+                s
+                for s in sessions
+                if _timestamp_to_epoch(s["started_at"]) is None
+                or _timestamp_to_epoch(s["started_at"]) >= since_ts
+            ]
 
         model_counts: dict[str, int] = {}
         session_skill_edges: set[tuple[str, str]] = set()
@@ -5891,42 +5978,21 @@ async def get_graph_data(request):
             tool_counts: dict[str, int] = {}
             pending_skill_calls: dict[tuple[str, str], set[str]] = {}
 
+            msgs = conn.execute(
+                """SELECT session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, id
+                   FROM messages
+                   ORDER BY timestamp, id"""
+            ).fetchall()
             if since_ts is not None:
-                msgs = conn.execute(
-                    """SELECT session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, id
-                       FROM messages
-                       WHERE timestamp >= ?
-                       ORDER BY timestamp, id""",
-                    (since_ts,),
-                ).fetchall()
-            else:
-                msgs = conn.execute(
-                    """SELECT session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, id
-                       FROM messages
-                       ORDER BY timestamp, id"""
-                ).fetchall()
+                msgs = [
+                    m
+                    for m in msgs
+                    if _timestamp_to_epoch(m["timestamp"]) is None
+                    or _timestamp_to_epoch(m["timestamp"]) >= since_ts
+                ]
 
             # Also get messages from session JSON files (not yet flushed to DB)
             session_file_msgs = _get_messages_from_session_files(since_ts)
-            import sys
-            print(f"[graph-debug] Loaded {len(session_file_msgs)} messages from session files", file=sys.stderr)
-            # Convert session file msgs to same format as DB rows
-            for msg in session_file_msgs:
-                msgs.append({
-                    "session_id": msg.get("session_id", ""),
-                    "role": msg.get("role", ""),
-                    "content": msg.get("content", ""),
-                    "tool_call_id": msg.get("tool_call_id", ""),
-                    "tool_calls": json.dumps(msg.get("tool_calls")) if msg.get("tool_calls") else None,
-                    "tool_name": msg.get("tool_name", ""),
-                    "timestamp": msg.get("timestamp", 0),
-                    "id": msg.get("id", ""),
-                })
-
-            # Also get messages from session JSON files (not yet flushed to DB)
-            session_file_msgs = _get_messages_from_session_files(since_ts)
-            import sys
-            print(f"[graph-debug] Loaded {len(session_file_msgs)} messages from session files", file=sys.stderr)
             # Convert session file msgs to same format as DB rows
             for msg in session_file_msgs:
                 msgs.append({
@@ -6047,49 +6113,43 @@ async def get_graph_data(request):
 
             known_skill_ids: set[str] = set()
             if skills_dir.exists():
-                for category_dir in sorted(skills_dir.iterdir()):
-                    if not category_dir.is_dir() or category_dir.name.startswith("."):
-                        continue
-                    for skill_dir in sorted(category_dir.iterdir()):
-                        if not skill_dir.is_dir() or skill_dir.name.startswith("."):
-                            continue
+                for skill_dir in _iter_skill_dirs(skills_dir) or []:
+                    skill_id_str = skill_dir.name
+                    known_skill_ids.add(skill_id_str)
+                    skill_md = skill_dir / "SKILL.md"
+                    fm = {}
+                    if skill_md.exists():
+                        try:
+                            fm = _parse_skill_frontmatter(skill_md.read_text())
+                        except Exception:
+                            pass
 
-                        skill_id_str = skill_dir.name
-                        known_skill_ids.add(skill_id_str)
-                        skill_md = skill_dir / "SKILL.md"
-                        fm = {}
-                        if skill_md.exists():
-                            try:
-                                fm = _parse_skill_frontmatter(skill_md.read_text())
-                            except Exception:
-                                pass
+                    _add_node(
+                        f"skill:{skill_id_str}",
+                        fm.get("name", skill_id_str),
+                        "skill",
+                        name=fm.get("name", skill_id_str),
+                        description=fm.get("description", ""),
+                        category=_skill_category(skill_dir, skills_dir),
+                        enabled=skill_id_str not in disabled_skills,
+                    )
 
-                        _add_node(
-                            f"skill:{skill_id_str}",
-                            fm.get("name", skill_id_str),
-                            "skill",
-                            name=fm.get("name", skill_id_str),
-                            description=fm.get("description", ""),
-                            category=category_dir.name,
-                            enabled=skill_id_str not in disabled_skills,
-                        )
-
-                        # Related-skill edges
-                        related = (
-                            fm.get("metadata", {})
-                            .get("hermes", {})
-                            .get("related_skills", [])
-                        )
-                        if isinstance(related, list):
-                            for rel in related:
-                                if isinstance(rel, str) and rel:
-                                    edges.append(
-                                        {
-                                            "source": f"skill:{skill_id_str}",
-                                            "target": f"skill:{rel}",
-                                            "type": "relates_to",
-                                        }
-                                    )
+                    # Related-skill edges
+                    related = (
+                        fm.get("metadata", {})
+                        .get("hermes", {})
+                        .get("related_skills", [])
+                    )
+                    if isinstance(related, list):
+                        for rel in related:
+                            if isinstance(rel, str) and rel:
+                                edges.append(
+                                    {
+                                        "source": f"skill:{skill_id_str}",
+                                        "target": f"skill:{rel}",
+                                        "type": "relates_to",
+                                    }
+                                )
 
                 for session_id, skill_id in sorted(session_skill_edges):
                     canonical_skill_id = _canonical_skill_id(skill_id)
