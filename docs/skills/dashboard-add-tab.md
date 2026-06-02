@@ -1,7 +1,7 @@
 ---
 name: dashboard-add-tab
 description: Add a brand-new Hermes Dashboard tab end-to-end with nav/mobile buttons, panel DOM, hash routing, lazy loading, backend APIs when needed, regression tests, and smoke verification.
-tags: [dashboard, tabs, starlette, single-file-frontend, testing, navigation]
+tags: [dashboard, tabs, starlette, jinja-partials, static-assets, testing, navigation]
 related_skills: [dashboard-route-nav-patching, dashboard-games-watch-integration]
 ---
 
@@ -21,16 +21,22 @@ Use when the user asks to add a new tab/panel to the Hermes Dashboard, not merel
 
 ## Current repository shape
 
-The active Hermes Dashboard is a mostly single-file app at:
+The active Hermes Dashboard now uses a Jinja shell, panel partials, and extracted static assets:
 
 ```text
 ~/.hermes/dashboard/
 ├── app.py                  # Starlette backend + API routes
-├── templates/index.html    # single-file HTML/CSS/JS frontend
+├── templates/index.html    # Jinja shell
+├── templates/dashboard/partials/
+│   ├── nav.html            # desktop navigation
+│   ├── mobile_nav.html     # mobile navigation
+│   └── panels/             # one partial per dashboard panel
+├── static/css/dashboard.css
+├── static/js/dashboard.js  # classic script, not an ES module
 └── tests/                  # pytest regression tests
 ```
 
-There is no npm frontend build step for this repo unless a future refactor adds one. Prefer `python -m pytest` and, when app.py changed, `python -m py_compile app.py`.
+There is no npm frontend build step for this repo unless a future refactor adds one. Prefer `python3 -m pytest`, `python3 -m py_compile app.py`, and `node --check static/js/dashboard.js` when JavaScript changed.
 
 ## Procedure
 
@@ -43,24 +49,25 @@ There is no npm frontend build step for this repo unless a future refactor adds 
 2. **Inspect adjacent patterns first**
    ```bash
    cd ~/.hermes/dashboard
-   grep -n "data-panel=\"diagnostics\"\|validPanels\|DASHBOARD_TABS\|updateBreadcrumbs\|switch(panel)" templates/index.html
+   grep -n "data-panel=\"diagnostics\"" templates/dashboard/partials/nav.html templates/dashboard/partials/mobile_nav.html
+   grep -n "validPanels\|DASHBOARD_TABS\|DEFAULT_VISIBLE_DASHBOARD_TABS\|updateBreadcrumbs\|switch(panel)" static/js/dashboard.js
    grep -n "Route(\"/api" app.py
    ```
    Copy the closest existing tab pattern instead of inventing a new one.
 
-3. **Patch `templates/index.html` desktop and mobile nav**
+3. **Patch desktop and mobile nav partials**
    Add both:
    ```html
    <button class="tab" data-panel="<tab_id>"><Label></button>
    <button class="mobile-tab" data-panel="<tab_id>" onclick="navigateTo('<tab_id>')"><Label></button>
    ```
 
-4. **Patch the dashboard tab registry**
-   Add an entry to `DASHBOARD_TABS`:
+4. **Patch the dashboard tab registry and default visibility**
+   Add an entry to `DASHBOARD_TABS` in `static/js/dashboard.js`:
    ```js
    { id: '<tab_id>', label: '<Label>' },
    ```
-   This keeps the Settings/hidden-tabs machinery aware of the tab. Do not rely only on static buttons.
+   This keeps the Settings/hidden-tabs machinery aware of the tab. Do not rely only on static buttons. Add only broadly safe, fresh-install-ready tabs to `DEFAULT_VISIBLE_DASHBOARD_TABS`; mark local-tooling or experimental tabs with `experimental: true` and a warning.
 
 5. **Add the panel DOM**
    Add a sibling panel inside `.container`:
@@ -139,7 +146,7 @@ There is no npm frontend build step for this repo unless a future refactor adds 
     If protected `/api/*` smoke tests are needed from a live dashboard, fetch `/` first, extract `window.__HERMES_SESSION_TOKEN__`, and send it as `X-Hermes-Session-Token`.
 
 11. **Runtime refresh**
-    If `app.py` or templates changed and a dashboard is already running, restart the dashboard process or tell the user a hard refresh/restart is needed. Browser cache can otherwise show the previous single-file template.
+    If `app.py`, templates, or `static/` assets changed and a dashboard is already running, restart the dashboard process or tell the user a hard refresh/restart is needed. Browser cache can otherwise show stale frontend assets.
 
 ## Pitfalls
 

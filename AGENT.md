@@ -5,7 +5,10 @@ This directory contains the local Hermes dashboard app and a helper for running 
 ## Files
 
 - `app.py`: Starlette dashboard backend
-- `templates/index.html`: single-file dashboard frontend
+- `templates/index.html`: Jinja shell that includes dashboard partials
+- `templates/dashboard/partials/`: navigation, modals, session drawer, and panel markup
+- `static/css/dashboard.css`: extracted dashboard stylesheet served under `/static/css/`
+- `static/js/dashboard.js`: extracted classic dashboard script served under `/static/js/`
 - `run_api_server_only.py`: isolated Hermes API server launcher for dashboard chat
 - `docs/skills/`: vendored Hermes dashboard-editing skills/checklists for contributors
 
@@ -240,10 +243,21 @@ If summary regeneration returns `OPENROUTER_API_KEY not set`, the dashboard web 
 
 ## Frontend Rendering Notes
 
-The frontend is implemented inside `templates/index.html`.
+The frontend is now split across a Jinja shell, panel partials, and extracted
+classic static assets.
+
+Current frontend layout:
+
+- `templates/index.html`: shell that includes partials
+- `templates/dashboard/partials/`: nav, mobile nav, modals, session drawer, and panel markup
+- `static/css/dashboard.css`: dashboard stylesheet
+- `static/js/dashboard.js`: classic deferred dashboard script; do not convert to `type="module"` while inline handlers still depend on globals
 
 Important behavior:
 
+- fresh browsers use `DEFAULT_VISIBLE_DASHBOARD_TABS` for safe defaults; local-tooling tabs stay hidden until enabled from Settings
+- `hermes_dashboard_hidden_tabs_v1` preserves existing user visibility customizations
+- `Default Tabs` resets to safe defaults, while `Show All Tabs` stores an explicit empty hidden-tab list
 - `Chat Context` is collapsible as a whole
 - prompt breakdown rows are individually expandable
 - assistant messages render as an ordered event timeline
@@ -316,10 +330,10 @@ The Graph tab provides a D3 force-directed graph visualization of relationships 
 ### Architecture
 
 - **Backend**: `GET /api/graph` in `app.py` assembles nodes and edges from `state.db` and the skills directory
-- **Frontend**: D3.js v7 force simulation rendered to HTML5 Canvas inside `templates/index.html`
+- **Frontend**: D3.js v7 force simulation rendered to HTML5 Canvas by `static/js/dashboard.js`
 - Single `<canvas>` element replaces ~9000 SVG DOM elements. Rendering is batched via `requestAnimationFrame`
 - HiDPI support: canvas dimensions are scaled by `devicePixelRatio` for crisp rendering on retina displays
-- All code is inline in the single-file architecture (no separate JS/CSS files)
+- Frontend code currently lives in the classic `static/js/dashboard.js` compatibility script and panel markup lives under `templates/dashboard/partials/`.
 
 ### API: `GET /api/graph`
 
@@ -668,7 +682,7 @@ The `log(type, message, isError, details, imageData)` function writes entries to
 
    Also verify both of these are true:
    1. `gateway/platforms/api_server.py` is running from the patched process on `127.0.0.1:8642`
-   2. the dashboard web app on `0.0.0.0:8081` was restarted after the latest `templates/index.html` changes
+   2. the dashboard web app on `0.0.0.0:8081` was restarted after the latest template or `static/` asset changes
 
    If the delegate child rows stay on `No output yet.` after the tool completes, the browser is likely still serving stale JS that predates the synthetic-child/output merge fix.
 

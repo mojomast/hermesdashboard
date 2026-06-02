@@ -1,0 +1,10 @@
+.git
+.pytest_cache
+__pycache__
+*.pyc
+.env.local
+run-dashboard.sh
+run-api-server.sh
+start-background.sh
+run-dashboard-docker.local.sh
+*.log

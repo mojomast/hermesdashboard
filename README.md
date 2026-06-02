@@ -56,6 +56,16 @@ Then open:
 http://127.0.0.1:8081
 ```
 
+Docker alternative for the dashboard web app:
+
+```sh
+cd ~/hermesdashboard
+./run-api-server.sh
+./run-dashboard-docker.sh
+```
+
+The Docker path runs only the web dashboard in a container. The Hermes API still runs on the host through `./run-api-server.sh` or your normal Hermes API process.
+
 ## Accessing the Dashboard After Install
 
 If a user asks "how do I open it?", the short answer is:
@@ -101,6 +111,8 @@ If that returns JSON, the dashboard is running and reachable.
 If your Hermes install already provides an API server, you can skip the bundled launcher and point the dashboard at it with `HERMES_API`.
 
 In that mode, `./run-api-server.sh` becomes a helper that reminds you the dashboard is reusing your existing Hermes API.
+
+If you want the dashboard container instead of the native dashboard process, use `./run-dashboard-docker.sh` in place of `./run-dashboard.sh`. The launcher maps local `127.0.0.1` Hermes API URLs to `host.docker.internal` for the container.
 
 If you see `Permission denied` when starting the dashboard, the most likely cause is that `start.sh` is not executable. Fix it with:
 
@@ -190,6 +202,14 @@ Relevant config keys:
 - `dashboard_chat.default_nick_prefix`
 - `dashboard_chat.ident`
 - `dashboard_chat.realname`
+
+## Dashboard Tab Defaults
+
+Fresh browsers start with a safe default tab set: Chat, Message Board, Config, Secrets, Sessions, Memory, Skills, Cron, Schedule, and Graph.
+
+The Settings menu still registers every dashboard tab. Local-tooling or experimental tabs are hidden by default until explicitly enabled: Dashboard Chat, Agent Ops, Games, Roguelike, Diagnostics, Campaigns, Self-Improvement, Autonomous Development, and Vesuvius AutoResearch.
+
+Existing browsers with `hermes_dashboard_hidden_tabs_v1` in localStorage keep their customized tab visibility. **Default Tabs** resets to the safe default set; **Show All Tabs** makes every registered tab visible.
 
 ## Streaming Reliability
 
@@ -377,6 +397,18 @@ It depends on an existing Hermes install for:
 - [Frontend/General Refactor Map](docs/refactor-map.md)
 - [Self-Improvement / Autonomous Development Shipping Plan](docs/self-improvement-autonomous-shipping-plan.md)
 - [Contributing Guide](CONTRIBUTING.md)
+
+## Repository Layout
+
+- `app.py`: Starlette dashboard backend and API routes
+- `Dockerfile`: dashboard web app container image
+- `docker-compose.yml`: dashboard container runtime with host Hermes mounts
+- `templates/index.html`: Jinja shell that includes dashboard partials
+- `templates/dashboard/partials/`: navigation, modals, session drawer, and panel markup
+- `static/css/dashboard.css`: extracted dashboard stylesheet served under `/static/css/`
+- `static/js/dashboard.js`: extracted classic dashboard script served under `/static/js/`
+- `run-dashboard-docker.sh`: Docker Compose launcher that reads `.env.local`
+- `tests/`: pytest regression tests
 
 ## Contributing
 

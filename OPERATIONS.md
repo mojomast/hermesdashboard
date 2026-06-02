@@ -12,6 +12,15 @@ If you used the installer:
 
 Run these as your normal user, not with `sudo`.
 
+Docker dashboard alternative:
+
+```sh
+./run-api-server.sh
+./run-dashboard-docker.sh
+```
+
+The Docker alternative containers only the dashboard web app. Keep the Hermes API running on the host or point `.env.local` at an existing remote `HERMES_API`.
+
 ## Optional systemd Setup
 
 If the installer generated user services on Linux:
@@ -71,6 +80,15 @@ ss -ltnp | grep 8642
 - verify `8642` is listening
 - verify `API_SERVER_KEY` matches what the dashboard process is using
 - if you are not using the bundled launcher, verify `HERMES_API` points at your real Hermes API server
+- if the dashboard is running in Docker and your host API is local, verify the container uses `DOCKER_HERMES_API=http://host.docker.internal:<api-port>`
+
+### Docker dashboard fails to start
+
+- verify Docker Compose works with `docker compose version`
+- run `./run-api-server.sh` first unless you already have a Hermes API running elsewhere
+- verify `.env.local` exists; rerun `./install.sh` if it is missing
+- verify `HERMES_HOME` and `HERMES_AGENT_PATH` in `.env.local` are host paths Docker can mount
+- if port publishing fails, choose a different `DASHBOARD_PORT` in `.env.local`
 
 ### Config tab does not load or save
 

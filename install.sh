@@ -318,6 +318,9 @@ exec "$HERMES_VENV/bin/python" "$REPO_DIR/run_api_server_only.py"
 EOF
 
 chmod +x "$REPO_DIR/start.sh" "$REPO_DIR/run-dashboard.sh" "$REPO_DIR/run-api-server.sh"
+if [ -f "$REPO_DIR/run-dashboard-docker.sh" ]; then
+  chmod +x "$REPO_DIR/run-dashboard-docker.sh"
+fi
 
 if [ "$USE_EXISTING_API" = "y" ]; then
   cat > "$REPO_DIR/run-api-server.sh" <<'EOF'
@@ -406,33 +409,10 @@ elif [ "$OS_NAME" != "Linux" ]; then
   warn "On this OS, use ./run-api-server.sh and ./run-dashboard.sh or hook them into your own login/startup tool."
 fi
 
-CREATE_DOCKER=$(prompt_yes_no "Generate Docker wrapper files for the dashboard web app" "n")
-if [ "$CREATE_DOCKER" = "y" ]; then
-  cat > "$REPO_DIR/Dockerfile" <<'EOF'
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
-COPY . /app
-CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8081"]
-EOF
-
-  cat > "$REPO_DIR/docker-compose.yml" <<'EOF'
-services:
-  hermesdashboard:
-    build: .
-    ports:
-      - "8081:8081"
-    env_file:
-      - .env.local
-    environment:
-      HERMES_API: "http://host.docker.internal:8642"
-    volumes:
-      - ./:/app
-      - ${HERMES_HOME:-$HOME/.hermes}:${HERMES_HOME:-$HOME/.hermes}
-EOF
-  success "Generated Docker wrapper files: Dockerfile and docker-compose.yml"
-  warn "The Docker wrapper expects the Hermes API-only server to keep running on the host at port 8642."
+USE_DOCKER_DASHBOARD=$(prompt_yes_no "Show Docker dashboard run instructions" "n")
+if [ "$USE_DOCKER_DASHBOARD" = "y" ]; then
+  success "Docker support is available through Dockerfile, docker-compose.yml, and run-dashboard-docker.sh"
+  warn "Docker runs only the dashboard web app. Keep the Hermes API running on the host with ./run-api-server.sh or your normal Hermes API command."
 fi
 
 printf "\n"
@@ -448,9 +428,17 @@ printf "\n"
 printf "Next commands:\n"
 printf "  cd %s\n" "$REPO_DIR"
 printf "  ./run-api-server.sh\n"
-printf "  ./run-dashboard.sh\n"
+if [ "${USE_DOCKER_DASHBOARD:-n}" = "y" ]; then
+  printf "  ./run-dashboard-docker.sh\n"
+else
+  printf "  ./run-dashboard.sh\n"
+fi
 if [ -f "$REPO_DIR/start-background.sh" ]; then
   printf "  ./start-background.sh\n"
+fi
+if [ "${USE_DOCKER_DASHBOARD:-n}" = "y" ]; then
+  printf "\nNative dashboard alternative:\n"
+  printf "  ./run-dashboard.sh\n"
 fi
 printf "\nQuick smoke test:\n"
 if [ "$USE_EXISTING_API" = "y" ]; then
@@ -459,6 +447,10 @@ else
   printf "  ./run-api-server.sh\n"
   printf "  curl -s http://%s:%s/health\n" "$API_SERVER_HOST" "$API_SERVER_PORT"
 fi
-printf "  ./run-dashboard.sh\n"
+if [ "${USE_DOCKER_DASHBOARD:-n}" = "y" ]; then
+  printf "  ./run-dashboard-docker.sh\n"
+else
+  printf "  ./run-dashboard.sh\n"
+fi
 printf "  curl -s http://127.0.0.1:%s/api/status\n" "$DASHBOARD_PORT"
 printf "\nThen open: http://127.0.0.1:%s\n" "$DASHBOARD_PORT"

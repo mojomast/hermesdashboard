@@ -1,0 +1,19 @@
+services:
+  hermesdashboard:
+    build: .
+    ports:
+      - "${DASHBOARD_PORT:-8081}:8081"
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      DASHBOARD_HOST: "0.0.0.0"
+      DASHBOARD_PORT: "8081"
+      HERMES_HOME: "/hermes-home"
+      HERMES_AGENT_PATH: "/hermes-agent"
+      HERMES_API: "${DOCKER_HERMES_API:-http://host.docker.internal:8642}"
+    volumes:
+      - "${HERMES_HOME:-$HOME/.hermes}:/hermes-home"
+      - "${HERMES_AGENT_PATH:-$HOME/.hermes/hermes-agent}:/hermes-agent:ro"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

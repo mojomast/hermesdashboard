@@ -58,7 +58,11 @@ def test_hidden_tabs_are_respected_by_hash_routing():
 
     assert "!isDashboardTabVisible(panel)" in html
     assert "navigateTo('chat')" in html
-    assert "const validPanels = ['chat','dashboard-chat','message-board'" in html
+    valid_panels_block = html.split("const validPanels =", 1)[1].split(";", 1)[0]
+    assert "'chat'" in valid_panels_block
+    assert "'dashboard-chat'" in valid_panels_block
+    assert "'message-board'" in valid_panels_block
+    assert "'roguelike'" in valid_panels_block
     assert "applyDashboardTabSettings();" in html
     assert "renderDashboardTabSettings();" in html
 
@@ -94,4 +98,3 @@ def test_token_usage_top_bar_widget_is_rendered_before_theme_options():
     assert 'function renderTokenUsageSummary(' in html
     assert '/api/token-usage' in html
     assert 'startTokenUsagePolling();' in html
-
