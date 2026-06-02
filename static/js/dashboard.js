@@ -10537,6 +10537,7 @@ userInput.focus();
 
 // Initialize hash routing
 applyDndPopoutMode();
+applyDashboardTabSettings();
 handleHashChange();
 
 // === TRACK E: CommandPalette ===

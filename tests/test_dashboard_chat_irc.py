@@ -92,6 +92,8 @@ def test_dashboard_chat_tab_is_available_but_hidden_by_default():
     assert "const DEFAULT_VISIBLE_DASHBOARD_TABS" in source
     default_block = source.split("const DEFAULT_VISIBLE_DASHBOARD_TABS", 1)[1].split("]);", 1)[0]
     assert "'dashboard-chat'" not in default_block
+    startup_block = source.split("// Initialize hash routing", 1)[1].split("handleHashChange();", 1)[0]
+    assert "applyDashboardTabSettings();" in startup_block
     assert "type=\"module\"" not in source
 
 

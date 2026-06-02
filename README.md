@@ -172,7 +172,7 @@ Dashboard Chat is an optional IRC bridge separate from the main Hermes Chat and 
 
 Safety and privacy defaults:
 
-- Opening the tab reads `GET /api/dashboard-chat/status`; it does not connect to IRC.
+- Opening the tab reads local status/settings; it does not connect to IRC.
 - The websocket `/api/dashboard-chat/ws` attempts IRC network access only after `dashboard_chat.enabled` is true and the user clicks **Connect**.
 - Default identity strings are generic (`HermesDash*`, `hermesdash`, `Hermes Dashboard`) and do not use local usernames or hostnames.
 - The status, settings, and `/api/config` payloads report only `channel_key_configured`; they do not return the channel key.
