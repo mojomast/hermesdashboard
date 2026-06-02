@@ -4061,12 +4061,22 @@ async function saveDashboardChatSettings() {
     await loadDashboardChat(true);
 }
 
-function openDashboardChatPmTab(name) {
-    const target = name === 'self' ? 'self' : String(name || '').trim();
-    if (!target) return;
-    dashboardChatActiveTarget = target;
+function selectDashboardChatTarget(target) {
+    dashboardChatActiveTarget = target || '#hermesdashboard';
     const targetsEl = document.getElementById('dashboard-chat-targets');
     if (!targetsEl) return;
+    targetsEl.querySelectorAll('.dashboard-chat-tab').forEach(item => {
+        const active = item.dataset.target === dashboardChatActiveTarget;
+        item.classList.toggle('active', active);
+        if (active) item.classList.remove('blink');
+    });
+}
+
+function ensureDashboardChatPmTab(name, options = {}) {
+    const target = name === 'self' ? 'self' : String(name || '').trim();
+    if (!target) return null;
+    const targetsEl = document.getElementById('dashboard-chat-targets');
+    if (!targetsEl) return null;
     let tab = targetsEl.querySelector(`[data-target="${CSS.escape(target)}"]`);
     if (!tab) {
         tab = document.createElement('button');
@@ -4076,22 +4086,33 @@ function openDashboardChatPmTab(name) {
         tab.textContent = target === 'self' ? 'PM yourself' : `PM ${target}`;
         tab.onclick = () => openDashboardChatPmTab(target);
         targetsEl.appendChild(tab);
+    } else if (options.blink && dashboardChatActiveTarget !== target) {
+        tab.classList.add('blink');
     }
-    targetsEl.querySelectorAll('.dashboard-chat-tab').forEach(item => item.classList.toggle('active', item === tab));
-    tab.classList.remove('blink');
+    return tab;
+}
+
+function openDashboardChatPmTab(name) {
+    const tab = ensureDashboardChatPmTab(name);
+    if (!tab) return;
+    selectDashboardChatTarget(tab.dataset.target);
+}
+
+function noteDashboardChatPmActivity(name) {
+    ensureDashboardChatPmTab(name, { blink: true });
 }
 
 function connectDashboardChat() {
     if (dashboardChatSocket && dashboardChatSocket.readyState === WebSocket.OPEN) return;
     dashboardChatSocket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/dashboard-chat/ws');
-    appendDashboardChatLog('Connected to dashboard IRC bridge. Waiting for IRC registration', 'info');
+    appendDashboardChatLog('Opening Dashboard Chat websocket and requesting IRC bridge connection.', 'info');
     dashboardChatSocket.onmessage = (event) => {
         let data = {};
         try { data = JSON.parse(event.data); } catch (error) { data = { type: 'raw', text: event.data }; }
         if (data.status === 'joined') dashboardChatJoined = true;
         if (data.type === 'message' || data.type === 'notice') appendDashboardChatLog(`${data.private ? 'PM ' : ''}${data.from || '?'}: ${data.text || ''}`);
         else appendDashboardChatLog(data.text || data.status || data.type || 'event', data.type === 'error' ? 'error' : 'info');
-        if (data.from && data.from !== 'self') openDashboardChatPmTab(data.from);
+        if (data.from && data.from !== 'self') noteDashboardChatPmActivity(data.from);
     };
     dashboardChatSocket.onclose = () => appendDashboardChatLog('Dashboard Chat disconnected.', 'warn');
     dashboardChatSocket.onerror = () => appendDashboardChatLog('Dashboard Chat websocket error.', 'error');

@@ -2242,7 +2242,7 @@ async def get_status(request):
 
 
 async def get_config_endpoint(request):
-    return JSONResponse(get_raw_config())
+    return JSONResponse(_settings_safe_config(get_raw_config()))
 
 
 async def get_settings(request):

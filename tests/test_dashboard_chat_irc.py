@@ -30,6 +30,39 @@ class FakeWebSocket:
         self.close_code = code
 
 
+class WaitingWebSocket(FakeWebSocket):
+    async def receive_json(self):
+        await asyncio.Event().wait()
+
+
+class FakeReader:
+    def __init__(self, lines):
+        self.lines = list(lines)
+
+    async def readline(self):
+        if self.lines:
+            return self.lines.pop(0)
+        return b""
+
+
+class FakeWriter:
+    def __init__(self):
+        self.writes = []
+        self.closed = False
+
+    def write(self, value):
+        self.writes.append(value)
+
+    async def drain(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+    async def wait_closed(self):
+        pass
+
+
 def response_json(response):
     return json.loads(response.body.decode("utf-8"))
 
@@ -76,10 +109,17 @@ def test_dashboard_chat_frontend_is_jailed_and_privacy_labeled():
     assert ".dashboard-chat-tab.blink" in source
     assert "Blocked: arbitrary" in source
     assert "Wait for the server-confirmed #hermesdashboard join" in source
-    assert "Connected to dashboard IRC bridge. Waiting for IRC registration" in source
+    assert "Opening Dashboard Chat websocket and requesting IRC bridge connection" in source
+    assert "Connected to dashboard IRC bridge. Waiting for IRC registration" not in source
     assert "Defaults avoid local usernames, hostnames" in source
     assert "dashboard-chat-channel-key" in source
     assert 'type="password"' in source
+    assert "onclick=\"selectDashboardChatTarget('#hermesdashboard')\"" in source
+    assert "function selectDashboardChatTarget(target)" in source
+    assert "function ensureDashboardChatPmTab(name, options = {})" in source
+    assert "function noteDashboardChatPmActivity(name)" in source
+    assert "if (data.from && data.from !== 'self') noteDashboardChatPmActivity(data.from);" in source
+    assert "if (data.from && data.from !== 'self') openDashboardChatPmTab(data.from);" not in source
 
 
 def test_dashboard_chat_status_route_and_payload_do_not_expose_key(monkeypatch):
@@ -140,6 +180,40 @@ def test_dashboard_chat_settings_payload_masks_channel_key(monkeypatch):
     assert "supersecret" not in json.dumps(payload)
 
 
+def test_get_config_masks_dashboard_chat_channel_key(monkeypatch):
+    config = {
+        "dashboard_chat": {
+            "enabled": True,
+            "hosts": ["irc.example.test"],
+            "channel_key": "supersecret",
+        }
+    }
+    monkeypatch.setattr(dashboard_app, "get_raw_config", lambda: config)
+
+    payload = response_json(asyncio.run(dashboard_app.get_config_endpoint(FakeRequest())))
+
+    assert payload["dashboard_chat"]["channel_key"] == ""
+    assert payload["dashboard_chat"]["channel_key_configured"] is True
+    assert "supersecret" not in json.dumps(payload)
+
+
+def test_dashboard_chat_runtime_config_validates_port(monkeypatch):
+    monkeypatch.delenv("DASHBOARD_CHAT_IRC_PORT", raising=False)
+    assert chat_service._dashboard_chat_runtime_config({"dashboard_chat": {"port": "6698"}})["port"] == 6698
+    assert chat_service._dashboard_chat_runtime_config({"dashboard_chat": {"port": "nope"}})["port"] == 6697
+    assert chat_service._dashboard_chat_runtime_config({"dashboard_chat": {"port": 0}})["port"] == 6697
+    assert chat_service._dashboard_chat_runtime_config({"dashboard_chat": {"port": 70000}})["port"] == 6697
+
+    monkeypatch.setenv("DASHBOARD_CHAT_IRC_PORT", "6699")
+    assert chat_service._dashboard_chat_runtime_config({"dashboard_chat": {"port": 6698}})["port"] == 6699
+
+    monkeypatch.setenv("DASHBOARD_CHAT_IRC_PORT", "70000")
+    assert chat_service._dashboard_chat_runtime_config({"dashboard_chat": {"port": 6698}})["port"] == 6697
+
+    monkeypatch.setenv("DASHBOARD_CHAT_IRC_PORT", "bad")
+    assert chat_service._dashboard_chat_runtime_config({"dashboard_chat": {"port": 6698}})["port"] == 6697
+
+
 def test_dashboard_chat_helpers_preserve_privacy_and_sanitize(monkeypatch):
     monkeypatch.setenv("USER", "alice")
     monkeypatch.setenv("LOGNAME", "alice")
@@ -195,6 +269,67 @@ def test_dashboard_chat_disabled_websocket_does_not_open_network():
     assert ws.closed is True
     assert ws.close_code == 1000
     assert ws.sent[0]["status"] == "disabled"
+
+
+def test_dashboard_chat_all_hosts_fail_closes_without_key_leak():
+    ws = FakeWebSocket()
+
+    async def fail_open_connection(host, port, ssl):
+        raise OSError(f"bad key supersecret on {host}")
+
+    asyncio.run(
+        dashboard_chat_websocket_endpoint(
+            ws,
+            runtime_config=lambda: {
+                "enabled": True,
+                "hosts": ["irc1.example.test", "irc2.example.test"],
+                "port": 6697,
+                "tls": True,
+                "channel_key": "supersecret",
+                "default_nick_prefix": "HermesDash",
+                "ident": "hermesdash",
+                "realname": "Hermes Dashboard",
+            },
+            open_connection=fail_open_connection,
+        )
+    )
+
+    assert ws.closed is True
+    assert ws.close_code == 1011
+    assert ws.sent[-1]["type"] == "error"
+    assert "[redacted]" in ws.sent[-1]["text"]
+    assert "supersecret" not in json.dumps(ws.sent)
+
+
+def test_dashboard_chat_irc_eof_cancels_waiting_websocket_loop():
+    ws = WaitingWebSocket()
+    writer = FakeWriter()
+
+    async def open_connection(host, port, ssl):
+        return FakeReader([b""]), writer
+
+    asyncio.run(
+        asyncio.wait_for(
+            dashboard_chat_websocket_endpoint(
+                ws,
+                runtime_config=lambda: {
+                    "enabled": True,
+                    "hosts": ["irc.example.test"],
+                    "port": 6697,
+                    "tls": True,
+                    "channel_key": "supersecret",
+                    "default_nick_prefix": "HermesDash",
+                    "ident": "hermesdash",
+                    "realname": "Hermes Dashboard",
+                },
+                open_connection=open_connection,
+            ),
+            timeout=1,
+        )
+    )
+
+    assert writer.closed is True
+    assert "supersecret" not in json.dumps(ws.sent)
 
 
 def test_dashboard_chat_modules_do_not_import_app():

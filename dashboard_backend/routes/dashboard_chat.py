@@ -62,6 +62,12 @@ async def dashboard_chat_websocket_endpoint(
     nick = _sanitize_dashboard_chat_nick(None, cfg.get("default_nick_prefix"))
     reader = writer = None
     last_error = None
+
+    def safe_error(value: Any) -> str:
+        text = str(value or "")
+        key = str(cfg.get("channel_key") or "")
+        return text.replace(key, "[redacted]") if key else text
+
     for host in hosts:
         try:
             await websocket.send_text(
@@ -70,7 +76,7 @@ async def dashboard_chat_websocket_endpoint(
             reader, writer = await open_connection(host, cfg["port"], ssl=cfg["tls"])
             break
         except Exception as exc:  # pragma: no cover - exercised with fakes in tests
-            last_error = str(exc)
+            last_error = safe_error(exc)
             reader = writer = None
     if reader is None or writer is None:
         await websocket.send_text(
@@ -194,9 +200,20 @@ async def dashboard_chat_websocket_endpoint(
                     json.dumps({"type": "error", "text": "Blocked: arbitrary IRC commands are not allowed."})
                 )
 
+    tasks = [asyncio.create_task(irc_loop()), asyncio.create_task(client_loop())]
     try:
-        await asyncio.gather(irc_loop(), client_loop())
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        for task in done:
+            task.result()
     finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         try:
             send_irc(f"PART {channel} :Hermes Dashboard disconnect")
             await drain()

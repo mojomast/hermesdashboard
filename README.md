@@ -87,7 +87,7 @@ Important values:
 Examples:
 
 - if `DASHBOARD_HOST=127.0.0.1` and `DASHBOARD_PORT=8081`, open `http://127.0.0.1:8081`
-- if `DASHBOARD_HOST=0.0.0.0` and `DASHBOARD_PORT=8081`, open `http://localhost:8081` on the same machine
+- if `DASHBOARD_HOST=0.0.0.0` and `DASHBOARD_PORT=8081`, the server accepts remote access; open `http://localhost:8081` on the same machine
 - if the dashboard is bound externally on another machine, open `http://<that-machine-ip>:<DASHBOARD_PORT>` from your browser
 
 Quick check:
@@ -175,8 +175,10 @@ Safety and privacy defaults:
 - Opening the tab reads `GET /api/dashboard-chat/status`; it does not connect to IRC.
 - The websocket `/api/dashboard-chat/ws` attempts IRC network access only after `dashboard_chat.enabled` is true and the user clicks **Connect**.
 - Default identity strings are generic (`HermesDash*`, `hermesdash`, `Hermes Dashboard`) and do not use local usernames or hostnames.
-- The status endpoint reports only `channel_key_configured`; it does not return the channel key.
+- The status, settings, and `/api/config` payloads report only `channel_key_configured`; they do not return the channel key.
+- Invalid IRC ports fall back to the default `6697`.
 - The bridge is jailed to `#hermesdashboard`; arbitrary raw IRC/JOIN commands are blocked, and PMs are limited to yourself or users present in the channel.
+- IRC EOF/failure closes the websocket bridge cleanly, and inbound PM tabs blink without stealing the active compose target.
 
 Relevant config keys:
 

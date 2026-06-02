@@ -76,6 +76,8 @@ def _dashboard_chat_runtime_config(config: dict[str, Any] | None = None) -> dict
         port = int(os.getenv("DASHBOARD_CHAT_IRC_PORT", section.get("port", DASHBOARD_CHAT_DEFAULT_PORT)))
     except (TypeError, ValueError):
         port = DASHBOARD_CHAT_DEFAULT_PORT
+    if port < 1 or port > 65535:
+        port = DASHBOARD_CHAT_DEFAULT_PORT
 
     return {
         "enabled": bool(section.get("enabled", False)),

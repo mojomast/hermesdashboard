@@ -89,7 +89,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | dashboard_backend/services/message_board.py | ✅ EXTRACTED: message-board SQLite schema/read/write helpers; endpoint wrappers remain in app.py | message board sqlite path via HERMES_HOME | /api/message-board* via app wrappers | tests/test_message_board.py |
 | dashboard_backend/services/sessions.py | session listing, traces, transcript/history projections | session paths/caches | /api/sessions*, /api/traces* | session/execution trace tests |
 | dashboard_backend/services/dashboard_state.py + dashboard_backend/routes/dashboard_state.py | ✅ ROUTE WRAPPER EXTRACTED: persistence service owns SQLite load/save/delete; route module owns Request parsing/JSON envelopes; app wrappers retain endpoint identity and monkeypatch seams | state sqlite path, lock, allowed keys injected by app wrappers | /api/dashboard-state/* via app-level delegates | tests/test_dashboard_state_persistence.py, tests/test_dashboard_state_routes.py |
-| dashboard_backend/services/dashboard_chat.py + dashboard_backend/routes/dashboard_chat.py | ✅ OPTIONAL PARITY: pure Dashboard Chat / IRC sanitizer/parser/status helpers plus route wrappers; app keeps dirty-reference helper and endpoint names while gating websocket network access behind `dashboard_chat.enabled` | config injected from `get_config`; no service import of app.py | /api/dashboard-chat/status and optional /api/dashboard-chat/ws | tests/test_dashboard_chat_irc.py |
+| dashboard_backend/services/dashboard_chat.py + dashboard_backend/routes/dashboard_chat.py | ✅ OPTIONAL PARITY: pure Dashboard Chat / IRC sanitizer/parser/status helpers plus route wrappers; app keeps dirty-reference helper and endpoint names while gating websocket network access behind `dashboard_chat.enabled`; channel keys are masked in status/settings/config payloads, invalid ports fall back to default, websocket EOF cleanup and PM-tab focus behavior are covered | config injected from `get_config`; no service import of app.py | /api/dashboard-chat/status and optional /api/dashboard-chat/ws | tests/test_dashboard_chat_irc.py |
 | dashboard_backend/services/active_runs.py + child_streams.py | live chat stream orchestration, active run state, child event routing; Chat emergency-stop parity currently retained in `app.py` with `/api/sessions/{session_id}/interrupt`, `/api/runs/{run_id}/stop`, `stop_requested`, and sync SSE polling tests | ACTIVE_RUNS, ACTIVE_CHILD_STREAMS, STEER_MESSAGES, INTERRUPT_FLAGS | /chat, /api/session/* stream/control, /api/runs/{run_id}/stop | high-risk streaming tests + tests/test_dashboard_chat.py + full pytest |
 | dashboard_backend/services/self_improvement.py | self-improvement status, candidates, event coverage, controls | SELF_IMPROVEMENT_HOME, cron jobs, outbox files | /api/self-improvement* | tests/test_self_improvement_panel.py |
 | dashboard_backend/services/autonomous_development.py | pipeline registry/projections/control | ~/.hermes/autonomous-development, cron jobs | /api/autonomous-development* | tests/test_autonomous_development_panel.py |
@@ -678,7 +678,7 @@ Restore the dirty current dashboard's frontend-only Hermes Labyrinth/Roguelike t
 - Fixed optional/reference-only frontend gap: Roguelike/Hermes Labyrinth tab.
 - No backend API route, route wrapper, service, filesystem write, subprocess, or network dependency was added.
 - The tab remains experimental/hidden-by-default for fresh browsers through existing dashboard tab visibility policy.
-- Remaining dirty-reference gaps include Dashboard Chat IRC bridge, Voice/OmniVoice panels and backend routes, chat emergency-stop button parity, self-improvement event coverage history/recovery debt delta, and dashboard/backend restart routes with explicit mutation intent requirements.
+- Remaining dirty-reference gaps include Voice/OmniVoice panels and backend routes, chat emergency-stop button parity, self-improvement event coverage history/recovery debt delta, and dashboard/backend restart routes with explicit mutation intent requirements.
 
 ### Next step
 After this pass is committed and clean, choose one bounded remaining dirty-reference slice: chat emergency-stop parity if the user-control delta is highest priority, self-improvement history/debt read-only visibility if operator diagnostics are highest priority, or gated restart routes if backend parity is highest priority. Keep Voice/OmniVoice split into smaller backend/frontend sub-slices.
@@ -817,10 +817,10 @@ After this pass is committed and the tree is clean, continue with another low-ri
 7. Child stream / active run backend last among large contexts due to high global mutable state and streaming coupling.
 
 ## Drift audit from read-only reference
-- Reference has 124 route declarations; refactor has 104 plus extracted static mount in the last parity count. Missing reference surfaces include dashboard restart/backend restart, Dashboard Chat IRC bridge, Voice/OmniVoice routes, and optional/local experiment panels.
+- Reference has 124 route declarations; refactor has 104 plus extracted static mount in the last parity count. Missing reference surfaces include dashboard restart/backend restart, Voice/OmniVoice routes, and optional/local experiment panels.
 - Completed true retained-surface parity gaps: Scrolls snapshot and self-improvement repair/anomaly read-only visibility.
 - Dashboard/backend restart routes are real parity gaps but require explicit mutation intent gates.
-- Treat Dashboard Chat IRC bridge, OmniVoice/Voice, and Roguelike/Hermes Labyrinth as optional/reference experiments unless explicitly requested.
+- Treat OmniVoice/Voice and Roguelike/Hermes Labyrinth as optional/reference experiments unless explicitly requested.
 - Tests parity before this pass: reference had 18 test files / 118 tests; refactor had 17 files / 114 tests plus refactor-specific static/execution/chat sanitizer coverage.
 
 ## Next step

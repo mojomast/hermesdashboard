@@ -77,7 +77,7 @@ If the upstream Hermes runtime changes those import paths, the fallback behavior
 
 The standalone package now depends on the richer dashboard config surface from `app.py`:
 
-- `GET /api/config` returns raw persisted YAML
+- `GET /api/config` returns persisted YAML with sensitive dashboard chat channel keys masked
 - `GET /api/settings` returns the dashboard-oriented settings payload used by the Config tab
 - `POST /api/config` accepts dotted-path updates back into raw config
 
@@ -200,10 +200,13 @@ Current behavior:
 
 - `dashboard-chat` is registered in nav/mobile/settings but omitted from `DEFAULT_VISIBLE_DASHBOARD_TABS`, so new installs can enable it explicitly from Dashboard Settings.
 - `GET /api/dashboard-chat/status` is read-only and reports sanitized hosts/port/TLS/channel/identity plus `channel_key_configured` without returning the key.
+- `/api/config` and `/api/settings` also mask `dashboard_chat.channel_key` and expose only `channel_key_configured`.
+- Invalid configured or environment IRC ports fall back to the default `6697`.
 - `/api/dashboard-chat/ws` is registered when Starlette websocket routes are available, but it is inert until `dashboard_chat.enabled` is true and the user clicks Connect.
 - The bridge defaults to privacy-safe identity strings (`HermesDash*`, `hermesdash`, `Hermes Dashboard`) instead of local usernames/hostnames.
 - The websocket proxy is jailed to `#hermesdashboard`; arbitrary raw IRC/JOIN commands are blocked and PMs are limited to self or users present in the channel.
-- Tests use fake websocket/network seams and prove disabled Dashboard Chat does not call `asyncio.open_connection`.
+- Incoming PM tabs blink without changing the active compose target.
+- Tests use fake websocket/network seams and prove disabled Dashboard Chat does not call `asyncio.open_connection`; IRC EOF/failure cleanup closes the bridge cleanly.
 
 ## Auto-Start UX
 
