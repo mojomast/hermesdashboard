@@ -1064,7 +1064,7 @@ function promoteAssistantDiagnosticToToolNode(state, diagnosticNode, tool, optio
         ...tool,
         progress: normalizeToolProgressEntries(tool?.progress || diagnosticNode?.payload?.tool?.progress),
     };
-    if (preserveOutput && diagnosticNode?.payload?.tool?.output) {
+    if (preserveOutput && hasCapturedToolOutput(diagnosticNode?.payload?.tool)) {
         normalizedTool.output = diagnosticNode.payload.tool.output;
     }
     if (preserveProgress && (!Array.isArray(normalizedTool.progress) || !normalizedTool.progress.length)) {
@@ -1107,7 +1107,6 @@ function buildAssistantTraceToolNode(state, tool, options = {}) {
         call_id: tool.call_id || tool.id || `${stepNode?.node_id || 'tool'}_${sequence}`,
         name: tool.name || 'tool',
         arguments: tool.arguments || '',
-        output: tool.output || '',
         progress: normalizeToolProgressEntries(tool.progress),
     };
     const baseNode = options.node && typeof options.node === 'object'
@@ -1158,9 +1157,11 @@ function buildAssistantTraceDiagnosticNode(state, details = {}) {
         call_id: details.tool?.call_id || '',
         name: details.tool?.name || 'tool',
         arguments: details.tool?.arguments || '',
-        output: details.tool?.output || '',
         progress: normalizeToolProgressEntries(details.tool?.progress),
     };
+    if (Object.prototype.hasOwnProperty.call(details.tool || {}, 'output')) {
+        tool.output = details.tool.output;
+    }
     const baseNode = details.node && typeof details.node === 'object'
         ? {
             ...details.node,
@@ -1235,10 +1236,13 @@ function buildAssistantEventsFromTraceState(state) {
             if (node?.kind === 'tool_run') {
                 const tool = node?.payload?.tool || {};
                 return {
-                    type: tool.output ? 'tool_output' : 'tool_call',
+                    type: hasCapturedToolOutput(tool) ? 'tool_output' : 'tool_call',
                     tool,
                     node,
                 };
+            }
+            if (node?.kind === 'parallel_group') {
+                return { type: 'parallel_group', node };
             }
             if (node?.kind === 'diagnostic_artifact') {
                 return { type: 'diagnostic', node };
@@ -1271,7 +1275,7 @@ function buildAssistantEventsFromTraceState(state) {
         toolNodes.forEach((node) => {
             const tool = node?.payload?.tool || {};
             events.push({
-                type: tool.output ? 'tool_output' : 'tool_call',
+                type: hasCapturedToolOutput(tool) ? 'tool_output' : 'tool_call',
                 tool,
                 node,
             });
@@ -1292,7 +1296,13 @@ function syncAssistantTraceDerivedFields(state) {
         populateAssistantTraceItemsFromLegacyState(state);
     }
     if (trace.items.length) {
-        trace.toolNodes = trace.items.filter(node => node?.kind === 'tool_run');
+        trace.toolNodes = trace.items.flatMap((node) => {
+            if (node?.kind === 'tool_run') return [node];
+            if (node?.kind === 'parallel_group' && Array.isArray(node?.payload?.toolNodes)) {
+                return node.payload.toolNodes.filter(toolNode => toolNode?.kind === 'tool_run');
+            }
+            return [];
+        });
         trace.orphanNodes = trace.items.filter(node => node?.kind === 'diagnostic_artifact' && node?.payload?.orphan);
         trace.contentNode = trace.items.find(node => node?.kind === 'assistant_content') || null;
     }
@@ -1389,6 +1399,36 @@ function reduceAssistantTraceEvent(state, event, options = {}) {
         });
     }
 
+    if (event.type === 'parallel_group') {
+        const sourceNode = event.node && typeof event.node === 'object' ? event.node : {};
+        const sourceTools = Array.isArray(sourceNode?.payload?.toolNodes)
+            ? sourceNode.payload.toolNodes
+            : (Array.isArray(event.toolNodes) ? event.toolNodes : []);
+        const groupNode = {
+            ...sourceNode,
+            kind: 'parallel_group',
+            payload: {
+                ...(sourceNode.payload || {}),
+                label: sourceNode?.payload?.label || event.label || summarizeParallelGroupLabel(
+                    sourceTools.map(item => item?.payload?.tool || item?.tool || item),
+                ),
+                toolNodes: sourceTools.map((item, index) => {
+                    if (item?.kind === 'tool_run' && item?.payload?.tool) return item;
+                    const tool = item?.payload?.tool || item?.tool || item || {};
+                    return buildAssistantTraceToolNode(state, tool, {
+                        node: item?.kind === 'tool_run' ? item : null,
+                        sequence: index,
+                        sessionId: trace.sessionId,
+                    });
+                }),
+            },
+        };
+        if (!trace.items.some(node => node === groupNode || (groupNode.node_id && node?.node_id === groupNode.node_id))) {
+            trace.items.push(groupNode);
+        }
+        return syncAssistantTraceDerivedFields(state);
+    }
+
     const callId = event.call_id
         || event.tool_call_id
         || event.arguments?.call_id
@@ -1400,9 +1440,13 @@ function reduceAssistantTraceEvent(state, event, options = {}) {
         call_id: callId,
         name: event.name || event.tool?.name || 'tool',
         arguments: Object.prototype.hasOwnProperty.call(event, 'arguments') ? event.arguments : (event.tool?.arguments || ''),
-        output: Object.prototype.hasOwnProperty.call(event, 'output') ? event.output : (event.tool?.output || ''),
         progress: Object.prototype.hasOwnProperty.call(event, 'progress') ? event.progress : (event.tool?.progress || []),
     };
+    if (Object.prototype.hasOwnProperty.call(event, 'output')) {
+        toolEvent.output = event.output;
+    } else if (Object.prototype.hasOwnProperty.call(event.tool || {}, 'output')) {
+        toolEvent.output = event.tool.output;
+    }
 
     if (event.type === 'tool_call') {
         const existingNode = findAssistantToolNode(state, toolEvent.call_id);
@@ -1453,7 +1497,7 @@ function reduceAssistantTraceEvent(state, event, options = {}) {
             ...toolEvent,
             progress: normalizeToolProgressEntries(toolEvent.progress || targetNode.payload.tool.progress),
         };
-        if (!Object.prototype.hasOwnProperty.call(event, 'output') && targetNode.payload.tool?.output) {
+        if (!Object.prototype.hasOwnProperty.call(event, 'output') && hasCapturedToolOutput(targetNode.payload.tool)) {
             mergedTool.output = targetNode.payload.tool.output;
         }
         if (!Object.prototype.hasOwnProperty.call(event, 'progress') && Array.isArray(targetNode.payload.tool?.progress) && targetNode.payload.tool.progress.length) {
@@ -1529,7 +1573,6 @@ function reduceAssistantTraceEvent(state, event, options = {}) {
         }
         const unmatchedTool = {
             ...toolEvent,
-            output: '',
             progress: progressEntry.label ? [progressEntry] : [],
         };
         const normalizedUnmatchedArgs = normalizeAssistantTraceToolIdentityValue(unmatchedTool.arguments);
@@ -1574,41 +1617,9 @@ function reduceAssistantTraceEvent(state, event, options = {}) {
 
 function groupParallelToolEvents(events) {
     if (!Array.isArray(events) || !events.length) return [];
-    const grouped = [];
-    let idx = 0;
-    while (idx < events.length) {
-        const event = events[idx];
-        const isTool = event && (event.type === 'tool_call' || event.type === 'tool_output');
-        if (!isTool) {
-            grouped.push(event);
-            idx += 1;
-            continue;
-        }
-        const batch = [];
-        let cursor = idx;
-        while (cursor < events.length) {
-            const current = events[cursor];
-            if (!(current && (current.type === 'tool_call' || current.type === 'tool_output'))) break;
-            batch.push(current);
-            cursor += 1;
-        }
-        if (batch.length > 1) {
-            grouped.push({
-                type: 'parallel_group',
-                node: {
-                    kind: 'parallel_group',
-                    payload: {
-                        label: summarizeParallelGroupLabel(batch.map(item => item.tool || item)),
-                        toolNodes: batch.map(item => ({ payload: { tool: item.tool || item }, dom_id: item.node?.dom_id || null })),
-                    },
-                },
-            });
-        } else {
-            grouped.push(batch[0]);
-        }
-        idx = cursor;
-    }
-    return grouped;
+    // Adjacency only proves ordering, not concurrency. Parallel groups must arrive
+    // as explicit parallel_group events from the execution trace.
+    return events.filter(Boolean);
 }
 
 function buildHistoricalExecutionTrace(data) {
@@ -1921,7 +1932,7 @@ function renderInlineChildStage(node, traceContext = currentSessionTraceContext)
             </summary>
             <div class="inline-child-stage-body">
                 <div class="inline-stage-links">
-                    <button class="btn" onclick="event.stopPropagation();navigateTo('sessions/detail/${encodeURIComponent(child.id || '')}')">Open child session</button>
+                    <button class="btn execution-child-session-link" type="button" data-session-route="${escapeHtml(`sessions/detail/${encodeURIComponent(child.id || '')}`)}">Open child session</button>
                     <button class="btn live-view-btn" data-child-session-id="${escapeHtml(child.id || '')}" data-anchor-selector="#${escapeHtml(scopedExecutionDomId(node.dom_id, traceContext))}" data-label="${escapeHtml(child.title || '')}">Live view</button>
                     ${renderExecutionTargetLink(traceContext?.sessionId, { kind: 'child', id: child.id }, 'Jump here')}
                 </div>
@@ -2071,7 +2082,7 @@ function normalizeAssistantMessage(message) {
         const replayEvents = Array.isArray(message?.events) ? message.events : [];
         if (replayEvents.length) {
             replayEvents.forEach((event) => {
-                if (!event || event.type === 'parallel_group') return;
+                if (!event) return;
                 reduceAssistantTraceEvent(state, event);
             });
         } else if (Array.isArray(message?.tools)) {
@@ -2081,8 +2092,8 @@ function normalizeAssistantMessage(message) {
                     call_id: tool?.call_id || tool?.id || '',
                 };
                 reduceAssistantTraceEvent(state, {
-                    type: normalizedTool.output ? 'tool_output' : 'tool_call',
                     ...normalizedTool,
+                    type: hasCapturedToolOutput(normalizedTool) ? 'tool_output' : 'tool_call',
                 });
             });
         }
@@ -2091,8 +2102,26 @@ function normalizeAssistantMessage(message) {
     return syncAssistantTraceDerivedFields(state);
 }
 
+function safePayloadStringify(value, fallback = '') {
+    try {
+        const seen = new WeakSet();
+        const serialized = JSON.stringify(value, (key, item) => {
+            if (typeof item === 'bigint') return `${item.toString()}n`;
+            if (typeof item === 'function') return `[Function ${item.name || 'anonymous'}]`;
+            if (item && typeof item === 'object') {
+                if (seen.has(item)) return '[Circular]';
+                seen.add(item);
+            }
+            return item;
+        }, 2);
+        return serialized === undefined ? fallback : serialized;
+    } catch (error) {
+        return fallback || `[Unserializable payload: ${error?.message || 'unknown error'}]`;
+    }
+}
+
 function parseToolPayload(value) {
-    if (value === null || value === undefined || value === '') {
+    if (value === null || value === undefined) {
         return { raw: '', parsed: null };
     }
     if (typeof value === 'string') {
@@ -2105,9 +2134,9 @@ function parseToolPayload(value) {
         }
     }
     if (typeof value === 'object') {
-        return { raw: JSON.stringify(value, null, 2), parsed: value };
+        return { raw: safePayloadStringify(value, String(value)), parsed: value };
     }
-    return { raw: String(value), parsed: null };
+    return { raw: String(value), parsed: value };
 }
 
 function normalizeToolProgressEntries(progress) {
@@ -2273,35 +2302,68 @@ function renderToolRequest(parsedArgs, rawArgs) {
     return `<div class="tool-section tool-call-args"><label>Request</label><pre>${escapeHtml(rawArgs)}</pre></div>`;
 }
 
+function unwrapDelegateTaskEnvelope(payload, depth = 0) {
+    if (depth > 6 || payload === null || payload === undefined) return {};
+    if (Array.isArray(payload)) return { results: payload };
+    if (typeof payload === 'string') {
+        const parsed = parseToolPayload(payload).parsed;
+        return parsed === null ? {} : unwrapDelegateTaskEnvelope(parsed, depth + 1);
+    }
+    if (typeof payload !== 'object') return {};
+    if (Array.isArray(payload.results)) return payload;
+    for (const key of ['data', 'output', 'result', 'payload', 'response']) {
+        if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
+        const nested = unwrapDelegateTaskEnvelope(payload[key], depth + 1);
+        if (Array.isArray(nested.results)) {
+            return {
+                ...payload,
+                ...nested,
+                total_duration_seconds: payload.total_duration_seconds ?? nested.total_duration_seconds,
+            };
+        }
+    }
+    return payload;
+}
+
+function firstPresentValue(source, keys, fallback = '') {
+    if (!source || typeof source !== 'object') return fallback;
+    for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== null && source[key] !== undefined) {
+            return source[key];
+        }
+    }
+    return fallback;
+}
+
 function renderDelegateTaskOutput(parsedOutput, rawOutput) {
-    const envelope = Array.isArray(parsedOutput) ? { results: parsedOutput } : (parsedOutput || {});
-    const results = Array.isArray(envelope?.results) ? envelope.results : [];
-    const totalDuration = envelope?.total_duration_seconds;
+    const envelope = unwrapDelegateTaskEnvelope(parsedOutput);
+    const results = Array.isArray(envelope.results)
+        ? envelope.results.filter(result => result && typeof result === 'object')
+        : [];
+    const totalDuration = envelope.total_duration_seconds;
     const summaryHtml = results.length ? `
         <div class="delegate-task-results">${results.map((result, idx) => {
-            const status = result?.status || 'unknown';
+            const status = firstPresentValue(result, ['status'], 'unknown');
             const itemClass = status === 'completed' ? 'success' : 'error';
-            const title = result?.title
-                || result?.label
-                || (result?.task_index !== undefined ? `Task ${Number(result.task_index) + 1}` : `Task ${idx + 1}`);
+            const title = firstPresentValue(
+                result,
+                ['title', 'label'],
+                result.task_index !== undefined ? `Task ${Number(result.task_index) + 1}` : `Task ${idx + 1}`,
+            );
             const secondary = [
                 status,
-                result?.duration_seconds ? `${result.duration_seconds}s` : '',
-                result?.api_calls ? `${result.api_calls} API calls` : '',
-            ].filter(Boolean).join(' • ');
-            const body = result?.summary
-                || result?.final_summary
-                || result?.result
-                || result?.output
-                || result?.error
-                || '';
+                result.duration_seconds !== null && result.duration_seconds !== undefined ? `${result.duration_seconds}s` : '',
+                result.api_calls !== null && result.api_calls !== undefined ? `${result.api_calls} API calls` : '',
+            ].filter(value => value !== '').join(' • ');
+            const bodyValue = firstPresentValue(result, ['summary', 'final_summary', 'result', 'output', 'error'], '');
+            const body = typeof bodyValue === 'object' ? safePayloadStringify(bodyValue, String(bodyValue)) : String(bodyValue);
             return `
                 <div class="delegate-task-item ${itemClass}">
                     <div class="delegate-task-topline">
-                        <div class="delegate-task-title">${escapeHtml(title)}</div>
+                        <div class="delegate-task-title">${escapeHtml(String(title))}</div>
                         ${secondary ? `<div class="delegate-task-meta">${escapeHtml(secondary)}</div>` : ''}
                     </div>
-                    ${body ? `<div class="delegate-task-summary">${escapeHtml(body)}</div>` : ''}
+                    ${bodyValue !== '' ? `<div class="delegate-task-summary">${escapeHtml(body)}</div>` : ''}
                 </div>
             `;
         }).join('')}</div>
@@ -2309,7 +2371,7 @@ function renderDelegateTaskOutput(parsedOutput, rawOutput) {
     return `
         <div class="tool-section">
             <label>Output</label>
-            ${totalDuration ? `<div class="delegate-task-meta" style="margin-bottom:0.35rem;">Total duration: ${escapeHtml(String(totalDuration))}s</div>` : ''}
+            ${totalDuration !== null && totalDuration !== undefined ? `<div class="delegate-task-meta" style="margin-bottom:0.35rem;">Total duration: ${escapeHtml(String(totalDuration))}s</div>` : ''}
             ${summaryHtml || '<pre>No delegated task results were returned.</pre>'}
             <details class="delegate-task-raw">
                 <summary>Raw output</summary>
@@ -2416,12 +2478,12 @@ function renderSessionSearchOutput(parsedOutput, rawOutput) {
     `;
 }
 
-function renderToolOutput(toolName, parsedOutput, rawOutput) {
+function renderToolOutput(toolName, parsedOutput, rawOutput, outputCaptured = rawOutput !== '') {
     if (!rawOutput) {
         return `
             <div class="tool-section tool-call-result">
                 <label>Output</label>
-                <pre>Tool is still running. Final output will appear here when the call completes.</pre>
+                <pre>${outputCaptured ? 'Tool completed with empty output.' : 'Tool is still running. Final output will appear here when the call completes.'}</pre>
             </div>
         `;
     }
@@ -2462,7 +2524,7 @@ function renderDelegateChildStreams(tool) {
         const events = Array.isArray(childEvents[key]) ? childEvents[key] : [];
         return events.map(e => ({ ...e, taskKey: key }));
     });
-    const activeCount = allEvents.filter(e => e.type === 'tool_call' && !e.tool?.output).length;
+    const activeCount = allEvents.filter(e => e.type === 'tool_call' && !hasCapturedToolOutput(e.tool)).length;
     const completedCount = allEvents.filter(e => e.type === 'tool_output').length;
     const liveSummary = (allEvents.length || childEntries.length) ? `<div class="subagent-activity-summary">
         <span class="subagent-badge">${allEvents.length || childEntries.length} events</span>
@@ -2496,7 +2558,9 @@ function renderDelegateChildStreams(tool) {
         const stopBtn = childEntry ? `<button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childEntry.childSessionId)}">Stop</button>` : '';
         return `<details class="delegate-task-raw delegate-clickable" data-tool-key="delegate-child:${escapeHtml(`${tool.call_id || tool.name || 'delegate'}:${key}`)}" open>
             <summary>${escapeHtml(title)} <span class="event-count">(${events.length})</span>${drawerBtn}${stopBtn}</summary>
-            <div class="assistant-tools">${renderToolCallList(events.map((event, idx) => makeToolCardEntry(event.tool || event, idx)), { listId: `delegate:${tool.call_id || tool.name || 'delegate'}:${key}` })}</div>
+            <div class="assistant-tools">${renderToolCallList(events.map((event, idx) => makeToolCardEntry(event.tool || event, idx, {
+                renderScope: `delegate:${tool.call_id || tool.name || 'delegate'}:${key}`,
+            })))}</div>
         </details>`;
     }).join('');
     const liveOnlySections = childEntries
@@ -2540,7 +2604,7 @@ function renderChildSessionDrawerShell(childSessionId, label = '') {
     if (!childSessionId) return '';
     return `<div class="child-session-drawer" data-child-session-id="${escapeHtml(childSessionId)}">
         <div class="drawer-header"><div class="drawer-header-info"><span class="drawer-header-id">${escapeHtml(childSessionId.slice(0, 16))}</span>${label ? `<span class="drawer-header-label">${escapeHtml(label)}</span>` : ''}</div>
-        <div class="drawer-header-actions"><span class="live-badge active" data-badge="${escapeHtml(childSessionId)}"><span class="live-dot"></span>LIVE</span><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft pause</button><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard pause</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft steer</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard steer</button><button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}">Stop</button><button class="drawer-close-btn" type="button" onclick="closeChildSessionDrawer('${escapeHtml(childSessionId)}')">×</button></div></div>
+        <div class="drawer-header-actions"><span class="live-badge active" data-badge="${escapeHtml(childSessionId)}"><span class="live-dot"></span>LIVE</span><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft pause</button><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard pause</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft steer</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard steer</button><button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}">Stop</button><button class="drawer-close-btn" type="button" data-close-child-session="${escapeHtml(childSessionId)}">×</button></div></div>
         <div class="drawer-transcript" data-drawer-transcript="${escapeHtml(childSessionId)}"></div>
     </div>`;
 }
@@ -2707,6 +2771,23 @@ function ensureAssistantTracePendingDelegateChildren(state) {
 
 const toolCallUiState = new Map();
 const toolCallData = new Map();
+const assistantRenderScopes = new WeakMap();
+let assistantRenderScopeSequence = 0;
+
+function getAssistantRenderScope(message, normalized = null) {
+    const explicitScope = message?.renderScope || normalized?.renderTraceContext?.domScope;
+    const nodeScope = message?.traceNode?.node_id || normalized?.trace?.stepNode?.node_id;
+    if (explicitScope || nodeScope) return `assistant:${explicitScope || 'default'}:${nodeScope || 'message'}`;
+    if (message && typeof message === 'object') {
+        if (!assistantRenderScopes.has(message)) {
+            assistantRenderScopeSequence += 1;
+            assistantRenderScopes.set(message, `assistant:runtime:${assistantRenderScopeSequence}`);
+        }
+        return assistantRenderScopes.get(message);
+    }
+    assistantRenderScopeSequence += 1;
+    return `assistant:runtime:${assistantRenderScopeSequence}`;
+}
 
 function captureOpenToolState(container) {
     if (!container) return new Map();
@@ -3003,8 +3084,16 @@ function formatToolOutputText(rawOutput) {
     }
 }
 
-function getToolCallId(tool, idx = 0) {
-    return `tool:${tool?.call_id || `${tool?.name || 'tool'}_${idx}`}`;
+function getToolCallId(tool, idx = 0, options = {}) {
+    const scope = String(
+        options?.renderScope
+        || options?.node?.parent_node_id
+        || options?.node?.node_id
+        || options?.traceContext?.domScope
+        || options?.traceContext?.sessionId
+        || 'unscoped',
+    );
+    return `${scope}:tool:${tool?.call_id ?? `${tool?.name || 'tool'}_${idx}`}`;
 }
 
 function getToolActionLabel(toolName, parsedArgs, parsedOutput) {
@@ -3033,12 +3122,19 @@ function getToolActionLabel(toolName, parsedArgs, parsedOutput) {
     return defaults[toolName] || 'run';
 }
 
+function hasCapturedToolOutput(tool) {
+    return Boolean(tool)
+        && Object.prototype.hasOwnProperty.call(tool, 'output')
+        && tool.output !== null
+        && tool.output !== undefined;
+}
+
 function getToolStatusClass(tool) {
     const parsedOutput = parseToolPayload(tool?.output);
     const parsed = parsedOutput.parsed;
     if (parsed && typeof parsed === 'object' && (parsed.error || parsed.success === false || parsed.status === 'error')) return 'error';
     if (tool?.error) return 'error';
-    if (tool?.output) return 'complete';
+    if (hasCapturedToolOutput(tool)) return 'complete';
     const progress = Array.isArray(tool?.progress) ? tool.progress : [];
     return progress.length ? 'running' : 'pending';
 }
@@ -3155,7 +3251,7 @@ function renderToolPanelContent(id, panel) {
             <div class="tool-call-panel-header">Output</div>
             <div class="tool-call-panel-body">
                 ${getToolStatusClass(tool) === 'error' && errorText ? `<div class="tool-call-error-banner">${escapeHtml(String(errorText))}</div>` : ''}
-                ${renderToolOutput(tool.name || 'tool', parsedOutput.parsed, parsedOutput.raw || '')}
+                ${renderToolOutput(tool.name || 'tool', parsedOutput.parsed, parsedOutput.raw || '', hasCapturedToolOutput(tool))}
                 ${renderDelegateChildStreams(tool)}
             </div>
         `;
@@ -3172,7 +3268,7 @@ function renderToolPanelContent(id, panel) {
         };
         return `
             <div class="tool-call-panel-header">Raw Event</div>
-            <div class="tool-call-panel-body"><pre class="tool-output-json">${highlightJSON(JSON.stringify(rawPayload, null, 2))}</pre></div>
+            <div class="tool-call-panel-body"><pre class="tool-output-json">${highlightJSON(safePayloadStringify(rawPayload, '[Unserializable raw event]'))}</pre></div>
         `;
     }
     return '';
@@ -3193,7 +3289,7 @@ function renderToolCallPanels(id, tool) {
         ['metrics', 'Metrics'],
         ['raw', 'Raw'],
     ].map(([panelKey, label]) => `
-        <button type="button" class="tool-call-panel-btn${state.activePanel === panelKey ? ' active' : ''}" data-tool-panel-btn="${escapeHtml(id)}:${panelKey}" onclick="toggleToolPanel('${escapeHtml(id)}', '${panelKey}')">${label}</button>
+        <button type="button" class="tool-call-panel-btn${state.activePanel === panelKey ? ' active' : ''}" data-tool-panel-key="${escapeHtml(id)}" data-tool-panel-name="${panelKey}">${label}</button>
     `).join('');
     const renderedPanels = Array.from(state.renderedPanels || []);
     const errorText = parseToolPayload(tool?.output).parsed?.error || tool?.error || '';
@@ -3233,7 +3329,7 @@ function renderToolCallPanels(id, tool) {
 
 function renderToolBlock(tool, idx, options = {}) {
     const toolName = tool.name || `tool_${idx + 1}`;
-    const rawToolKey = getToolCallId(tool, idx);
+    const rawToolKey = getToolCallId(tool, idx, options);
     const domIdValue = options?.node?.dom_id ? scopedExecutionDomId(options.node.dom_id, options?.traceContext || null) : '';
     const domId = domIdValue ? ` id="${escapeHtml(domIdValue)}"` : '';
     const executionClass = options?.node?.dom_id ? ' execution-node' : '';
@@ -3267,17 +3363,17 @@ function renderToolBlock(tool, idx, options = {}) {
     const drawerBtn = renderDelegateLiveActionStrip(childEntries, tool, rawToolKey);
     return `
         <div class="tool-call-block${state.expanded ? ' active' : ''}${executionClass}" data-tool-id="${escapeHtml(rawToolKey)}"${domId}>
-            <button type="button" class="tool-call-pill" onclick="toggleToolCall('${escapeHtml(rawToolKey)}')">
+            <button type="button" class="tool-call-pill" data-tool-toggle="${escapeHtml(rawToolKey)}">
                 <span class="tool-call-status-dot ${statusClass}"></span>
                 <span class="tool-call-name">${escapeHtml(toolName)}</span>
                 <span class="tool-call-action-badge">${escapeHtml(actionLabel)}</span>
                 <span class="tool-call-summary-text">${escapeHtml(targetSummary || collapsedSummary || '-')}</span>
                 <span class="tool-call-meta">
-                    ${drawerBtn}
                     <span class="tool-call-timer" data-call-id="${escapeHtml(tool.call_id || '')}">${escapeHtml(durationLabel || '')}</span>
                     <span class="tool-call-chevron">▶</span>
                 </span>
             </button>
+            ${drawerBtn}
             ${renderToolCallPanels(rawToolKey, tool)}
         </div>
     `;
@@ -3285,11 +3381,31 @@ function renderToolBlock(tool, idx, options = {}) {
 
 function renderToolCallList(entries = []) {
     if (!Array.isArray(entries) || !entries.length) return '';
-    return `<div class="tool-call-list">${entries.map((entry) => entry.html || '').join('')}</div>`;
+    const validEntries = entries.filter(entry => entry && typeof entry === 'object');
+    if (!validEntries.length) return '';
+    const visibleStart = Math.max(0, validEntries.length - 5);
+    const olderEntries = validEntries.slice(0, visibleStart);
+    const latestEntries = validEntries.slice(visibleStart);
+    const olderHtml = olderEntries.length ? `
+        <details class="execution-history-older">
+            <summary>Show ${olderEntries.length} earlier call${olderEntries.length === 1 ? '' : 's'}</summary>
+            <div class="tool-call-list">${olderEntries.map(entry => entry.html || '').join('')}</div>
+        </details>
+    ` : '';
+    return `
+        <section class="execution-history-bubble" aria-label="Execution history">
+            <div class="execution-history-header">
+                <span>Execution</span>
+                <span>${validEntries.length} call${validEntries.length === 1 ? '' : 's'}</span>
+            </div>
+            ${olderHtml}
+            <div class="tool-call-list execution-history-latest">${latestEntries.map(entry => entry.html || '').join('')}</div>
+        </section>
+    `;
 }
 
 function makeToolCardEntry(tool, idx, options = {}) {
-    const key = getToolCallId(tool, idx);
+    const key = getToolCallId(tool, idx, options);
     return {
         key,
         tool,
@@ -3306,8 +3422,8 @@ function getParallelToolBatchStatusClass(tools = []) {
     return 'pending';
 }
 
-function renderParallelToolBatch(toolNodes = [], traceContext = null, label = '') {
-    const batchId = `parallel:${toolNodes.map((node, idx) => getToolCallId(node?.payload?.tool || {}, idx)).join('|')}`;
+function renderParallelToolBatch(toolNodes = [], traceContext = null, label = '', renderScope = 'parallel') {
+    const batchId = `${renderScope}:parallel:${toolNodes.map((node, idx) => getToolCallId(node?.payload?.tool || {}, idx, { node, traceContext, renderScope })).join('|')}`;
     const state = ensureToolCallUiState(batchId);
     const tools = toolNodes.map((node) => node?.payload?.tool || {}).filter(Boolean);
     const names = Array.from(new Set(tools.map((tool) => tool?.name || 'tool'))).slice(0, 3).join(', ');
@@ -3315,7 +3431,7 @@ function renderParallelToolBatch(toolNodes = [], traceContext = null, label = ''
     const batchStatusClass = getParallelToolBatchStatusClass(tools);
     return `
         <div class="tool-call-parallel-block${state.expanded ? ' active' : ''}" data-tool-id="${escapeHtml(batchId)}">
-            <button type="button" class="tool-call-parallel-pill" onclick="toggleToolCall('${escapeHtml(batchId)}')">
+            <button type="button" class="tool-call-parallel-pill" data-tool-toggle="${escapeHtml(batchId)}">
                 <span class="tool-call-status-dot ${escapeHtml(batchStatusClass)}"></span>
                 <span class="tool-call-chip">parallel ${toolNodes.length}</span>
                 <span class="tool-call-summary-text">${escapeHtml(label || `parallel · ${toolNodes.length} calls · ${names}`)}</span>
@@ -3326,7 +3442,7 @@ function renderParallelToolBatch(toolNodes = [], traceContext = null, label = ''
             </button>
             <div class="tool-call-parallel-expand">
                 <div class="tool-call-parallel-inner">
-                    <div class="tool-call-nested-list">${toolNodes.map((node, toolIdx) => renderToolBlock(node.payload.tool, toolIdx, { node, traceContext })).join('')}</div>
+                    <div class="tool-call-nested-list">${toolNodes.map((node, toolIdx) => renderToolBlock(node.payload.tool, toolIdx, { node, traceContext, renderScope })).join('')}</div>
                 </div>
             </div>
         </div>
@@ -3345,15 +3461,14 @@ function syncToolCallUi(root = document) {
             const panelName = panelId?.split(':').pop();
             panelNode.classList.toggle('active', state.activePanel === panelName);
         });
-        node.querySelectorAll('[data-tool-panel-btn]').forEach((button) => {
-            const panelId = button.getAttribute('data-tool-panel-btn');
-            const panelName = panelId?.split(':').pop();
+        node.querySelectorAll('[data-tool-panel-key]').forEach((button) => {
+            const panelName = button.getAttribute('data-tool-panel-name');
             button.classList.toggle('active', state.activePanel === panelName);
         });
     });
 }
 
-function groupSequentialToolCards(events = [], traceContext = null) {
+function groupSequentialToolCards(events = [], traceContext = null, renderScope = 'assistant') {
     if (!Array.isArray(events) || !events.length) return [];
     const rendered = [];
     let pendingTools = [];
@@ -3370,14 +3485,14 @@ function groupSequentialToolCards(events = [], traceContext = null) {
             return;
         }
         if (event.type === 'tool_call' || event.type === 'tool_output') {
-            pendingTools.push(makeToolCardEntry(event.tool || event, idx, { node: event.node || null, traceContext }));
+            pendingTools.push(makeToolCardEntry(event.tool || event, idx, { node: event.node || null, traceContext, renderScope }));
             return;
         }
         flushPendingTools();
         if (event.type === 'parallel_group') {
             const toolNodes = Array.isArray(event.node?.payload?.toolNodes) ? event.node.payload.toolNodes : [];
             const label = event.node?.payload?.label || summarizeParallelGroupLabel(toolNodes.map(node => node.payload.tool));
-            rendered.push(renderParallelToolBatch(toolNodes, traceContext, `${label} · ${toolNodes.length} calls`));
+            rendered.push(renderParallelToolBatch(toolNodes, traceContext, `${label} · ${toolNodes.length} calls`, renderScope));
             return;
         }
         if (event.type === 'diagnostic' && event.node?.payload?.orphan) {
@@ -3448,11 +3563,11 @@ function toggleToolPanel(id, panel) {
     syncToolCallUi(document);
 }
 
-function renderAssistantEvents(normalized) {
+function renderAssistantEvents(normalized, renderScope = 'assistant') {
     const events = normalized.events.length
         ? normalized.events
         : [{ type: 'content', text: normalized.content || '' }];
-    return groupSequentialToolCards(events, normalized.renderTraceContext || null).join('');
+    return groupSequentialToolCards(events, normalized.renderTraceContext || null, renderScope).join('');
 }
 
 function extractLegacyToolMarkers(content) {
@@ -3481,7 +3596,8 @@ function extractLegacyToolMarkers(content) {
 
 function renderAssistantMessage(message) {
     const normalized = mergeLegacyMarkersIntoEvents(normalizeAssistantMessage(message));
-    const bodyHtml = renderAssistantEvents(normalized);
+    const renderScope = getAssistantRenderScope(message, normalized);
+    const bodyHtml = renderAssistantEvents(normalized, renderScope);
     const usage = normalized.usage || {};
     const wrapperIdValue = message?.traceNode?.dom_id ? scopedExecutionDomId(message.traceNode.dom_id, normalized.renderTraceContext || null) : '';
     const wrapperId = wrapperIdValue ? ` id="${escapeHtml(wrapperIdValue)}"` : '';
@@ -3505,24 +3621,56 @@ function renderAssistantMessage(message) {
 
 function normalizeToolCallEntries(toolCalls) {
     if (!Array.isArray(toolCalls)) return [];
-    return toolCalls.map((tool, idx) => {
-        if (tool && tool.function) {
-            return {
-                call_id: tool.call_id || tool.id || `tool_${idx + 1}`,
-                name: tool.function.name || `tool_${idx + 1}`,
-                arguments: tool.function.arguments || '',
-                output: tool.output || '',
-                progress: normalizeToolProgressEntries(tool.progress),
-            };
-        }
-        return {
-            call_id: tool.call_id || tool.id || `tool_${idx + 1}`,
-            name: tool.name || tool.tool_name || `tool_${idx + 1}`,
-            arguments: tool.arguments || '',
-            output: tool.output || tool.content || '',
+    return toolCalls.reduce((normalized, tool, idx) => {
+        if (!tool || typeof tool !== 'object' || Array.isArray(tool)) return normalized;
+        const functionPayload = tool.function && typeof tool.function === 'object' ? tool.function : null;
+        const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source || {}, key);
+        const argumentsValue = functionPayload && hasOwn(functionPayload, 'arguments')
+            ? functionPayload.arguments
+            : (hasOwn(tool, 'arguments') ? tool.arguments : '');
+        const outputValue = hasOwn(tool, 'output')
+            ? tool.output
+            : (hasOwn(tool, 'content') ? tool.content : '');
+        const { function: _functionPayload, type: _wireType, ...metadata } = tool;
+        const normalizedTool = {
+            ...metadata,
+            call_id: tool.call_id ?? tool.id ?? `tool_${idx + 1}`,
+            name: functionPayload?.name ?? tool.name ?? tool.tool_name ?? `tool_${idx + 1}`,
+            arguments: argumentsValue,
             progress: normalizeToolProgressEntries(tool.progress),
         };
-    });
+        if (hasOwn(tool, 'output') || hasOwn(tool, 'content')) {
+            normalizedTool.output = outputValue;
+        }
+        normalized.push(normalizedTool);
+        return normalized;
+    }, []);
+}
+
+function renderLogDetails(details) {
+    if (details === null || details === undefined) return '';
+    if (typeof details !== 'object' || Array.isArray(details)) {
+        return `<div class="detail-section"><div class="detail-label">Details</div><pre>${escapeHtml(String(details))}</pre></div>`;
+    }
+    const sections = [];
+    const labels = { args: 'Arguments', result: 'Result', error: 'Error' };
+    for (const key of Object.keys(labels)) {
+        if (!Object.prototype.hasOwnProperty.call(details, key)) continue;
+        const value = details[key];
+        const text = typeof value === 'object' && value !== null
+            ? safePayloadStringify(value, String(value))
+            : String(value ?? '');
+        const errorClass = key === 'error' ? ' detail-label-error' : '';
+        sections.push(`<div class="detail-section"><div class="detail-label${errorClass}">${labels[key]}</div><pre>${escapeHtml(text)}</pre></div>`);
+    }
+    const usefulFields = Object.fromEntries(
+        Object.entries(details).filter(([key]) => !Object.prototype.hasOwnProperty.call(labels, key)),
+    );
+    if (Object.keys(usefulFields).length) {
+        sections.push(`<div class="detail-section"><div class="detail-label">Fields</div><pre>${escapeHtml(safePayloadStringify(usefulFields, String(usefulFields)))}</pre></div>`);
+    }
+    sections.push(`<div class="detail-section detail-section-raw"><div class="detail-label">Raw payload</div><pre>${escapeHtml(safePayloadStringify(details, String(details)))}</pre></div>`);
+    return sections.join('');
 }
 
 function getDelegateChildBucket(delegateTool, taskIndex = null) {
@@ -3749,26 +3897,14 @@ function log(type, message, isError = false, details = null, imageData = null) {
 
     const entry = document.createElement('div');
 
-    const hasDetails = details || imageData;
+    const hasDetails = (details !== null && details !== undefined) || Boolean(imageData);
     entry.className = 'log-entry' + (hasDetails ? ' log-expandable' : '');
 
     let detailsHtml = '';
     if (hasDetails) {
         detailsHtml = `<div class="log-details">`;
-        if (details) {
-            if (typeof details === 'object') {
-                if (details.args) {
-                    detailsHtml += `<div class="detail-section"><div class="detail-label">Arguments</div><pre>${escapeHtml(JSON.stringify(details.args, null, 2))}</pre></div>`;
-                }
-                if (details.result) {
-                    detailsHtml += `<div class="detail-section"><div class="detail-label">Result</div><pre>${escapeHtml(typeof details.result === 'object' ? JSON.stringify(details.result, null, 2) : details.result)}</pre></div>`;
-                }
-                if (details.error) {
-                    detailsHtml += `<div class="detail-section"><div class="detail-label" style="color: var(--error)">Error</div><pre>${escapeHtml(details.error)}</pre></div>`;
-                }
-            } else {
-                detailsHtml += `<pre>${escapeHtml(details)}</pre>`;
-            }
+        if (details !== null && details !== undefined) {
+            detailsHtml += renderLogDetails(details);
         }
         if (imageData) {
             detailsHtml += `<img src="${imageData}" alt="Screenshot">`;
@@ -4587,6 +4723,31 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // Listen for hash changes (browser back/forward) and close settings on outside click/Escape
 document.addEventListener('click', (event) => {
+    const toolToggle = event.target.closest?.('[data-tool-toggle]');
+    if (toolToggle) {
+        toggleToolCall(toolToggle.getAttribute('data-tool-toggle'));
+        return;
+    }
+    const panelToggle = event.target.closest?.('[data-tool-panel-key]');
+    if (panelToggle) {
+        toggleToolPanel(
+            panelToggle.getAttribute('data-tool-panel-key'),
+            panelToggle.getAttribute('data-tool-panel-name'),
+        );
+        return;
+    }
+    const childRoute = event.target.closest?.('[data-session-route]');
+    if (childRoute) {
+        event.preventDefault();
+        event.stopPropagation();
+        navigateTo(childRoute.getAttribute('data-session-route'));
+        return;
+    }
+    const closeChild = event.target.closest?.('[data-close-child-session]');
+    if (closeChild) {
+        closeChildSessionDrawer(closeChild.getAttribute('data-close-child-session'));
+        return;
+    }
     const wrapper = document.querySelector('.dashboard-settings-wrapper');
     if (wrapper && !wrapper.contains(event.target)) closeDashboardSettings();
 });
