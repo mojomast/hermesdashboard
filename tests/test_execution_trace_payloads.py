@@ -1106,7 +1106,7 @@ return {
         self.assertTrue(result["hasRaw"])
         self.assertTrue(result["noEmptyWarning"])
 
-    def test_execution_history_shows_latest_five_and_keeps_full_history_expandable(self):
+    def test_execution_history_shows_latest_three_and_keeps_full_history_expandable(self):
         result = _run_dashboard_trace_js(
             """
 globalThis.escapeHtml = (value) => String(value ?? '');
@@ -1115,15 +1115,18 @@ const html = renderToolCallList(entries);
 return {
   hasBubble: html.includes('execution-history-bubble'),
   hiddenCount: (html.match(/execution-history-older/g) || []).length,
-  visibleLatest: ['call-3', 'call-4', 'call-5', 'call-6', 'call-7'].every(value => html.includes(value)),
-  toggleLabel: html.includes('Show 2 earlier calls'),
+  latestHtml: html.split('execution-history-latest')[1],
+  toggleLabel: html.includes('Show 4 earlier calls'),
 };
             """
         )
 
         self.assertTrue(result["hasBubble"])
         self.assertEqual(result["hiddenCount"], 1)
-        self.assertTrue(result["visibleLatest"])
+        self.assertNotIn("call-4", result["latestHtml"])
+        self.assertIn("call-5", result["latestHtml"])
+        self.assertIn("call-6", result["latestHtml"])
+        self.assertIn("call-7", result["latestHtml"])
         self.assertTrue(result["toggleLabel"])
 
     def test_adjacent_calls_are_not_inferred_to_be_parallel(self):

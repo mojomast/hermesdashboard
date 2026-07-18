@@ -3131,43 +3131,34 @@ body {
     margin-bottom: 0.45rem;
 }
 
-/* Child Session Drawer */
-.child-session-drawer-dock {
+/* Persistent external child-session windows */
+#subagent-window-layer {
     position: fixed;
-    left: calc(var(--sidebar-width, 250px) + 1rem);
-    right: 1rem;
-    bottom: 1rem;
-    z-index: 180;
-    display: none;
-    gap: 0.85rem;
-    align-items: flex-end;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    max-height: calc(100vh - 2rem);
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 0.35rem;
+    inset: 0;
+    z-index: 1200;
     pointer-events: none;
 }
 
-.child-session-drawer-dock.has-drawers {
+.child-session-drawer.subagent-window {
+    position: fixed;
     display: flex;
-}
-
-.child-session-drawer {
-    margin-top: 0.6rem;
-    margin-bottom: 0.6rem;
-    width: clamp(300px, 30vw, 440px);
-    max-height: min(520px, 70vh);
-    flex: 1 1 clamp(300px, 30vw, 440px);
-    min-width: 0;
+    flex-direction: column;
+    min-width: 320px;
+    min-height: 220px;
+    margin: 0;
+    border: 1px solid var(--primary-border);
     border-left: 3px solid var(--primary);
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 0 10px 10px 0;
+    background: var(--bg-card, #14151b);
+    border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.48);
     overflow: hidden;
     pointer-events: auto;
-    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
-    backdrop-filter: blur(14px);
+    outline: none;
+}
+
+.subagent-window:focus {
+    border-color: var(--primary);
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.56), 0 0 0 1px var(--primary-border);
 }
 
 .drawer-header {
@@ -3179,6 +3170,9 @@ body {
     padding: 0.55rem 0.75rem;
     background: rgba(255, 255, 255, 0.04);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: move;
+    touch-action: none;
+    user-select: none;
 }
 
 .drawer-header-info {
@@ -3206,18 +3200,10 @@ body {
 .drawer-header-actions {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.5rem;
+    flex-shrink: 0;
     flex-wrap: wrap;
-    justify-content: flex-start;
-    flex-shrink: 1;
-    width: 100%;
-}
-
-.drawer-header-actions .btn {
-    padding: 0.24rem 0.46rem;
-    font-size: 0.72rem;
-    line-height: 1.15;
-    min-height: 1.65rem;
+    justify-content: flex-end;
 }
 
 .live-badge {
@@ -3252,7 +3238,8 @@ body {
     50% { opacity: 0.5; transform: scale(0.8); }
 }
 
-.drawer-close-btn {
+.drawer-close-btn,
+.drawer-minimize-btn {
     appearance: none;
     background: transparent;
     border: none;
@@ -3263,28 +3250,62 @@ body {
     line-height: 1;
 }
 
-.drawer-close-btn:hover {
+.drawer-close-btn:hover,
+.drawer-minimize-btn:hover {
     color: var(--text);
 }
 
 .drawer-transcript {
-    max-height: min(400px, 48vh);
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 0.65rem 0.75rem;
 }
 
-@media (max-width: 900px) {
-    .child-session-drawer-dock {
-        left: 0.5rem;
-        right: 0.5rem;
-        bottom: 0.5rem;
-        justify-content: flex-start;
-    }
+.subagent-resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    touch-action: none;
+    background: linear-gradient(135deg, transparent 45%, var(--primary-border) 46%, var(--primary-border) 56%, transparent 57%, transparent 68%, var(--primary) 69%, var(--primary) 78%, transparent 79%);
+}
 
-    .child-session-drawer {
-        width: 100%;
-        flex-basis: 100%;
+.subagent-resize-handle:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
+
+.subagent-window-minimized {
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+.subagent-window-minimized .drawer-transcript,
+.subagent-window-minimized .subagent-resize-handle,
+.subagent-window-minimized .subagent-pause-btn,
+.subagent-window-minimized .subagent-steer-btn,
+.subagent-window-minimized .subagent-stop-btn {
+    display: none;
+}
+
+@media (max-width: 720px) {
+    .child-session-drawer.subagent-window {
+        left: 8px !important;
+        right: 8px !important;
+        /* JS cycles this bounded index through viewport-safe title-bar slots. */
+        top: calc(8px + (var(--mobile-window-index, 0) * 42px)) !important;
+        bottom: auto;
+        width: auto !important;
+        height: min(65dvh, 520px) !important;
+        min-width: 0;
     }
+    .child-session-drawer.subagent-window.subagent-window-minimized { height: auto !important; }
+    .subagent-resize-handle { display: none; }
+    .drawer-header { cursor: default; }
+    .drawer-header-actions .btn { font-size: 0.68rem; padding: 0.25rem 0.4rem; }
 }
 
 .drawer-transcript:empty::before {

@@ -93,24 +93,24 @@ def test_chat_image_paste_contract_is_preserved_across_template_and_assets():
     assert "userInput.addEventListener('paste', handleUserInputPaste)" in js
 
 
-def test_live_subagent_drawers_use_persistent_side_by_side_dock():
+def test_live_subagent_windows_use_persistent_body_level_layer():
     css = DASHBOARD_CSS.read_text(encoding="utf-8")
     js = DASHBOARD_JS.read_text(encoding="utf-8")
 
-    assert "function ensureChildSessionDrawerDock()" in js
-    assert "function renderOpenChildSessionDrawers()" in js
-    assert "child-session-drawer-dock" in js
+    assert "function ensureSubagentWindowLayer()" in js
+    assert "subagent-window-layer" in js
+    assert "document.body.appendChild(layer)" in js
+    assert "function ensureChildSessionDrawerDock()" not in js
+    assert "function renderOpenChildSessionDrawers()" not in js
     assert "host.insertAdjacentHTML" not in js
-    assert "renderOpenChildSessionDrawers();" in js
-    assert "appendDrawerEventRow(childSessionId, transcriptEl, event, { cache: false })" in js
-    assert ".child-session-drawer-dock" in css
+    assert "renderDrawerEventRow(transcriptEl, event)" in js
+    assert "#subagent-window-layer" in css
+    assert ".child-session-drawer.subagent-window" in css
     assert "position: fixed" in css
     assert "display: flex" in css
-    assert "flex-wrap: wrap" in css
-    assert "overflow-x: hidden" in css
-    assert "width: clamp(300px, 30vw, 440px)" in css
-    assert "flex: 1 1 clamp(300px, 30vw, 440px)" in css
     assert "flex-direction: column" in css
+    assert ".subagent-resize-handle" in css
+    assert ".subagent-window-minimized" in css
     assert ".drawer-header-actions .btn" in css
 
 
