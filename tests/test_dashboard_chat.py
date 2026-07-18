@@ -151,6 +151,55 @@ def test_interrupt_session_stop_matches_active_main_run(monkeypatch):
     dashboard_app.INTERRUPT_FLAGS.pop("sess-main", None)
 
 
+def test_run_chat_stream_sync_routes_child_events_from_executed_sync_path(monkeypatch):
+    child_id = "child-sync-route"
+
+    class FakeResponse:
+        status_code = 200
+        headers = {}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            yield 'data: {"hermes":{"type":"child_session_started","child_session_id":"child-sync-route","delegate_call_id":"delegate-1"}}'
+            yield 'data: {"hermes":{"type":"tool_call","name":"read_file","call_id":"call-1","child_session_id":"child-sync-route"}}'
+            yield 'data: [DONE]'
+
+    class FakeStream:
+        def __enter__(self):
+            return FakeResponse()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, *args, **kwargs):
+            return FakeStream()
+
+    state = {"session_id": "parent", "stop_requested": False, "done": False, "events": []}
+    monkeypatch.setitem(dashboard_app.ACTIVE_RUNS, "run-sync-child", state)
+    monkeypatch.setattr(dashboard_app.httpx, "Client", FakeClient)
+
+    dashboard_app._run_chat_stream_sync("run-sync-child", [], "parent")
+
+    child = dashboard_app.ACTIVE_CHILD_STREAMS[child_id]
+    assert child["delegate_call_id"] == "delegate-1"
+    assert any('"type": "tool_call"' in event["data"] for event in child["events"])
+
+    dashboard_app.ACTIVE_RUNS.pop("run-sync-child", None)
+    dashboard_app.ACTIVE_CHILD_STREAMS.pop(child_id, None)
+
+
 def test_run_chat_stream_sync_honors_stop_requested(monkeypatch):
     class FakeResponse:
         status_code = 200

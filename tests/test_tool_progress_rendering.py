@@ -102,8 +102,21 @@ def test_cached_drawer_replay_renders_without_recording_events_again():
     replay = html.split("function renderCachedDrawerEvents", 1)[1]
     replay = replay.split("function appendLiveDrawerEventIfOpen", 1)[0]
 
-    assert "renderDrawerEventRow" in replay
+    assert "renderDrawerLiveTrace" in replay
     assert "appendDrawerEventRow" not in replay
+
+
+def test_subagent_live_trace_reuses_main_chat_tool_renderer_and_preserves_content():
+    html = dashboard_source()
+    live_trace = html.split("function buildDrawerLiveTraceState", 1)[1]
+    live_trace = live_trace.split("function ensureDrawerLiveTail", 1)[0]
+
+    assert "createAssistantTraceState" in live_trace
+    assert "reduceAssistantTraceEvent" in live_trace
+    assert "renderAssistantEvents" in live_trace
+    assert "renderAssistantMessageShell" in live_trace
+    assert "syncToolCallUi" in live_trace
+    assert "parsed.content" in html
 
 
 def test_drawer_event_dedup_prefers_ids_and_only_briefly_suppresses_signatures():

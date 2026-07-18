@@ -579,8 +579,64 @@ class ExecutionTracePayloadTests(unittest.TestCase):
         self.assertEqual(payloads[0]["type"], "tool_call")
         self.assertEqual(payloads[0]["call_id"], "call_abc123")
 
+    def test_child_event_metadata_accepts_top_level_session_id(self):
+        self.assertEqual(
+            dashboard_app._event_metadata({"type": "tool_call", "session_id": "child-top"})["session_id"],
+            "child-top",
+        )
+
+    def test_child_stream_routes_content_for_main_chat_parity(self):
+        child_id = "child-content-parity"
+        dashboard_app.ACTIVE_CHILD_STREAMS.pop(child_id, None)
+        try:
+            dashboard_app._route_child_stream_event(
+                "parent-run",
+                {"type": "content", "content": "Subagent finding", "session_id": child_id},
+            )
+            events = list(dashboard_app.ACTIVE_CHILD_STREAMS[child_id]["events"])
+            self.assertTrue(any("Subagent finding" in event["data"] for event in events))
+        finally:
+            dashboard_app.ACTIVE_CHILD_STREAMS.pop(child_id, None)
+
 
 class DashboardAssistantTimelineTests(unittest.TestCase):
+    def test_subagent_live_trace_preserves_main_chat_tool_semantics(self):
+        result = _run_dashboard_trace_js(
+            """
+const state = buildDrawerLiveTraceState('child-live', [
+  {type: 'content', content: 'Inspecting the file.'},
+  {type: 'tool_call', id: 'call-live', function: {name: 'read_file', arguments: '{"path":"/tmp/live.txt","offset":0,"enabled":false}'}},
+  {type: 'tool_output', call_id: 'call-live', name: 'read_file', output: '', status: 'complete', timestamp: '2026-07-18T12:00:01Z'},
+]);
+const tool = state.tools[0];
+const html = renderAssistantEvents(state, 'subagent-live-child-live');
+return {
+  content: state.content,
+  callId: tool.call_id,
+  name: tool.name,
+  arguments: tool.arguments,
+  hasOutput: Object.prototype.hasOwnProperty.call(tool, 'output'),
+  output: tool.output,
+  status: tool.status,
+  timestamp: tool.timestamp,
+  hasMainCard: html.includes('tool-call-block'),
+  hasCallId: html.includes('call-live'),
+  hasContent: html.includes('Inspecting the file.'),
+};
+            """
+        )
+        self.assertEqual(result["content"], "Inspecting the file.")
+        self.assertEqual(result["callId"], "call-live")
+        self.assertEqual(result["name"], "read_file")
+        self.assertIn('/tmp/live.txt', result["arguments"])
+        self.assertTrue(result["hasOutput"])
+        self.assertEqual(result["output"], "")
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["timestamp"], "2026-07-18T12:00:01Z")
+        self.assertTrue(result["hasMainCard"])
+        self.assertTrue(result["hasCallId"])
+        self.assertTrue(result["hasContent"])
+
     def test_content_tools_content_order_is_preserved(self):
         result = _run_dashboard_trace_js(
             """
@@ -1128,6 +1184,40 @@ return {
         self.assertIn("call-6", result["latestHtml"])
         self.assertIn("call-7", result["latestHtml"])
         self.assertTrue(result["toggleLabel"])
+
+    def test_live_renderer_groups_tools_across_blank_stream_content(self):
+        result = _run_dashboard_trace_js(
+            """
+const events = [];
+for (let idx = 1; idx <= 5; idx += 1) {
+  events.push({type: 'tool_call', tool: {call_id: `blank-${idx}`, name: `tool-${idx}`, output: 'ok'}});
+  if (idx < 5) events.push({type: 'content', text: '\\n'});
+}
+const html = groupSequentialToolCards(events).join('');
+return {
+  bubbles: (html.match(/execution-history-bubble/g) || []).length,
+  toggle: html.includes('Show 2 earlier calls'),
+  latest: html.split('execution-history-latest')[1] || '',
+};
+            """
+        )
+        self.assertEqual(result["bubbles"], 1)
+        self.assertTrue(result["toggle"])
+        self.assertNotIn("tool-2", result["latest"])
+        self.assertTrue(all(name in result["latest"] for name in ("tool-3", "tool-4", "tool-5")))
+
+    def test_live_renderer_keeps_meaningful_content_as_execution_boundary(self):
+        result = _run_dashboard_trace_js(
+            """
+const html = groupSequentialToolCards([
+  {type: 'tool_call', tool: {call_id: 'first', name: 'first'}},
+  {type: 'content', text: 'Checked the first source.'},
+  {type: 'tool_call', tool: {call_id: 'second', name: 'second'}},
+]).join('');
+return {bubbles: (html.match(/execution-history-bubble/g) || []).length, hasText: html.includes('Checked the first source.')};
+            """
+        )
+        self.assertEqual(result, {"bubbles": 2, "hasText": True})
 
     def test_transcript_pipeline_condenses_adjacent_assistant_tool_rows_between_content(self):
         result = _run_dashboard_trace_js(

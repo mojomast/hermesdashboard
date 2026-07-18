@@ -1692,12 +1692,22 @@ function reduceAssistantTraceEvent(state, event, options = {}) {
         || event.tool?.call_id
         || event.tool?.tool_call_id
         || '';
+    const hasToolArguments = Object.prototype.hasOwnProperty.call(event, 'arguments')
+        || Object.prototype.hasOwnProperty.call(event.tool || {}, 'arguments');
     const toolEvent = {
         call_id: callId,
         name: event.name || event.tool?.name || 'tool',
-        arguments: Object.prototype.hasOwnProperty.call(event, 'arguments') ? event.arguments : (event.tool?.arguments || ''),
         progress: Object.prototype.hasOwnProperty.call(event, 'progress') ? event.progress : (event.tool?.progress || []),
     };
+    if (hasToolArguments || event.type === 'tool_call') {
+        toolEvent.arguments = Object.prototype.hasOwnProperty.call(event, 'arguments')
+            ? event.arguments
+            : (event.tool?.arguments || '');
+    }
+    ['status', 'error', 'timestamp', 'started_at', 'completed_at', 'duration_ms', 'metrics'].forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(event, key)) toolEvent[key] = event[key];
+        else if (Object.prototype.hasOwnProperty.call(event.tool || {}, key)) toolEvent[key] = event.tool[key];
+    });
     if (Object.prototype.hasOwnProperty.call(event, 'output')) {
         toolEvent.output = event.output;
     } else if (Object.prototype.hasOwnProperty.call(event.tool || {}, 'output')) {
@@ -2830,6 +2840,7 @@ function renderDelegateOpenDrawerGrid(tool) {
 const liveChildSessionMap = new Map();
 const drawerEventSources = new Map();
 const childDrawerEventCache = new Map();
+const childDrawerPersistedEventKeys = new Map();
 const childDrawerPausedSet = new Set();
 const childDrawerPausedQueue = new Map();
 // Preserve the latest connection/terminal state independently of chat markup.
@@ -3075,7 +3086,10 @@ function renderDrawerEventRow(transcriptEl, parsed) {
     row.className = 'drawer-tool-row';
     const meta = getEventMetadata(parsed);
     if (parsed.type === 'tool_call' || parsed.type === 'tool_output') {
-        row.innerHTML = `<strong>${escapeHtml(parsed.name || 'tool')}</strong> <span class="meta-pill">${escapeHtml(parsed.type)}</span>${parsed.output ? `<pre style="margin-top:0.25rem;font-size:0.7rem;">${escapeHtml(summarizeValue(parsed.output, 400))}</pre>` : ''}`;
+        const fullOutput = typeof parsed.output === 'string'
+            ? parsed.output
+            : safePayloadStringify(parsed.output, String(parsed.output ?? ''));
+        row.innerHTML = `<strong>${escapeHtml(parsed.name || 'tool')}</strong> <span class="meta-pill">${escapeHtml(parsed.type)}</span>${fullOutput ? `<details class="drawer-event-details"><summary>${escapeHtml(summarizeValue(fullOutput, 160))}</summary><pre style="margin-top:0.25rem;font-size:0.7rem;white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(fullOutput)}</pre></details>` : ''}`;
     } else if (parsed.type === 'tool_progress') {
         row.innerHTML = `<span class="meta-pill">progress</span> ${escapeHtml(parsed.progress || parsed.label || meta.message || '')}`;
     } else if (parsed.type === 'steer') {
@@ -3087,19 +3101,130 @@ function renderDrawerEventRow(transcriptEl, parsed) {
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 
+function normalizeDrawerTraceEvent(parsed) {
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.type === 'content') {
+        return {
+            ...parsed,
+            text: Object.prototype.hasOwnProperty.call(parsed, 'text') ? parsed.text : (parsed.content || ''),
+        };
+    }
+    if (parsed.type === 'tool_call' && parsed.function && typeof parsed.function === 'object') {
+        const normalized = normalizeToolCallEntries([parsed])[0] || {};
+        return { ...parsed, ...normalized, type: 'tool_call' };
+    }
+    return parsed;
+}
+
+function buildDrawerLiveTraceState(childSessionId, events = []) {
+    const state = createAssistantTraceState({ sessionId: childSessionId });
+    (Array.isArray(events) ? events : []).forEach((rawEvent) => {
+        const event = normalizeDrawerTraceEvent(rawEvent);
+        if (!event || !['content', 'tool_call', 'tool_output', 'tool_progress', 'meta'].includes(event.type)) return;
+        reduceAssistantTraceEvent(state, event);
+    });
+    state.renderTraceContext = {
+        domScope: `subagent-live-${String(childSessionId || '').replace(/[^A-Za-z0-9_-]/g, '_')}`,
+    };
+    return syncAssistantTraceDerivedFields(state);
+}
+
+function renderDrawerLiveTrace(childSessionId, transcriptEl, events = []) {
+    if (!transcriptEl) return false;
+    const traceEvents = events.filter(event => ['content', 'tool_call', 'tool_output', 'tool_progress', 'meta'].includes(event?.type));
+    const auxiliaryEvents = events.filter(event => !traceEvents.includes(event));
+    const state = buildDrawerLiveTraceState(childSessionId, traceEvents);
+    const renderScope = `subagent-live-${String(childSessionId || '').replace(/[^A-Za-z0-9_-]/g, '_')}`;
+    const body = renderAssistantEvents(state, renderScope);
+    transcriptEl.innerHTML = body
+        ? `<div class="message assistant drawer-live-trace">${renderAssistantMessageShell({ renderScope }, state, body)}</div>`
+        : '';
+    auxiliaryEvents.forEach(event => renderDrawerEventRow(transcriptEl, event));
+    syncToolCallUi(transcriptEl);
+    return Boolean(body || auxiliaryEvents.length);
+}
+
+function ensureDrawerLiveTail(transcriptEl) {
+    if (!transcriptEl) return null;
+    let tail = transcriptEl.querySelector('[data-drawer-live-tail]');
+    if (tail) return tail;
+    tail = document.createElement('div');
+    tail.dataset.drawerLiveTail = 'true';
+    tail.className = 'drawer-live-tail';
+    transcriptEl.appendChild(tail);
+    return tail;
+}
+
+function getDrawerCallKey(value) {
+    if (!value || typeof value !== 'object') return '';
+    const metadata = getEventMetadata(value);
+    const callId = value.call_id ?? value.tool_call_id ?? value.toolCallId ?? value.id
+        ?? metadata.call_id ?? metadata.tool_call_id ?? metadata.toolCallId ?? metadata.id;
+    return callId == null || callId === '' ? '' : String(callId);
+}
+
+function collectPersistedDrawerEventKeys(data) {
+    const keys = new Set();
+    (data?.messages || []).forEach((message) => {
+        const direct = message?.tool_call_id;
+        if (direct != null && direct !== '') keys.add(String(direct));
+        const calls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+        calls.forEach((call) => {
+            const key = getDrawerCallKey(call);
+            if (key) keys.add(key);
+        });
+    });
+    return keys;
+}
+
+function renderDrawerSessionSnapshot(childSessionId, transcriptEl, data) {
+    if (!transcriptEl || !data || !Array.isArray(data.messages)) return false;
+    const traceContext = buildSessionTraceContext(data, {
+        domScope: `subagent-${String(childSessionId || '').replace(/[^A-Za-z0-9_-]/g, '_')}`,
+    });
+    traceContext.sessionId = childSessionId;
+    const persistedKeys = collectPersistedDrawerEventKeys(data);
+    childDrawerPersistedEventKeys.set(childSessionId, persistedKeys);
+    transcriptEl.innerHTML = `<div class="drawer-session-history" data-drawer-session-history>${renderSessionTranscript(traceContext)}</div><div class="drawer-live-tail" data-drawer-live-tail></div>`;
+    transcriptEl.dataset.drawerHydrated = 'true';
+    renderCachedDrawerEvents(childSessionId, ensureDrawerLiveTail(transcriptEl));
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    return true;
+}
+
+async function rehydrateChildSessionDrawer(childSessionId, transcriptEl) {
+    if (!childSessionId || !transcriptEl) return false;
+    try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(childSessionId)}`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        return renderDrawerSessionSnapshot(childSessionId, transcriptEl, data);
+    } catch (error) {
+        transcriptEl.innerHTML = `<div class="drawer-load-error">Could not restore session history: ${escapeHtml(error.message || String(error))}</div><div class="drawer-live-tail" data-drawer-live-tail></div>`;
+        renderCachedDrawerEvents(childSessionId, ensureDrawerLiveTail(transcriptEl));
+        return false;
+    }
+}
+
 function appendDrawerEventRow(childSessionId, transcriptEl, parsed) {
     if (!childSessionId || !parsed || !shouldAcceptDrawerEvent(childSessionId, parsed)) return false;
     recordDrawerEvent(childSessionId, parsed);
-    renderDrawerEventRow(transcriptEl, parsed);
+    const target = transcriptEl?.matches?.('[data-drawer-live-tail]')
+        ? transcriptEl
+        : ensureDrawerLiveTail(transcriptEl);
+    renderCachedDrawerEvents(childSessionId, target);
     return true;
 }
 
 function renderCachedDrawerEvents(childSessionId, transcriptEl) {
     const events = childDrawerEventCache.get(childSessionId) || [];
     if (!events.length || !transcriptEl) return false;
-    transcriptEl.innerHTML = '';
-    events.forEach(event => renderDrawerEventRow(transcriptEl, event));
-    return true;
+    const persistedKeys = childDrawerPersistedEventKeys.get(childSessionId) || new Set();
+    const unpersisted = events.filter((event) => {
+        const callKey = getDrawerCallKey(event);
+        return !callKey || !persistedKeys.has(callKey);
+    });
+    return renderDrawerLiveTrace(childSessionId, transcriptEl, unpersisted);
 }
 
 function appendLiveDrawerEventIfOpen(parsed) {
@@ -3107,7 +3232,7 @@ function appendLiveDrawerEventIfOpen(parsed) {
     const childSessionId = metadata.child_session_id || metadata.session_id || metadata.subagent_id || '';
     const transcript = getDrawerTranscript(childSessionId);
     if (!transcript) return false;
-    appendDrawerEventRow(childSessionId, transcript, parsed);
+    appendDrawerEventRow(childSessionId, ensureDrawerLiveTail(transcript), parsed);
     return true;
 }
 
@@ -3152,7 +3277,7 @@ async function requestStopSubagent(childSessionId) {
     } catch (err) { showToast(`Could not stop subagent: ${err.message}`, true); }
 }
 
-function openChildSessionDrawer(childSessionId, anchorEl, label) {
+async function openChildSessionDrawer(childSessionId, anchorEl, label) {
     if (!childSessionId) return;
     const existing = document.querySelector(`.subagent-window[data-child-session-id="${CSS.escape(childSessionId)}"]`);
     if (existing) {
@@ -3167,8 +3292,12 @@ function openChildSessionDrawer(childSessionId, anchorEl, label) {
     const windowEl = layer.querySelector(`.subagent-window[data-child-session-id="${CSS.escape(childSessionId)}"]`);
     initializeSubagentWindow(windowEl, childSessionId);
     const transcript = getDrawerTranscript(childSessionId);
-    if (transcript) transcript.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">Loading session...</div>';
-    openDrawerEventSource(childSessionId, transcript);
+    if (transcript) transcript.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">Loading complete session history...</div><div class="drawer-live-tail" data-drawer-live-tail></div>';
+    // Subscribe before reading state.db so events cannot fall into the gap
+    // between the persisted snapshot and the live stream.
+    openDrawerEventSource(childSessionId, ensureDrawerLiveTail(transcript));
+    await rehydrateChildSessionDrawer(childSessionId, transcript);
+    if (!document.contains(transcript)) return;
 }
 
 function closeChildSessionDrawer(childSessionId) {
@@ -3195,18 +3324,30 @@ function openDrawerEventSource(childSessionId, transcriptEl) {
     if (!childSessionId || drawerEventSources.has(childSessionId)) return;
     const es = new EventSource(`/api/sessions/${encodeURIComponent(childSessionId)}/stream`);
     drawerEventSources.set(childSessionId, es);
-    if (transcriptEl && !renderCachedDrawerEvents(childSessionId, transcriptEl)) transcriptEl.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">No activity recorded yet.</div>';
-    es.onmessage = (event) => {
+    if (transcriptEl && !renderCachedDrawerEvents(childSessionId, transcriptEl) && !transcriptEl.children.length) transcriptEl.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">No new live activity.</div>';
+    es.onmessage = async (event) => {
         if (!event.data) return;
         updateDrawerBadge(childSessionId, 'LIVE');
-        if (event.data === '[DONE]') { updateDrawerBadge(childSessionId, 'DONE'); es.close(); drawerEventSources.delete(childSessionId); return; }
+        if (event.data === '[DONE]') {
+            await rehydrateChildSessionDrawer(childSessionId, getDrawerTranscript(childSessionId));
+            updateDrawerBadge(childSessionId, 'DONE');
+            es.close();
+            drawerEventSources.delete(childSessionId);
+            return;
+        }
         try {
             const parsed = JSON.parse(event.data);
             // Surface the SSE occurrence identity to cache/dedup consumers.
             // EventSource maintains this ID across its native reconnects.
             if (event.lastEventId && parsed.event_id == null) parsed.event_id = event.lastEventId;
-            if (parsed.type === 'run_state' && (parsed.status === 'complete' || parsed.status === 'error')) { updateDrawerBadge(childSessionId, parsed.status === 'error' ? 'ERROR' : 'DONE'); es.close(); drawerEventSources.delete(childSessionId); return; }
-            appendDrawerEventRow(childSessionId, getDrawerTranscript(childSessionId), parsed);
+            if (parsed.type === 'run_state' && (parsed.status === 'complete' || parsed.status === 'error')) {
+                await rehydrateChildSessionDrawer(childSessionId, getDrawerTranscript(childSessionId));
+                updateDrawerBadge(childSessionId, parsed.status === 'error' ? 'ERROR' : 'DONE');
+                es.close();
+                drawerEventSources.delete(childSessionId);
+                return;
+            }
+            appendDrawerEventRow(childSessionId, ensureDrawerLiveTail(getDrawerTranscript(childSessionId)), parsed);
         } catch (e) { /* ignore parse errors */ }
     };
     es.onopen = () => updateDrawerBadge(childSessionId, 'LIVE');
@@ -4136,6 +4277,9 @@ function groupSequentialToolCards(events = [], traceContext = null, renderScope 
     };
 
     events.forEach((event, idx) => {
+        // Providers commonly emit newline-only content between tool updates.
+        // It is not a visible boundary, so keep the execution run together.
+        if (event?.type === 'content' && !String(event.text || '').trim()) return;
         if (event.type === 'tool_collection') {
             flushPendingTools();
             rendered.push(renderToolCallList(event.tools || []));

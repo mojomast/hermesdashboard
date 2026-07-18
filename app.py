@@ -515,6 +515,7 @@ def _event_metadata(payload: dict) -> dict:
     for key in (
         "delegate_call_id",
         "child_session_id",
+        "session_id",
         "subagent_id",
         "parent_session_id",
         "task_index",
@@ -559,7 +560,7 @@ def _route_child_stream_event(run_id: str, payload: dict) -> None:
     if payload_type == "child_session_started":
         _register_child_stream(run_id, payload)
         return
-    if payload_type not in {"tool_call", "tool_output", "tool_progress", "meta", "run_state"}:
+    if payload_type not in {"content", "tool_call", "tool_output", "tool_progress", "meta", "run_state"}:
         return
     metadata = _event_metadata(payload)
     child_session_id = str(
@@ -859,6 +860,7 @@ def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]
                         elif payload.get("type") in {"tool_call", "tool_output", "tool_progress"}:
                             tool_events += 1
                         state["events"].append({"data": json.dumps(payload)})
+                        _route_child_stream_event(run_id, payload)
                 if not state.get("done"):
                     state["done"] = True
                     state["events"].append({"data": "[DONE]"})
