@@ -1,5 +1,19 @@
 # Hermes Dashboard
 
+## Mandatory :8082 Source-of-Truth Guard
+
+Port 8082 is managed by `hermes-dashboard-refactor.service`. Before any edit or deployment:
+
+1. Inspect `ss -ltnp 'sport = :8082'`, `/proc/<pid>/cwd`, and `systemctl --user cat hermes-dashboard-refactor.service`.
+2. Use the exact served checkout and all of its current features as the baseline. Never replace :8082 with an older or alternate clean branch.
+3. If the served checkout is dirty, create a separate clean worktree from its HEAD, copy/apply the complete current live source state into it while excluding generated artifacts such as `.arena-runs`, and commit a local snapshot there.
+4. Port only the bounded change onto that clean snapshot. Preserve Parallel Arena, Nexussy, approvals, navigation, asset versions, and all other newer live features.
+5. Run focused and full tests plus Playwright checks for both the requested change and feature preservation before changing the service path.
+6. After activation, verify the live PID cwd, service WorkingDirectory, served asset marker, and browser behavior.
+7. Snapshot commands (`git add`, `git commit`) must run with their working directory set to the isolated integration worktree—never the dirty live checkout.
+
+Current verified integration worktree: `/home/mojo/.hermes/repos/hermesdashboard-live-chat-integration`. Always re-check the service because the authoritative path can change after a verified deployment.
+
 This directory contains the local Hermes dashboard app and a helper for running a chat-only Hermes API server.
 
 ## Files
