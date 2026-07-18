@@ -6551,11 +6551,12 @@ async def session_stream(request):
     db_path = HERMES_HOME / "state.db"
 
     active_run = ACTIVE_CHILD_STREAMS.get(session_id)
-    if active_run and active_run.get("done"):
-        active_run = None
     if not active_run:
-        for state in ACTIVE_RUNS.values():
-            if state.get("session_id") == session_id and not state.get("done"):
+        # Completed run state still owns the cached event history.  Keeping it
+        # here is important when a client disconnects just before [DONE] and
+        # reconnects after the producer has marked the run complete.
+        for state in reversed(list(ACTIVE_RUNS.values())):
+            if state.get("session_id") == session_id:
                 active_run = state
                 break
 
@@ -6574,33 +6575,72 @@ async def session_stream(request):
     if not session_row and not active_run:
         return JSONResponse({"error": "Session not found"}, status_code=404)
 
+    def requested_resume_id() -> str:
+        headers = getattr(request, "headers", {}) or {}
+        query = getattr(request, "query_params", {}) or {}
+        return str(
+            headers.get("last-event-id")
+            or headers.get("Last-Event-ID")
+            or query.get("lastEventId")
+            or query.get("last_event_id")
+            or ""
+        ).strip()
+
+    def resume_sequence(stream_id: str) -> int:
+        resume_id = requested_resume_id()
+        if not resume_id:
+            return 0
+        prefix, separator, sequence = resume_id.rpartition(":")
+        # Numeric IDs are accepted for simple/legacy clients.  Namespaced IDs
+        # only resume the exact cached stream that issued them.
+        if not separator:
+            sequence = resume_id
+        elif prefix != stream_id:
+            return 0
+        try:
+            return max(0, int(sequence))
+        except (TypeError, ValueError):
+            return 0
+
     async def generate():
         if active_run:
-            sent = 0
+            stream_id = active_run.setdefault("child_sse_stream_id", uuid.uuid4().hex)
+            resumed_through = resume_sequence(stream_id)
+            sent = min(resumed_through, len(active_run["events"]))
             while True:
                 while sent < len(active_run["events"]):
                     event = active_run["events"][sent]
                     sent += 1
-                    yield event
+                    # Do not mutate the producer's cached event.  Its list
+                    # position is the stable occurrence identity, including
+                    # repeated payloads and terminal [DONE].
+                    yield {**event, "id": f"{stream_id}:{sent}"}
                     if event.get("data") == "[DONE]":
                         return
                 if active_run.get("done"):
-                    if sent >= len(active_run["events"]):
-                        yield {"data": "[DONE]"}
+                    has_cached_done = bool(active_run["events"]) and active_run["events"][-1].get("data") == "[DONE]"
+                    terminal_sequence = len(active_run["events"]) + 1
+                    if not has_cached_done and resumed_through < terminal_sequence:
+                        yield {"data": "[DONE]", "id": f"{stream_id}:{terminal_sequence}"}
                     return
                 await asyncio.sleep(0.1)
         else:
+            stream_id = f"session-{session_id}-snapshot"
+            sent = resume_sequence(stream_id)
             status = "complete" if session_row and session_row["ended_at"] else "unknown"
-            yield {
-                "data": json.dumps(
-                    {
-                        "type": "run_state",
-                        "session_id": session_id,
-                        "status": status,
-                    }
-                )
-            }
-            yield {"data": "[DONE]"}
+            if sent < 1:
+                yield {
+                    "id": f"{stream_id}:1",
+                    "data": json.dumps(
+                        {
+                            "type": "run_state",
+                            "session_id": session_id,
+                            "status": status,
+                        }
+                    ),
+                }
+            if sent < 2:
+                yield {"data": "[DONE]", "id": f"{stream_id}:2"}
 
     return EventSourceResponse(
         generate(),
