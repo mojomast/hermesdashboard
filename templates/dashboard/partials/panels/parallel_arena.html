@@ -1,0 +1,56 @@
+<div id="parallel-arena-panel" class="panel">
+    <div class="section">
+        <div class="section-header">
+            <h2>Parallel Run Arena</h2>
+            <p>Launch several strategies against the same task, compare lane artifacts, and synthesize a winner.</p>
+        </div>
+        <div class="arena-research-notes card">
+            <h3>2026 orchestration notes baked into this MVP</h3>
+            <ul>
+                <li><strong>Code-owned orchestration:</strong> parallel lanes are explicit, bounded, cancellable units; LLM routing can be layered in later.</li>
+                <li><strong>Structured run records:</strong> every lane has status, timestamps, score fields, artifacts, and safety notes.</li>
+                <li><strong>Trace-ready:</strong> run and lane IDs are stable so future OpenAI Agents/LangGraph traces can attach spans and artifacts.</li>
+                <li><strong>Human control:</strong> cancellation is a first-class action; synthesis waits for completed/cancelled lanes.</li>
+            </ul>
+        </div>
+        <div class="parallel-arena-layout">
+            <form id="parallel-arena-form" class="card parallel-arena-launch" onsubmit="event.preventDefault(); startParallelArenaRun();">
+                <h3>Launch Arena</h3>
+                <label for="parallel-arena-task">Task</label>
+                <textarea id="parallel-arena-task" rows="5" placeholder="Describe the shared task every lane should attempt..."></textarea>
+                <label for="parallel-arena-strategies">Strategies / lanes (one per line)</label>
+                <textarea id="parallel-arena-strategies" rows="4">planner-researcher
+implementation-first
+critic-synthesizer</textarea>
+                <div class="parallel-arena-controls">
+                    <label for="parallel-arena-lane-count">Max lanes</label>
+                    <input id="parallel-arena-lane-count" type="number" min="1" max="8" value="3">
+                    <label for="parallel-arena-execution-mode">Execution</label>
+                    <select id="parallel-arena-execution-mode">
+                        <option value="local_worker" selected>Local worker (safe subprocess)</option>
+                        <option value="hermes_cli">Hermes CLI adapter (real model lanes, gated)</option>
+                        <option value="simulated">Deterministic fallback</option>
+                    </select>
+                    <button class="btn primary" id="parallel-arena-start-btn" type="submit">Start Parallel Run</button>
+                    <button class="btn" type="button" onclick="refreshParallelArenaProviderAdvisor()">Advise Provider</button>
+                    <button class="btn" type="button" onclick="loadParallelArena(true)">Refresh</button>
+                </div>
+                <div id="parallel-arena-provider-advisor" class="parallel-arena-provider-advisor message-meta">Provider Autopilot will recommend local vs provider-backed lanes before launch.</div>
+                <p class="message-meta">Default runs bounded local Python workers that persist per-lane artifacts without provider spend or network calls. Hermes CLI adapter launches real model-backed lanes only when PARALLEL_ARENA_ALLOW_PROVIDER_SPEND=1 and PARALLEL_ARENA_ENABLE_HERMES_ADAPTER=1 are both set.</p>
+            </form>
+            <div class="card parallel-arena-current">
+                <div class="parallel-arena-current-head">
+                    <h3>Current Arena</h3>
+                    <button class="btn danger" id="parallel-arena-cancel-btn" type="button" onclick="cancelParallelArenaRun()" disabled>Cancel Run</button>
+                </div>
+                <div id="parallel-arena-summary" class="parallel-arena-summary">No arena launched yet.</div>
+                <div id="parallel-arena-lanes" class="parallel-arena-lanes"></div>
+                <div id="parallel-arena-synthesis" class="parallel-arena-synthesis"></div>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Recent Arenas</h3>
+            <div id="parallel-arena-history" class="parallel-arena-history">Loading…</div>
+        </div>
+    </div>
+</div>

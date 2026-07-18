@@ -760,6 +760,25 @@ def test_cron_mesh_and_drift_make_tab_a_self_improvement_hub(tmp_path, monkeypat
     assert status["policy"]["hub_ok"] is True
 
 
+def test_dashboard_helper_loader_supports_dataclass_modules(tmp_path):
+    helper_path = tmp_path / "dataclass_helper.py"
+    helper_path.write_text(
+        "from dataclasses import dataclass\n"
+        "@dataclass\n"
+        "class ReplayResult:\n"
+        "    ok: bool = True\n"
+        "def replay_events(*args, **kwargs):\n"
+        "    return {'ok': ReplayResult().ok}\n",
+        encoding="utf-8",
+    )
+
+    module = dashboard_app._load_dashboard_helper_module("test_dashboard_dataclass_helper", helper_path)
+
+    assert module is not None
+    assert module.replay_events()["ok"] is True
+    assert "test_dashboard_dataclass_helper" in sys.modules
+
+
 def test_becomussy_resume_packet_surfaces_in_self_improvement_status(tmp_path, monkeypatch):
     root = tmp_path / "self-improvement"
     root.mkdir()
@@ -840,7 +859,17 @@ def test_self_improvement_api_routes_and_template_are_wired(tmp_path, monkeypatc
     payload = _decode(response)
 
     assert response.status_code == 200
-    assert set(payload) >= {"ledger", "queue", "supervisor", "cron_mesh", "drift", "policy", "candidate_event_coverage", "becomussy_outbox", "becomussy_resume_packet"}
+    assert set(payload) >= {"ledger", "queue", "supervisor", "cron_mesh", "drift", "policy", "candidate_event_coverage", "becomussy_outbox", "becomussy_resume_packet", "control_plane_packet"}
+    control_plane = payload["control_plane_packet"]
+    assert control_plane["schema_version"] == "hermes.self_improvement_control_plane.v1"
+    assert control_plane["privacy"]["mode"] == "aggregate_only"
+    assert control_plane["privacy"]["raw_prompts"] is False
+    assert control_plane["privacy"]["raw_messages"] is False
+    assert control_plane["privacy"]["raw_tool_payloads"] is False
+    assert control_plane["privacy"]["local_file_contents"] is False
+    assert "benchmarks" in control_plane
+    assert "health_packet_build_ms" in control_plane["benchmarks"]
+    assert "prompt_budgets" in control_plane["telemetry"]
     route_paths = [
         getattr(route, "path", getattr(route, "path_format", None))
         or (route.args[0] if getattr(route, "args", None) else None)
@@ -854,6 +883,11 @@ def test_self_improvement_api_routes_and_template_are_wired(tmp_path, monkeypatc
     assert 'data-panel="self-improvement"' in html
     assert 'id="self-improvement-panel"' in html
     assert "loadSelfImprovement()" in html
+    assert 'id="self-improvement-control-plane"' in html
+    assert "renderSelfImprovementControlPlane" in html
+    assert "control_plane_packet" in html
+    assert "Prompt input p50/p95/p99" in html
+    assert "aggregate-only" in html
     assert 'id="self-improvement-cron-mesh"' in html
     assert 'id="self-improvement-drift"' in html
     assert 'id="self-improvement-outbox"' in html

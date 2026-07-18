@@ -46,12 +46,17 @@ function getDefaultHiddenDashboardTabs() {
     );
 }
 
+function getLockedDashboardTabIds() {
+    return new Set(DASHBOARD_TABS.filter(tab => tab.locked).map(tab => tab.id));
+}
+
 function getHiddenDashboardTabs() {
     try {
+        const lockedTabs = getLockedDashboardTabIds();
         const raw = localStorage.getItem(DASHBOARD_TAB_SETTINGS_KEY);
         if (raw === null) return getDefaultHiddenDashboardTabs();
         const parsed = JSON.parse(raw || '[]');
-        return new Set(Array.isArray(parsed) ? parsed.filter(id => id !== 'chat') : []);
+        return new Set(Array.isArray(parsed) ? parsed.filter(id => !lockedTabs.has(id)) : []);
     } catch (error) {
         console.warn('Failed to parse dashboard tab settings:', error);
         return getDefaultHiddenDashboardTabs();
@@ -59,7 +64,8 @@ function getHiddenDashboardTabs() {
 }
 
 function saveHiddenDashboardTabs(hiddenTabs) {
-    const values = Array.from(hiddenTabs).filter(id => id !== 'chat');
+    const lockedTabs = getLockedDashboardTabIds();
+    const values = Array.from(hiddenTabs).filter(id => !lockedTabs.has(id));
     localStorage.setItem(DASHBOARD_TAB_SETTINGS_KEY, JSON.stringify(values));
 }
 
@@ -425,6 +431,7 @@ function stopToolTimerUpdates() {
 const DEFAULT_VISIBLE_DASHBOARD_TABS = new Set([
     'chat',
     'message-board',
+    'parallel-arena',
     'config',
     'secrets',
     'sessions',
@@ -441,6 +448,7 @@ const DASHBOARD_TABS = [
     { id: 'chat', label: 'Chat', locked: true },
     { id: 'message-board', label: 'Message Board' },
     { id: 'dashboard-chat', label: 'Dashboard Chat', experimental: true, warning: 'Optional IRC bridge: connects to external IRC hosts only after it is explicitly enabled and connected.' },
+    { id: 'parallel-arena', label: 'Parallel Arena', locked: true },
     { id: 'config', label: 'Config' },
     { id: 'secrets', label: 'Secrets' },
     { id: 'sessions', label: 'Sessions' },
@@ -453,6 +461,7 @@ const DASHBOARD_TABS = [
     { id: 'dnd', label: 'Campaigns', experimental: true, warning: 'Experimental: depends on local campaign/game tooling.' },
     { id: 'self-improvement', label: 'Self-Improvement', experimental: true, warning: 'Experimental: depends on local Hermes self-improvement tooling.' },
     { id: 'autonomous-development', label: 'Autonomous Development', experimental: true, warning: 'Experimental: depends on local autonomous-development tooling.' },
+    { id: 'nexussy', label: 'Nexussy', experimental: true, warning: 'Experimental: depends on the local Nexussy sidecar.' },
     { id: 'scrolls', label: 'Vesuvius AutoResearch', experimental: true, warning: 'Experimental: depends on local Vesuvius/autoresearch tooling.' },
     { id: 'cron', label: 'Cron' },
     { id: 'schedule', label: 'Schedule' },
@@ -505,6 +514,14 @@ let tokenUsagePollInFlight = false;
 let lastTokenUsagePayload = null;
 let pendingImageAttachments = [];
 let pendingImageAttachmentSeq = 0;
+let approvalPollTimer = null;
+let approvalsInFlight = false;
+let lastApprovalIds = new Set();
+let autoApprovalUntil = 0;
+let autoApprovalDecision = 'once';
+let approvalPassphraseRequired = false;
+const APPROVAL_PASSPHRASE_STORAGE_KEY = 'hermes_dashboard_approval_passphrase_v1';
+const APPROVAL_POLL_MS = 2000;
 
 // Dashboard state persistence
 // Legacy localStorage keys are read once for migration only. Rich chat/run
@@ -757,6 +774,239 @@ function detachChatSession() {
     clearChat();
     updateActiveChatBanner();
     showToast('Started a new chat');
+}
+
+function activeApprovalSessionId() {
+    return activeRun?.sessionId || activeChatSessionId || '';
+}
+
+function updateAutoApprovalSettings(resetDeadline = true) {
+    const toggle = document.getElementById('approval-auto-toggle');
+    const slider = document.getElementById('approval-auto-minutes');
+    const label = document.getElementById('approval-auto-minutes-label');
+    const decision = document.getElementById('approval-auto-decision');
+    const minutes = Math.max(1, Math.min(60, Number(slider?.value || 5)));
+    if (label) label.textContent = `${minutes}m`;
+    autoApprovalDecision = decision?.value === 'session' ? 'session' : 'once';
+    if (toggle?.checked) {
+        if (resetDeadline || autoApprovalUntil <= Date.now()) {
+            autoApprovalUntil = Date.now() + minutes * 60 * 1000;
+        }
+    } else {
+        autoApprovalUntil = 0;
+    }
+    updateAutoApprovalStatus();
+}
+
+function updateAutoApprovalStatus() {
+    const status = document.getElementById('approval-auto-status');
+    const toggle = document.getElementById('approval-auto-toggle');
+    if (!status) return;
+    if (!autoApprovalUntil || autoApprovalUntil <= Date.now()) {
+        if (toggle) toggle.checked = false;
+        autoApprovalUntil = 0;
+        status.textContent = 'Auto-approve is off.';
+        return;
+    }
+    const seconds = Math.max(0, Math.ceil((autoApprovalUntil - Date.now()) / 1000));
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    status.textContent = `Auto-approve ${autoApprovalDecision} is ON for ${mins}:${String(secs).padStart(2, '0')} more. It only resolves visible pending Hermes tool prompts.`;
+}
+
+function stopAutoApproval() {
+    autoApprovalUntil = 0;
+    const toggle = document.getElementById('approval-auto-toggle');
+    if (toggle) toggle.checked = false;
+    updateAutoApprovalStatus();
+}
+
+function approvalPassphraseInput() {
+    return document.getElementById('approval-passphrase');
+}
+
+function cacheApprovalPassphrase(force = false) {
+    const input = approvalPassphraseInput();
+    const remember = document.getElementById('approval-passphrase-remember');
+    if (!input || !remember) return;
+    if (remember.checked || force) {
+        try {
+            if (input.value) sessionStorage.setItem(APPROVAL_PASSPHRASE_STORAGE_KEY, input.value);
+            else sessionStorage.removeItem(APPROVAL_PASSPHRASE_STORAGE_KEY);
+        } catch (_) {}
+    }
+    updateApprovalPassphraseStatus();
+}
+
+function currentApprovalPassphrase() {
+    const input = approvalPassphraseInput();
+    if (input && input.value) return input.value;
+    try { return sessionStorage.getItem(APPROVAL_PASSPHRASE_STORAGE_KEY) || ''; } catch (_) { return ''; }
+}
+
+function clearApprovalPassphrase() {
+    const input = approvalPassphraseInput();
+    const remember = document.getElementById('approval-passphrase-remember');
+    if (input) input.value = '';
+    if (remember) remember.checked = false;
+    try { sessionStorage.removeItem(APPROVAL_PASSPHRASE_STORAGE_KEY); } catch (_) {}
+    updateApprovalPassphraseStatus();
+}
+
+function updateApprovalPassphraseStatus() {
+    const status = document.getElementById('approval-passphrase-status');
+    if (!status) return;
+    const hasPassphrase = Boolean(currentApprovalPassphrase());
+    if (approvalPassphraseRequired) {
+        status.textContent = hasPassphrase ? 'Passphrase cached for this tab.' : 'Passphrase required for approve/deny.';
+        status.style.color = hasPassphrase ? 'var(--text-dim)' : 'var(--warning, #fbbf24)';
+    } else {
+        status.textContent = 'No passphrase required by dashboard config.';
+        status.style.color = 'var(--text-dim)';
+    }
+}
+
+function hydrateApprovalPassphrase() {
+    const input = approvalPassphraseInput();
+    const remember = document.getElementById('approval-passphrase-remember');
+    let stored = '';
+    try { stored = sessionStorage.getItem(APPROVAL_PASSPHRASE_STORAGE_KEY) || ''; } catch (_) {}
+    if (stored && input) input.value = stored;
+    if (stored && remember) remember.checked = true;
+    updateApprovalPassphraseStatus();
+}
+
+function jsString(value) {
+    return JSON.stringify(String(value || ''));
+}
+
+function removeApprovalChatBubble() {
+    const existing = document.getElementById('approval-chat-bubble');
+    if (existing) existing.remove();
+}
+
+function renderApprovalChatBubble(approvals) {
+    removeApprovalChatBubble();
+    if (!chat || !approvals.length) return;
+    const stick = shouldStickToBottom(chat);
+    const div = document.createElement('div');
+    div.id = 'approval-chat-bubble';
+    div.className = 'message assistant approval-chat-bubble';
+    const count = approvals.length;
+    div.innerHTML = `
+        <div class="message-header approval-chat-header">
+            <div class="message-title">Tool approval needed</div>
+            <div class="message-meta">${count} pending</div>
+        </div>
+        ${approvals.map((approval) => {
+            const session = approval.session_key || approval.session_id || '';
+            const command = approval.command || '';
+            const desc = approval.description || approval.pattern_key || 'Tool approval required';
+            const id = approval.id || `${session}:${approval.index || 0}`;
+            return `<div class="approval-inline-card">
+                <div class="approval-inline-main">
+                    <strong>${escapeHtml(desc)}</strong>
+                    <span>session ${escapeHtml(String(session).slice(0, 12))} · ${escapeHtml(id)}</span>
+                </div>
+                <div class="approval-inline-actions">
+                    <button class="btn primary" type="button" onclick="respondToApproval(${jsString(session)}, 'once')">Approve</button>
+                    <button class="btn danger" type="button" onclick="respondToApproval(${jsString(session)}, 'deny')">Deny</button>
+                </div>
+                <details class="approval-inline-details">
+                    <summary>Command preview</summary>
+                    <pre>${escapeHtml(command)}</pre>
+                </details>
+            </div>`;
+        }).join('')}
+        <div class="approval-inline-foot">Auto-approve controls live in the gear/options menu.</div>
+    `;
+    chat.appendChild(div);
+    scrollChatToBottom(false, stick);
+}
+
+function renderApprovals(approvals) {
+    const summary = document.getElementById('approval-summary');
+    if (summary) summary.textContent = approvals.length ? `${approvals.length} pending approval${approvals.length === 1 ? '' : 's'} — approve/deny in the chat bubble.` : 'No pending safety approvals.';
+    renderApprovalChatBubble(approvals);
+}
+
+async function respondToApproval(sessionId, decision = 'once', options = {}) {
+    if (!sessionId) {
+        showToast('No approval session id found', true);
+        return;
+    }
+    try {
+        const passphrase = currentApprovalPassphrase();
+        if (approvalPassphraseRequired && !passphrase) {
+            showToast('Approval passphrase required', true);
+            const input = approvalPassphraseInput();
+            if (input) input.focus();
+            return;
+        }
+        const response = await fetch('/api/approvals/respond', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, decision, all: Boolean(options.all), passphrase }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+            if (response.status === 403) {
+                try { sessionStorage.removeItem(APPROVAL_PASSPHRASE_STORAGE_KEY); } catch (_) {}
+                const input = approvalPassphraseInput();
+                if (input) input.focus();
+            }
+            throw new Error(data.error || `HTTP ${response.status}`);
+        }
+        if (passphrase) cacheApprovalPassphrase(false);
+        showToast(data.resolved ? `Approval ${decision}: ${data.resolved} command(s)` : 'No pending approval found');
+        await refreshApprovals(true);
+    } catch (error) {
+        showToast(`Approval failed: ${error.message || error}`, true);
+    }
+}
+
+async function refreshApprovals(userInitiated = false) {
+    if (approvalsInFlight) return;
+    approvalsInFlight = true;
+    try {
+        const sessionId = activeApprovalSessionId();
+        const url = sessionId ? `/api/approvals/pending?session_id=${encodeURIComponent(sessionId)}` : '/api/approvals/pending';
+        const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        const approvals = Array.isArray(data.approvals) ? data.approvals : [];
+        approvalPassphraseRequired = Boolean(data.passphrase_required);
+        updateApprovalPassphraseStatus();
+        renderApprovals(approvals);
+        const ids = new Set(approvals.map(a => a.id || `${a.session_key}:${a.index || 0}`));
+        approvals.forEach((approval) => {
+            const id = approval.id || `${approval.session_key}:${approval.index || 0}`;
+            if (!lastApprovalIds.has(id)) showToast(`Approval needed: ${approval.description || approval.pattern_key || 'tool command'}`);
+        });
+        lastApprovalIds = ids;
+        updateAutoApprovalStatus();
+        if (autoApprovalUntil > Date.now() && approvals.length) {
+            for (const approval of approvals) {
+                await respondToApproval(approval.session_key || approval.session_id, autoApprovalDecision);
+            }
+        } else if (userInitiated && !approvals.length) {
+            showToast('No pending approvals');
+        }
+    } catch (error) {
+        const summary = document.getElementById('approval-summary');
+        if (summary) summary.textContent = `Approval polling unavailable: ${error.message || error}`;
+        if (userInitiated) showToast(`Approval refresh failed: ${error.message || error}`, true);
+    } finally {
+        approvalsInFlight = false;
+    }
+}
+
+function startApprovalPolling() {
+    hydrateApprovalPassphrase();
+    if (approvalPollTimer) clearInterval(approvalPollTimer);
+    refreshApprovals(false);
+    approvalPollTimer = setInterval(() => refreshApprovals(false), APPROVAL_POLL_MS);
+    setInterval(updateAutoApprovalStatus, 1000);
 }
 
 function renderConversation() {
@@ -3907,6 +4157,7 @@ function switchToPanel(panel) {
         switch(panel) {
             case 'message-board': loadMessageBoardPosts(); break;
             case 'dashboard-chat': loadDashboardChat(); break;
+            case 'parallel-arena': loadParallelArena(); break;
             case 'config': loadSettings(); break;
             case 'secrets': loadSecrets(); break;
             case 'sessions': loadSessions(); loadSessionSources(); break;
@@ -3918,6 +4169,7 @@ function switchToPanel(panel) {
             case 'dnd': loadDndCampaigns(); break;
             case 'self-improvement': loadSelfImprovement(); break;
             case 'autonomous-development': loadAutonomousDevelopment(); break;
+            case 'nexussy': loadNexussy(); break;
             case 'scrolls': loadScrollsResearch(); break;
             case 'cron': loadCronJobs(); break;
             case 'schedule': loadSchedulePanel(); break;
@@ -3931,6 +4183,8 @@ function switchToPanel(panel) {
         loadMessageBoardPosts();
     } else if (panel === 'dashboard-chat') {
         loadDashboardChat();
+    } else if (panel === 'parallel-arena') {
+        loadParallelArena();
     } else if (panel === 'games') {
         loadGames();
     } else if (panel === 'roguelike') {
@@ -3941,6 +4195,8 @@ function switchToPanel(panel) {
         loadSelfImprovement();
     } else if (panel === 'autonomous-development') {
         loadAutonomousDevelopment();
+    } else if (panel === 'nexussy') {
+        loadNexussy();
     } else if (panel === 'scrolls') {
         loadScrollsResearch();
     } else if (panel === 'graph') {
@@ -3969,7 +4225,7 @@ function handleHashChange() {
     const parts = hash.split('/');
     const panel = parts[0];
 
-    const validPanels = ['chat','message-board','dashboard-chat','config','secrets','sessions','agent-observability','memory','skills','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','scrolls','cron','schedule','graph'];
+    const validPanels = ['chat','message-board','dashboard-chat','parallel-arena','config','secrets','sessions','agent-observability','memory','skills','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','nexussy','scrolls','cron','schedule','graph'];
     if (!validPanels.includes(panel) || !isDashboardTabVisible(panel)) {
         switchToPanel('chat');
         return;
@@ -3990,7 +4246,7 @@ function updateBreadcrumbs(panel, detail) {
     const bc = document.getElementById('breadcrumbs');
     if (!bc) return;
 
-    const names = { chat:'Chat', 'message-board':'Message Board', 'dashboard-chat':'Dashboard Chat', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
+    const names = { chat:'Chat', 'message-board':'Message Board', 'dashboard-chat':'Dashboard Chat', 'parallel-arena':'Parallel Arena', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', nexussy:'Nexussy', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
 
     if (detail) {
         bc.className = 'breadcrumbs visible';
@@ -4021,6 +4277,574 @@ async function fetchJsonOrThrow(url, options = {}) {
         throw new Error(message);
     }
     return data;
+}
+
+let parallelArenaActiveRunId = null;
+
+function parallelArenaStatusClass(status) {
+    if (status === 'completed') return 'success';
+    if (status === 'running') return 'info';
+    if (status === 'cancelled') return 'warning';
+    if (status === 'failed') return 'error';
+    return '';
+}
+
+
+function renderParallelArenaArtifactButtons(runId, lane = {}) {
+    const artifacts = Array.isArray(lane.artifact_manifest) ? lane.artifact_manifest : [];
+    if (!runId || !lane.lane_id || !artifacts.length) {
+        return '<p class="message-meta">No browsable artifacts yet.</p>';
+    }
+    return `<div class="parallel-arena-artifact-buttons">${artifacts.map((artifact) => `
+        <button type="button" class="small secondary" onclick="openParallelArenaArtifact('${escapeHtml(runId)}','${escapeHtml(lane.lane_id)}','${escapeHtml(artifact.name)}')">
+            ${escapeHtml(artifact.label || artifact.file_name || artifact.name)} · ${escapeHtml(artifact.kind || 'text')} · ${escapeHtml(String(artifact.size_bytes || 0))}b
+        </button>
+    `).join('')}</div>`;
+}
+
+async function openParallelArenaArtifact(runId, laneId, artifactName) {
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(laneId)}/${encodeURIComponent(artifactName)}`);
+        const artifact = data.artifact || {};
+        const content = artifact.kind === 'json' && data.json
+            ? JSON.stringify(data.json, null, 2)
+            : (data.content || '');
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=720');
+        if (!popup) {
+            showToast('Popup blocked; artifact loaded but could not open viewer.', true);
+            return;
+        }
+        popup.document.write(`<!doctype html><title>${escapeHtml(artifact.label || artifactName)}</title><style>body{font-family:system-ui;margin:24px;background:#111827;color:#e5e7eb}pre{white-space:pre-wrap;background:#020617;padding:16px;border-radius:12px;overflow:auto}.meta{color:#9ca3af}</style><h1>${escapeHtml(artifact.label || artifactName)}</h1><p class="meta">${escapeHtml(data.run_id)} · ${escapeHtml(data.lane_id)} · ${escapeHtml(artifact.file_name || '')}${data.truncated ? ' · truncated' : ''}</p><pre>${escapeHtml(content)}</pre>`);
+        popup.document.close();
+    } catch (error) {
+        showToast(`Could not open arena artifact: ${error.message || error}`, true);
+    }
+}
+
+function renderParallelArenaImpactPlan(run = {}) {
+    const impact = run.impact_plan || null;
+    if (!impact || !Array.isArray(impact.artifacts) || !impact.artifacts.length) return '';
+    const artifacts = impact.artifacts.map((artifact) => `
+        <button type="button" class="small secondary" onclick="openParallelArenaImpactPlanArtifact('${escapeHtml(run.run_id)}','${escapeHtml(artifact.name)}')">
+            ${escapeHtml(artifact.label || artifact.file_name || artifact.name)} · ${escapeHtml(artifact.kind || 'text')} · ${escapeHtml(String(artifact.size_bytes || 0))}b
+        </button>
+    `).join('');
+    const fileCount = Array.isArray(impact.candidate_files) ? impact.candidate_files.length : 0;
+    const testCount = Array.isArray(impact.candidate_tests) ? impact.candidate_tests.length : 0;
+    const commands = Array.isArray(impact.verification_commands) ? impact.verification_commands : [];
+    return `
+        <div class="card parallel-arena-impact-plan">
+            <h3>Semantic Patch Impact Plan</h3>
+            <p><strong>${escapeHtml(String(fileCount))}</strong> likely files · <strong>${escapeHtml(String(testCount))}</strong> candidate tests · ${escapeHtml((impact.terms || []).slice(0, 8).join(', ') || 'local semantic scan')}</p>
+            <p class="message-meta">${escapeHtml(impact.next_action || 'Aim lanes at concrete source surfaces before editing.')}</p>
+            ${commands.length ? `<details><summary>Suggested verification commands</summary><pre>${escapeHtml(commands.join('\n'))}</pre></details>` : ''}
+            <div class="parallel-arena-artifact-buttons">${artifacts}</div>
+        </div>
+    `;
+}
+
+async function openParallelArenaImpactPlanArtifact(runId, artifactName) {
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/impact-plan/${encodeURIComponent(artifactName)}`);
+        const artifact = data.artifact || {};
+        const content = artifact.kind === 'json' && data.json ? JSON.stringify(data.json, null, 2) : (data.content || '');
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=720');
+        if (!popup) {
+            showToast('Popup blocked; Impact Plan artifact could not open.', true);
+            return;
+        }
+        popup.document.write(`<!doctype html><title>${escapeHtml(artifact.label || artifactName)}</title><style>body{font-family:system-ui;margin:24px;background:#111827;color:#e5e7eb}pre{white-space:pre-wrap;background:#020617;padding:16px;border-radius:12px;overflow:auto}.meta{color:#9ca3af}</style><h1>${escapeHtml(artifact.label || artifactName)}</h1><p class="meta">${escapeHtml(data.run_id)} · ${escapeHtml(artifact.file_name || '')}${data.truncated ? ' · truncated' : ''}</p><pre>${escapeHtml(content)}</pre>`);
+        popup.document.close();
+    } catch (error) {
+        showToast(`Could not open Impact Plan artifact: ${error.message || error}`, true);
+    }
+}
+
+
+function renderParallelArenaProviderAdvisor(advisor = null) {
+    if (!advisor) return '';
+    const candidates = Array.isArray(advisor.candidates) ? advisor.candidates.slice(0, 4) : [];
+    const pills = candidates.map((item) => `
+        <span class="meta-pill ${item.provider === advisor.recommended_provider ? 'success' : ''}">${escapeHtml(item.label || item.provider)} ${escapeHtml(String(item.score ?? '—'))}</span>
+    `).join('');
+    return `
+        <div class="card parallel-arena-provider-advisor-card">
+            <h3>Provider Choice Autopilot</h3>
+            <p><strong>${escapeHtml(advisor.recommended_provider || 'local_worker')}</strong> · ${escapeHtml(advisor.recommended_execution_mode || 'local_worker')} · ${escapeHtml(advisor.adapter_status || 'ready')}</p>
+            ${advisor.recommended_execution_mode === 'hermes_cli' ? '<p class="message-meta">Hermes CLI adapter is a real model-backed subprocess lane and stays blocked until both spend gates are enabled.</p>' : ''}
+            <div class="parallel-arena-title-row">${pills}</div>
+            <p class="message-meta">${escapeHtml(advisor.next_action || 'Use the advisor before spending provider tokens.')}</p>
+            <details><summary>Launch policy</summary><pre>${escapeHtml(JSON.stringify(advisor.launch_policy || {}, null, 2))}</pre></details>
+        </div>
+    `;
+}
+
+function collectParallelArenaLaunchInput() {
+    const task = document.getElementById('parallel-arena-task')?.value?.trim() || '';
+    const maxLanes = Number(document.getElementById('parallel-arena-lane-count')?.value || 3);
+    const executionMode = document.getElementById('parallel-arena-execution-mode')?.value || 'local_worker';
+    return { task, max_lanes: maxLanes, execution_mode: executionMode };
+}
+
+function displayParallelArenaProviderAdvisor(advisor = null) {
+    const target = document.getElementById('parallel-arena-provider-advisor');
+    if (!target) return;
+    if (!advisor) {
+        target.textContent = 'Provider Autopilot will recommend local vs provider-backed lanes before launch.';
+        return;
+    }
+    const top = Array.isArray(advisor.candidates) && advisor.candidates.length ? advisor.candidates[0] : {};
+    target.innerHTML = `
+        <strong>Autopilot:</strong> ${escapeHtml(advisor.recommended_provider || 'local_worker')}
+        · ${escapeHtml(advisor.adapter_status || 'ready')}
+        · top score ${escapeHtml(String(top.score ?? '—'))}
+        <br>${escapeHtml(advisor.next_action || '')}
+    `;
+}
+
+async function refreshParallelArenaProviderAdvisor() {
+    const input = collectParallelArenaLaunchInput();
+    if (!input.task) {
+        displayParallelArenaProviderAdvisor(null);
+        showToast('Enter a task before asking Provider Autopilot.', true);
+        return null;
+    }
+    try {
+        const data = await fetchJsonOrThrow('/api/parallel-arena/provider-advisor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(input),
+        });
+        displayParallelArenaProviderAdvisor(data.advisor);
+        return data.advisor || null;
+    } catch (error) {
+        showToast(`Provider Autopilot failed: ${error.message || error}`, true);
+        return null;
+    }
+}
+
+
+function renderParallelArenaSkillForge(run = {}) {
+    const forge = run.skill_forge || null;
+    if (forge && Array.isArray(forge.artifacts) && forge.artifacts.length) {
+        const artifacts = forge.artifacts.map((artifact) => `
+            <button type="button" class="small secondary" onclick="openParallelArenaSkillForgeArtifact('${escapeHtml(run.run_id)}','${escapeHtml(artifact.name)}')">
+                ${escapeHtml(artifact.label || artifact.file_name || artifact.name)} · ${escapeHtml(artifact.kind || 'text')} · ${escapeHtml(String(artifact.size_bytes || 0))}b
+            </button>
+        `).join('');
+        return `
+            <div class="card parallel-arena-skill-forge">
+                <h3>Skill Forge Draft</h3>
+                <p><strong>${escapeHtml(forge.skill_name || 'draft')}</strong> forged from ${escapeHtml(forge.source_lane_id || 'winner lane')}.</p>
+                <p class="message-meta">${escapeHtml(forge.install_hint || 'Review artifacts before promoting this draft skill.')}</p>
+                <div class="parallel-arena-artifact-buttons">${artifacts}</div>
+            </div>
+        `;
+    }
+    if (run.status === 'completed' && run.synthesis && run.synthesis.winner_lane_id) {
+        return `
+            <div class="card parallel-arena-skill-forge">
+                <h3>Skill Forge</h3>
+                <p>Convert the winning lane into a reviewable Hermes skill draft with SKILL.md, promotion manifest, and a test plan.</p>
+                <button class="btn primary" type="button" onclick="forgeParallelArenaWinnerSkill('${escapeHtml(run.run_id)}')">Forge Winner Skill Draft</button>
+            </div>
+        `;
+    }
+    return '';
+}
+
+async function forgeParallelArenaWinnerSkill(runId) {
+    if (!runId) return;
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/skill-forge`, { method: 'POST' });
+        invalidateCache('/api/parallel-arena');
+        renderParallelArena({ current: data.run, runs: data.runs || [data.run] });
+        showToast(`Forged skill draft: ${data.promotion?.skill_name || 'draft'}`);
+    } catch (error) {
+        showToast(`Skill Forge failed: ${error.message || error}`, true);
+    }
+}
+
+async function openParallelArenaSkillForgeArtifact(runId, artifactName) {
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/skill-forge/${encodeURIComponent(artifactName)}`);
+        const artifact = data.artifact || {};
+        const content = artifact.kind === 'json' && data.json ? JSON.stringify(data.json, null, 2) : (data.content || '');
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=720');
+        if (!popup) {
+            showToast('Popup blocked; Skill Forge artifact could not open.', true);
+            return;
+        }
+        popup.document.write(`<!doctype html><title>${escapeHtml(artifact.label || artifactName)}</title><style>body{font-family:system-ui;margin:24px;background:#111827;color:#e5e7eb}pre{white-space:pre-wrap;background:#020617;padding:16px;border-radius:12px;overflow:auto}.meta{color:#9ca3af}</style><h1>${escapeHtml(artifact.label || artifactName)}</h1><p class="meta">${escapeHtml(data.run_id)} · ${escapeHtml(artifact.file_name || '')}${data.truncated ? ' · truncated' : ''}</p><pre>${escapeHtml(content)}</pre>`);
+        popup.document.close();
+    } catch (error) {
+        showToast(`Could not open Skill Forge artifact: ${error.message || error}`, true);
+    }
+}
+
+function renderParallelArenaMissionPlan(run = {}) {
+    const mission = run.mission_plan || null;
+    if (mission && Array.isArray(mission.artifacts) && mission.artifacts.length) {
+        const artifacts = mission.artifacts.map((artifact) => `
+            <button type="button" class="small secondary" onclick="openParallelArenaMissionPlanArtifact('${escapeHtml(run.run_id)}','${escapeHtml(artifact.name)}')">
+                ${escapeHtml(artifact.label || artifact.file_name || artifact.name)} · ${escapeHtml(artifact.kind || 'text')} · ${escapeHtml(String(artifact.size_bytes || 0))}b
+            </button>
+        `).join('');
+        const nodeCount = Array.isArray(mission.nodes) ? mission.nodes.length : 0;
+        const edgeCount = Array.isArray(mission.edges) ? mission.edges.length : 0;
+        return `
+            <div class="card parallel-arena-mission-plan">
+                <h3>Mission Control DAG</h3>
+                <p><strong>${escapeHtml(mission.mission_title || 'Mission plan')}</strong></p>
+                <p class="message-meta">${escapeHtml(String(nodeCount))} nodes · ${escapeHtml(String(edgeCount))} edges · winner ${escapeHtml(mission.source_lane_id || 'lane')}</p>
+                <p>${escapeHtml(mission.next_action || 'Review DAG artifacts before replaying the workflow.')}</p>
+                <div class="parallel-arena-artifact-buttons">${artifacts}</div>
+            </div>
+        `;
+    }
+    if (run.status === 'completed' && run.synthesis && run.synthesis.winner_lane_id) {
+        return `
+            <div class="card parallel-arena-mission-plan">
+                <h3>Mission Control</h3>
+                <p>Compile the winning lane into a replayable campaign DAG with node prompts, dependencies, success metrics, and a mission brief.</p>
+                <button class="btn primary" type="button" onclick="buildParallelArenaMissionPlan('${escapeHtml(run.run_id)}')">Build Mission DAG</button>
+            </div>
+        `;
+    }
+    return '';
+}
+
+async function buildParallelArenaMissionPlan(runId) {
+    if (!runId) return;
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/mission-plan`, { method: 'POST' });
+        invalidateCache('/api/parallel-arena');
+        renderParallelArena({ current: data.run, runs: data.runs || [data.run] });
+        showToast(`Built mission DAG: ${data.mission_plan?.mission_title || 'draft'}`);
+    } catch (error) {
+        showToast(`Mission DAG build failed: ${error.message || error}`, true);
+    }
+}
+
+async function openParallelArenaMissionPlanArtifact(runId, artifactName) {
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/mission-plan/${encodeURIComponent(artifactName)}`);
+        const artifact = data.artifact || {};
+        const content = artifact.kind === 'json' && data.json ? JSON.stringify(data.json, null, 2) : (data.content || '');
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=720');
+        if (!popup) {
+            showToast('Popup blocked; Mission DAG artifact could not open.', true);
+            return;
+        }
+        popup.document.write(`<!doctype html><title>${escapeHtml(artifact.label || artifactName)}</title><style>body{font-family:system-ui;margin:24px;background:#111827;color:#e5e7eb}pre{white-space:pre-wrap;background:#020617;padding:16px;border-radius:12px;overflow:auto}.meta{color:#9ca3af}</style><h1>${escapeHtml(artifact.label || artifactName)}</h1><p class="meta">${escapeHtml(data.run_id)} · ${escapeHtml(artifact.file_name || '')}${data.truncated ? ' · truncated' : ''}</p><pre>${escapeHtml(content)}</pre>`);
+        popup.document.close();
+    } catch (error) {
+        showToast(`Could not open Mission DAG artifact: ${error.message || error}`, true);
+    }
+}
+
+
+function renderParallelArenaWorkflowReplay(run = {}) {
+    const replay = run.workflow_replay || null;
+    if (replay && Array.isArray(replay.artifacts) && replay.artifacts.length) {
+        const artifacts = replay.artifacts.map((artifact) => `
+            <button type="button" class="small secondary" onclick="openParallelArenaWorkflowReplayArtifact('${escapeHtml(run.run_id)}','${escapeHtml(artifact.name)}')">
+                ${escapeHtml(artifact.label || artifact.file_name || artifact.name)} · ${escapeHtml(artifact.kind || 'text')} · ${escapeHtml(String(artifact.size_bytes || 0))}b
+            </button>
+        `).join('');
+        const nodeCount = Array.isArray(replay.nodes) ? replay.nodes.length : 0;
+        return `
+            <div class="card parallel-arena-workflow-replay">
+                <h3>Workflow Replay Bundle</h3>
+                <p><strong>${escapeHtml(replay.schema_version || 'parallel_arena.workflow_replay.v1')}</strong> · ${escapeHtml(String(nodeCount))} executable nodes</p>
+                <p class="message-meta">Read-only driver persisted under ${escapeHtml(replay.artifact_dir || 'the arena run directory')}.</p>
+                <div class="parallel-arena-artifact-buttons">${artifacts}</div>
+            </div>
+        `;
+    }
+    if (run.status === 'completed' && run.synthesis && run.synthesis.winner_lane_id) {
+        return `
+            <div class="card parallel-arena-workflow-replay">
+                <h3>Workflow Replay Studio</h3>
+                <p>Export the winner + Mission DAG into a replayable workflow bundle with JSON nodes, an executable read-only replay driver, and operator commands.</p>
+                <button class="btn primary" type="button" onclick="exportParallelArenaWorkflowReplay('${escapeHtml(run.run_id)}')">Export Replay Bundle</button>
+            </div>
+        `;
+    }
+    return '';
+}
+
+async function exportParallelArenaWorkflowReplay(runId) {
+    if (!runId) return;
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/workflow-replay`, { method: 'POST' });
+        invalidateCache('/api/parallel-arena');
+        renderParallelArena({ current: data.run, runs: data.runs || [data.run] });
+        showToast(`Exported replay bundle with ${data.workflow_replay?.nodes?.length || 0} nodes`);
+    } catch (error) {
+        showToast(`Workflow replay export failed: ${error.message || error}`, true);
+    }
+}
+
+async function openParallelArenaWorkflowReplayArtifact(runId, artifactName) {
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/workflow-replay/${encodeURIComponent(artifactName)}`);
+        const artifact = data.artifact || {};
+        const content = artifact.kind === 'json' && data.json ? JSON.stringify(data.json, null, 2) : (data.content || '');
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=720');
+        if (!popup) {
+            showToast('Popup blocked; Workflow Replay artifact could not open.', true);
+            return;
+        }
+        popup.document.write(`<!doctype html><title>${escapeHtml(artifact.label || artifactName)}</title><style>body{font-family:system-ui;margin:24px;background:#111827;color:#e5e7eb}pre{white-space:pre-wrap;background:#020617;padding:16px;border-radius:12px;overflow:auto}.meta{color:#9ca3af}</style><h1>${escapeHtml(artifact.label || artifactName)}</h1><p class="meta">${escapeHtml(data.run_id)} · ${escapeHtml(artifact.file_name || '')}${data.truncated ? ' · truncated' : ''}</p><pre>${escapeHtml(content)}</pre>`);
+        popup.document.close();
+    } catch (error) {
+        showToast(`Could not open Workflow Replay artifact: ${error.message || error}`, true);
+    }
+}
+
+
+function renderParallelArenaCanaryHarness(run = {}) {
+    const canary = run.canary_harness || null;
+    if (canary && Array.isArray(canary.artifacts) && canary.artifacts.length) {
+        const artifacts = canary.artifacts.map((artifact) => `
+            <button type="button" class="small secondary" onclick="openParallelArenaCanaryHarnessArtifact('${escapeHtml(run.run_id)}','${escapeHtml(artifact.name)}')">
+                ${escapeHtml(artifact.label || artifact.file_name || artifact.name)} · ${escapeHtml(artifact.kind || 'text')} · ${escapeHtml(String(artifact.size_bytes || 0))}b
+            </button>
+        `).join('');
+        const requiredPasses = canary.promotion_gate && Array.isArray(canary.promotion_gate.required_passes) ? canary.promotion_gate.required_passes.join(', ') : 'schema-present, node-chain-ready, privacy-safe';
+        return `
+            <div class="card parallel-arena-canary-harness">
+                <h3>Training Canary Harness</h3>
+                <p><strong>${escapeHtml(canary.schema_version || 'parallel_arena.canary_harness.v1')}</strong> · ${escapeHtml(String(canary.node_count || 0))} replay nodes covered</p>
+                <p class="message-meta">Promotion gate: ${escapeHtml(requiredPasses)} · ${escapeHtml(canary.promotion_gate?.pass_command || 'python3 canary_driver.py --json')}</p>
+                <div class="parallel-arena-artifact-buttons">${artifacts}</div>
+            </div>
+        `;
+    }
+    if (run.workflow_replay && run.status === 'completed') {
+        return `
+            <div class="card parallel-arena-canary-harness">
+                <h3>Training Episode Canary Harness</h3>
+                <p>Compile the replay bundle into privacy-safe canaries that gate training/prompt/tool promotion episodes before they become reusable capability data.</p>
+                <button class="btn primary" type="button" onclick="buildParallelArenaCanaryHarness('${escapeHtml(run.run_id)}')">Build Canary Harness</button>
+            </div>
+        `;
+    }
+    return '';
+}
+
+async function buildParallelArenaCanaryHarness(runId) {
+    if (!runId) return;
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/canary-harness`, { method: 'POST' });
+        invalidateCache('/api/parallel-arena');
+        renderParallelArena({ current: data.run, runs: data.runs || [data.run] });
+        showToast(`Built canary harness with ${data.canary_harness?.checks?.length || 0} checks`);
+    } catch (error) {
+        showToast(`Canary harness build failed: ${error.message || error}`, true);
+    }
+}
+
+async function openParallelArenaCanaryHarnessArtifact(runId, artifactName) {
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/canary-harness/${encodeURIComponent(artifactName)}`);
+        const artifact = data.artifact || {};
+        const content = artifact.kind === 'json' && data.json ? JSON.stringify(data.json, null, 2) : (data.content || '');
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=720');
+        if (!popup) {
+            showToast('Popup blocked; Canary harness artifact could not open.', true);
+            return;
+        }
+        popup.document.write(`<!doctype html><title>${escapeHtml(artifact.label || artifactName)}</title><style>body{font-family:system-ui;margin:24px;background:#111827;color:#e5e7eb}pre{white-space:pre-wrap;background:#020617;padding:16px;border-radius:12px;overflow:auto}.meta{color:#9ca3af}</style><h1>${escapeHtml(artifact.label || artifactName)}</h1><p class="meta">${escapeHtml(data.run_id)} · ${escapeHtml(artifact.file_name || '')}${data.truncated ? ' · truncated' : ''}</p><pre>${escapeHtml(content)}</pre>`);
+        popup.document.close();
+    } catch (error) {
+        showToast(`Could not open Canary harness artifact: ${error.message || error}`, true);
+    }
+}
+
+
+function renderParallelArenaDemoReel(run = {}) {
+    const demo = run.demo_reel || null;
+    if (demo && Array.isArray(demo.artifacts) && demo.artifacts.length) {
+        const artifacts = demo.artifacts.map((artifact) => `
+            <button type="button" class="small secondary" onclick="openParallelArenaDemoReelArtifact('${escapeHtml(run.run_id)}','${escapeHtml(artifact.name)}')">
+                ${escapeHtml(artifact.label || artifact.file_name || artifact.name)} · ${escapeHtml(artifact.kind || 'text')} · ${escapeHtml(String(artifact.size_bytes || 0))}b
+            </button>
+        `).join('');
+        const cards = Array.isArray(demo.cards) ? demo.cards.map((card) => `
+            <span class="meta-pill success">${escapeHtml(card.label || 'metric')}: ${escapeHtml(String(card.value ?? '—'))}</span>
+        `).join('') : '';
+        return `
+            <div class="card parallel-arena-demo-reel">
+                <h3>Demo Reel</h3>
+                <p><strong>${escapeHtml(demo.headline || 'Arena run packaged into a shareable capability demo.')}</strong></p>
+                <div class="parallel-arena-title-row">${cards}</div>
+                <p class="message-meta">${escapeHtml(demo.next_action || 'Open the demo reel artifact and decide whether to promote.')}</p>
+                <div class="parallel-arena-artifact-buttons">${artifacts}</div>
+            </div>
+        `;
+    }
+    if (run.canary_harness && run.status === 'completed') {
+        return `
+            <div class="card parallel-arena-demo-reel">
+                <h3>Demo Reel</h3>
+                <p>Turn this canary-gated arena chain into a punchy, shareable brag sheet with scoreboard, artifact trail, privacy posture, and next action.</p>
+                <button class="btn primary" type="button" onclick="buildParallelArenaDemoReel('${escapeHtml(run.run_id)}')">Build Demo Reel</button>
+            </div>
+        `;
+    }
+    return '';
+}
+
+async function buildParallelArenaDemoReel(runId) {
+    if (!runId) return;
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/demo-reel`, { method: 'POST' });
+        invalidateCache('/api/parallel-arena');
+        renderParallelArena({ current: data.run, runs: data.runs || [data.run] });
+        showToast('Built Parallel Arena demo reel');
+    } catch (error) {
+        showToast(`Demo reel build failed: ${error.message || error}`, true);
+    }
+}
+
+async function openParallelArenaDemoReelArtifact(runId, artifactName) {
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}/demo-reel/${encodeURIComponent(artifactName)}`);
+        const artifact = data.artifact || {};
+        const content = artifact.kind === 'json' && data.json ? JSON.stringify(data.json, null, 2) : (data.content || '');
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=720');
+        if (!popup) {
+            showToast('Popup blocked; Demo Reel artifact could not open.', true);
+            return;
+        }
+        popup.document.write(`<!doctype html><title>${escapeHtml(artifact.label || artifactName)}</title><style>body{font-family:system-ui;margin:24px;background:#111827;color:#e5e7eb}pre{white-space:pre-wrap;background:#020617;padding:16px;border-radius:12px;overflow:auto}.meta{color:#9ca3af}</style><h1>${escapeHtml(artifact.label || artifactName)}</h1><p class="meta">${escapeHtml(data.run_id)} · ${escapeHtml(artifact.file_name || '')}${data.truncated ? ' · truncated' : ''}</p><pre>${escapeHtml(content)}</pre>`);
+        popup.document.close();
+    } catch (error) {
+        showToast(`Could not open Demo Reel artifact: ${error.message || error}`, true);
+    }
+}
+
+
+function renderParallelArena(data = {}) {
+    const current = data.current || null;
+    const summaryEl = document.getElementById('parallel-arena-summary');
+    const lanesEl = document.getElementById('parallel-arena-lanes');
+    const synthesisEl = document.getElementById('parallel-arena-synthesis');
+    const historyEl = document.getElementById('parallel-arena-history');
+    const cancelBtn = document.getElementById('parallel-arena-cancel-btn');
+    parallelArenaActiveRunId = current && current.run_id ? current.run_id : null;
+    if (cancelBtn) cancelBtn.disabled = !current || !['queued', 'running'].includes(current.status);
+    if (summaryEl) {
+        if (!current) {
+            summaryEl.textContent = 'No arena launched yet.';
+        } else {
+            summaryEl.innerHTML = `
+                <div class="parallel-arena-title-row"><strong>${escapeHtml(current.title || 'Untitled arena')}</strong><span class="meta-pill ${parallelArenaStatusClass(current.status)}">${escapeHtml(current.status)}</span></div>
+                <p>${escapeHtml(current.task || '')}</p>
+                <div class="message-meta">Run ${escapeHtml(current.run_id)} · ${escapeHtml(current.execution_mode || 'simulated')} · ${escapeHtml(String(current.completed_lanes || 0))}/${escapeHtml(String(current.lane_count || 0))} lanes complete · ${escapeHtml(String(current.duration_ms || 0))}ms</div>
+                ${current.run_dir || current.artifact_dir ? `<div class="message-meta">Artifacts: ${escapeHtml(current.run_dir || current.artifact_dir)}</div>` : ''}
+            `;
+        }
+    }
+    if (lanesEl) {
+        const lanes = current && Array.isArray(current.lanes) ? current.lanes : [];
+        lanesEl.innerHTML = lanes.length ? lanes.map((lane) => `
+            <div class="parallel-arena-lane card">
+                <div class="parallel-arena-lane-head"><strong>${escapeHtml(lane.name || lane.strategy || lane.lane_id)}</strong><span class="meta-pill ${parallelArenaStatusClass(lane.status)}">${escapeHtml(lane.status)}</span></div>
+                <div class="parallel-arena-score">${escapeHtml(lane.execution_mode || 'simulated')} · Score ${escapeHtml(String(lane.score ?? '—'))} · ${escapeHtml(String(lane.duration_ms || 0))}ms</div>
+                <p>${escapeHtml(lane.summary || 'Waiting for lane artifact…')}</p>
+                ${renderParallelArenaArtifactButtons(current.run_id, lane)}
+                <details><summary>Raw artifact manifest</summary><pre>${escapeHtml(JSON.stringify(lane.artifacts || {}, null, 2))}</pre></details>
+            </div>
+        `).join('') : '<p class="message-meta">Lanes will appear after launch.</p>';
+    }
+    if (synthesisEl) {
+        const synthesis = current && current.synthesis ? current.synthesis : null;
+        synthesisEl.innerHTML = synthesis ? `
+            <div class="card parallel-arena-winner"><h3>Synthesis</h3><p><strong>Winner:</strong> ${escapeHtml(synthesis.winner_lane_id || 'pending')}</p><p>${escapeHtml(synthesis.rationale || '')}</p></div>
+            ${renderParallelArenaProviderAdvisor(current.provider_advisor)}
+            ${renderParallelArenaImpactPlan(current)}
+            ${renderParallelArenaMissionPlan(current)}
+            ${renderParallelArenaWorkflowReplay(current)}
+            ${renderParallelArenaCanaryHarness(current)}
+            ${renderParallelArenaDemoReel(current)}
+            ${renderParallelArenaSkillForge(current)}
+        ` : '';
+    }
+    if (historyEl) {
+        const runs = Array.isArray(data.runs) ? data.runs : [];
+        historyEl.innerHTML = runs.length ? runs.map((run) => `
+            <button class="parallel-arena-history-row" type="button" onclick="loadParallelArenaRun('${escapeHtml(run.run_id)}')">
+                <span>${escapeHtml(run.title || run.run_id)}</span><span>${escapeHtml(run.status)} · ${escapeHtml(String(run.lane_count || 0))} lanes</span>
+            </button>
+        `).join('') : '<p class="message-meta">No arena runs yet.</p>';
+    }
+}
+
+async function loadParallelArena(force = false) {
+    try {
+        const data = force ? await fetchJsonOrThrow('/api/parallel-arena') : await cachedFetch('/api/parallel-arena', 3000);
+        renderParallelArena(data);
+        if (data.current && ['queued', 'running'].includes(data.current.status)) {
+            setTimeout(() => loadParallelArena(true), 1800);
+        }
+    } catch (error) {
+        const summaryEl = document.getElementById('parallel-arena-summary');
+        if (summaryEl) summaryEl.textContent = `Parallel Arena failed to load: ${error.message || error}`;
+    }
+}
+
+async function loadParallelArenaRun(runId) {
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(runId)}`);
+        renderParallelArena({ current: data.run, runs: data.runs || [data.run] });
+    } catch (error) {
+        showToast(`Could not load arena: ${error.message || error}`, true);
+    }
+}
+
+async function startParallelArenaRun() {
+    const launchInput = collectParallelArenaLaunchInput();
+    const task = launchInput.task;
+    const strategiesRaw = document.getElementById('parallel-arena-strategies')?.value || '';
+    const maxLanes = launchInput.max_lanes;
+    const executionMode = launchInput.execution_mode;
+    const startBtn = document.getElementById('parallel-arena-start-btn');
+    if (!task) {
+        showToast('Parallel Arena needs a task.', true);
+        return;
+    }
+    if (startBtn) startBtn.disabled = true;
+    try {
+        const strategies = strategiesRaw.split('\n').map(s => s.trim()).filter(Boolean).slice(0, Math.max(1, Math.min(8, maxLanes || 3)));
+        const data = await fetchJsonOrThrow('/api/parallel-arena/runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task, strategies, max_lanes: maxLanes, execution_mode: executionMode }),
+        });
+        invalidateCache('/api/parallel-arena');
+        renderParallelArena({ current: data.run, runs: data.runs || [data.run] });
+        showToast(`Parallel Arena started with ${data.run.lane_count} lanes`);
+        setTimeout(() => loadParallelArena(true), 900);
+    } catch (error) {
+        showToast(`Could not start arena: ${error.message || error}`, true);
+    } finally {
+        if (startBtn) startBtn.disabled = false;
+    }
+}
+
+async function cancelParallelArenaRun() {
+    if (!parallelArenaActiveRunId) return;
+    try {
+        const data = await fetchJsonOrThrow(`/api/parallel-arena/runs/${encodeURIComponent(parallelArenaActiveRunId)}/cancel`, { method: 'POST' });
+        invalidateCache('/api/parallel-arena');
+        renderParallelArena({ current: data.run, runs: data.runs || [data.run] });
+        showToast('Parallel Arena cancellation requested');
+    } catch (error) {
+        showToast(`Could not cancel arena: ${error.message || error}`, true);
+    }
 }
 
 let dashboardChatSocket = null;
@@ -7116,7 +7940,15 @@ async function loadSelfImprovement() {
         const runs = data?.ledger?.count || 0;
         const queued = data?.supervisor?.queued_candidate_count || 0;
         const hub = data?.policy?.hub_ok ? 'hub ok' : 'needs attention';
-        if (stats) stats.textContent = `${runs} recent runs · ${queued} queued candidates · ${hub}`;
+        const controlPlane = data?.control_plane_packet || {};
+        const promptP95 = controlPlane?.telemetry?.prompt_budgets?.total_input_tokens?.p95;
+        const buildMs = controlPlane?.benchmarks?.health_packet_build_ms;
+        const privacy = controlPlane?.privacy?.mode === 'aggregate_only' ? 'privacy ok' : 'privacy unknown';
+        const telemetryText = promptP95 !== null && promptP95 !== undefined
+            ? ` · prompt p95 ${promptP95}`
+            : '';
+        const buildText = buildMs !== null && buildMs !== undefined ? ` · health ${Number(buildMs).toFixed(1)}ms` : '';
+        if (stats) stats.textContent = `${runs} recent runs · ${queued} queued candidates · ${hub}${telemetryText}${buildText} · ${privacy}`;
         log('res', 'Loaded self-improvement cockpit');
     } catch (e) {
         if (stats) stats.textContent = '';
@@ -7144,6 +7976,7 @@ function renderSelfImprovement(data) {
             <p style="color:var(--text-dim);font-size:0.84rem;margin-top:0.5rem;">Job: ${escapeHtml(job.name || 'self-improvement-loop not found')} · next: ${escapeHtml(job.next_run_at || '—')} · last: ${escapeHtml(job.last_run_at || 'never')}</p>
         `;
     }
+    renderSelfImprovementControlPlane(data?.control_plane_packet || {});
     renderSelfImprovementCronMesh(data?.cron_mesh || {});
     renderSelfImprovementDrift(data?.drift || {}, data?.policy || {});
     renderBecomussyOutboxHealth(data?.becomussy_outbox || {});
@@ -7151,6 +7984,42 @@ function renderSelfImprovement(data) {
     renderBecomussyResumePacket(data?.becomussy_resume_packet || {});
     renderSelfImprovementRuns(data?.ledger?.runs || []);
     renderSelfImprovementQueue(data?.queue || {});
+}
+
+function renderSelfImprovementControlPlane(packet) {
+    const el = document.getElementById('self-improvement-control-plane');
+    if (!el) return;
+    const telemetry = packet?.telemetry || {};
+    const prompt = telemetry?.prompt_budgets || {};
+    const input = prompt?.total_input_tokens || {};
+    const output = prompt?.available_output_budget || {};
+    const api = telemetry?.api_calls || {};
+    const latency = api?.total_latency_ms || {};
+    const benchmarks = packet?.benchmarks || {};
+    const privacy = packet?.privacy || {};
+    const metrics = packet?.metrics || {};
+    const gates = packet?.gates || {};
+    const gateSummary = Object.keys(gates).length
+        ? Object.entries(gates).map(([name, status]) => `${name}:${status}`).join(' · ')
+        : 'no gates yet';
+    const privacyOk = privacy.mode === 'aggregate_only'
+        && privacy.raw_prompts === false
+        && privacy.raw_messages === false
+        && privacy.raw_tool_payloads === false
+        && privacy.local_file_contents === false;
+    el.innerHTML = `
+        <h4>Control Plane</h4>
+        <div class="message-meta" style="margin:0.5rem 0;">
+            <span class="meta-pill">${packet.ok ? 'ready' : 'attention'}</span>
+            <span class="meta-pill">privacy: ${privacyOk ? 'aggregate-only' : 'unknown'}</span>
+            <span class="meta-pill">health: ${benchmarks.health_packet_build_ms !== undefined ? `${Number(benchmarks.health_packet_build_ms).toFixed(1)}ms` : '—'}</span>
+            <span class="meta-pill">target: ${escapeHtml(String(benchmarks.health_latency_target_ms ?? '—'))}ms</span>
+        </div>
+        <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Prompt input p50/p95/p99: ${escapeHtml(String(input.p50 ?? '—'))} / ${escapeHtml(String(input.p95 ?? '—'))} / ${escapeHtml(String(input.p99 ?? '—'))} · samples ${escapeHtml(String(prompt.sample_count ?? 0))}</p>
+        <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">Output budget p50/p95/p99: ${escapeHtml(String(output.p50 ?? '—'))} / ${escapeHtml(String(output.p95 ?? '—'))} / ${escapeHtml(String(output.p99 ?? '—'))}</p>
+        <p style="color:var(--text-dim);font-size:0.84rem;margin:0.45rem 0;">API latency p95: ${escapeHtml(String(latency.p95 ?? '—'))}ms · failures ${escapeHtml(String(api.failure_count ?? 0))} · outbox pending ${escapeHtml(String(metrics.outbox_pending_count ?? 0))}</p>
+        <p style="color:var(--text-dim);font-size:0.82rem;margin:0.45rem 0;">Gates: ${escapeHtml(gateSummary)}</p>
+    `;
 }
 
 function renderSelfImprovementCronMesh(mesh) {
@@ -7565,6 +8434,317 @@ async function editAutonomousDevelopmentPipeline(pipelineId) {
     });
     showToast('Pipeline specifications updated');
     await loadAutonomousDevelopment();
+}
+
+let nexussyLastData = null;
+let nexussyActiveRunId = null;
+let nexussyActiveSessionId = null;
+
+function nexussyActiveIds(data = nexussyLastData) {
+    const active = data?.active_session || {};
+    const run = data?.latest_status?.run || {};
+    return {
+        runId: run.run_id || active.last_run_id || nexussyActiveRunId || null,
+        sessionId: run.session_id || active.session_id || nexussyActiveSessionId || null,
+    };
+}
+
+async function loadNexussy() {
+    const stats = document.getElementById('nexussy-stats');
+    try {
+        log('req', 'GET /api/nexussy');
+        const data = await fetchJsonOrThrow('/api/nexussy');
+        nexussyLastData = data;
+        const ids = nexussyActiveIds(data);
+        nexussyActiveRunId = ids.runId;
+        nexussyActiveSessionId = ids.sessionId;
+        renderNexussy(data);
+        log('res', 'Loaded Nexussy control plane');
+    } catch (e) {
+        if (stats) stats.textContent = '';
+        ['nexussy-health','nexussy-progress','nexussy-artifacts','nexussy-workers','nexussy-events'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = `<h4>${escapeHtml(id.replace('nexussy-','').replace('-', ' '))}</h4><p style="color:var(--error);">${escapeHtml(e.message)}</p>`;
+        });
+        showToast(`Nexussy load failed: ${e.message}`, true);
+    }
+}
+
+function renderNexussy(data) {
+    const health = data?.health || {};
+    const guard = data?.model_guard || {};
+    const sessions = data?.sessions || [];
+    const status = data?.latest_status || {};
+    const run = status.run || {};
+    const artifacts = data?.artifacts?.artifacts || [];
+    const workers = data?.workers || [];
+    const stats = document.getElementById('nexussy-stats');
+    if (stats) {
+        stats.textContent = `${health.ok ? 'healthy' : 'offline'} · ${sessions.length} recent sessions · active ${run.status || data?.active_session?.status || 'none'} · model guard ${guard.ok ? 'ok' : 'needs override'}`;
+    }
+    renderNexussyHealth(health, guard, data?.nexussy_api);
+    renderNexussyProgress(status, sessions);
+    renderNexussyArtifacts(artifacts, run.session_id || data?.active_session?.session_id);
+    renderNexussyWorkers(workers);
+    renderNexussySafety(data, artifacts);
+    renderNexussyInterview(data);
+    if (run.run_id) loadNexussyEvents(run.run_id);
+    else {
+        const events = document.getElementById('nexussy-events');
+        if (events) events.innerHTML = '<h4>Recent Events</h4><p style="color:var(--text-dim);">No active run yet.</p>';
+    }
+}
+
+function renderNexussyHealth(health, guard, api) {
+    const el = document.getElementById('nexussy-health');
+    if (!el) return;
+    const missing = guard?.missing || [];
+    el.innerHTML = `
+        <h4>Health & Model Guard</h4>
+        <div class="message-meta" style="margin:0.5rem 0;">
+            <span class="meta-pill">${health?.ok ? 'sidecar healthy' : 'sidecar offline'}</span>
+            <span class="meta-pill">providers: ${escapeHtml((health?.providers_configured || []).join(', ') || 'none')}</span>
+            <span class="meta-pill">pi: ${health?.pi_available ? 'available' : 'not available'}</span>
+        </div>
+        <p style="color:var(--text-dim);font-size:0.83rem;">${escapeHtml(api || '')}</p>
+        ${missing.length ? `<p style="color:var(--warning);font-size:0.84rem;">${escapeHtml(guard.message || 'Model override recommended.')} Dashboard launch defaults to ${escapeHtml(guard.recommended_model || '')} for all stages.</p>` : '<p style="color:var(--success);font-size:0.84rem;">Configured stage model providers are available.</p>'}
+        ${missing.length ? `<details><summary style="cursor:pointer;color:var(--primary);">Unavailable stage models</summary><div class="message-meta" style="margin-top:0.5rem;">${missing.map(m => `<span>${escapeHtml(m.stage)} → ${escapeHtml(m.model)}</span>`).join('')}</div></details>` : ''}
+    `;
+}
+
+function renderNexussyProgress(status, sessions) {
+    const el = document.getElementById('nexussy-progress');
+    if (!el) return;
+    const run = status?.run || {};
+    const stages = status?.stages || [];
+    const blockers = status?.blockers || [];
+    if (!run.run_id) {
+        el.innerHTML = `<h4>Pipeline Progress</h4><p style="color:var(--text-dim);">No active run. Recent sessions: ${escapeHtml(String((sessions || []).length))}</p>`;
+        return;
+    }
+    el.innerHTML = `
+        <h4>Pipeline Progress</h4>
+        <div class="message-meta" style="margin:0.5rem 0;">
+            <span class="meta-pill">${escapeHtml(run.status || 'unknown')}</span>
+            <span class="meta-pill">stage: ${escapeHtml(run.current_stage || '—')}</span>
+            <span class="meta-pill">run ${escapeHtml(String(run.run_id).slice(0, 12))}</span>
+            <span class="meta-pill">session ${escapeHtml(String(run.session_id || '').slice(0, 12))}</span>
+        </div>
+        ${blockers.length ? `<p style="color:var(--warning);font-size:0.84rem;">Blockers: ${escapeHtml(blockers.map(b => b.message || b.reason || JSON.stringify(b)).join(' · '))}</p>` : ''}
+        <div style="display:grid;gap:0.45rem;margin-top:0.75rem;">${stages.map(stage => `
+            <div class="activity-item" style="padding:0.55rem;">
+                <div style="display:flex;justify-content:space-between;gap:0.5rem;"><strong>${escapeHtml(stage.stage || 'stage')}</strong><span class="meta-pill">${escapeHtml(stage.status || 'pending')}</span></div>
+                ${stage.error ? `<p style="color:var(--error);font-size:0.82rem;margin:0.25rem 0 0;">${escapeHtml(stage.error)}</p>` : ''}
+            </div>
+        `).join('')}</div>
+    `;
+}
+
+function renderNexussyArtifacts(artifacts, sessionId) {
+    const el = document.getElementById('nexussy-artifacts');
+    if (!el) return;
+    if (!artifacts.length) {
+        el.innerHTML = '<h4>Artifacts</h4><p style="color:var(--text-dim);">No artifacts yet. Interview/design output will appear here.</p>';
+        return;
+    }
+    el.innerHTML = `<h4>Artifacts</h4>${artifacts.map(a => `
+        <div class="activity-item" style="margin:0.55rem 0;">
+            <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-start;"><strong>${escapeHtml(a.kind || 'artifact')}</strong><span class="meta-pill">${escapeHtml(String(a.bytes || 0))} bytes</span></div>
+            <p style="color:var(--text-dim);font-size:0.8rem;margin:0.35rem 0;">${escapeHtml(a.path || '')}</p>
+            <button class="btn" onclick="loadNexussyArtifact('${escapeHtml(a.kind || '')}', '${escapeHtml(sessionId || '')}')">Open</button>
+        </div>
+    `).join('')}<pre id="nexussy-artifact-preview" style="white-space:pre-wrap;max-height:220px;overflow:auto;background:var(--input-bg);padding:0.75rem;border-radius:8px;color:var(--text-dim);"></pre>`;
+}
+
+async function loadNexussyArtifact(kind, sessionId) {
+    if (!kind || !sessionId) return showToast('No artifact session available yet', true);
+    try {
+        const data = await fetchJsonOrThrow(`/api/nexussy/artifacts/${encodeURIComponent(kind)}?session_id=${encodeURIComponent(sessionId)}`);
+        const preview = document.getElementById('nexussy-artifact-preview');
+        if (preview) preview.textContent = data.content_text || JSON.stringify(data, null, 2);
+    } catch (e) {
+        showToast(`Artifact load failed: ${e.message}`, true);
+    }
+}
+
+function renderNexussyWorkers(workers) {
+    const el = document.getElementById('nexussy-workers');
+    if (!el) return;
+    if (!workers.length) {
+        el.innerHTML = '<h4>Workers</h4><p style="color:var(--text-dim);">No workers spawned yet. Develop-stage workers will appear here.</p>';
+        return;
+    }
+    el.innerHTML = `<h4>Workers</h4>${workers.map(w => `
+        <div class="activity-item" style="margin:0.55rem 0;">
+            <div style="display:flex;justify-content:space-between;gap:0.5rem;"><strong>${escapeHtml(w.worker_id || 'worker')}</strong><span class="meta-pill">${escapeHtml(w.status || 'unknown')}</span></div>
+            <p style="color:var(--text-dim);font-size:0.82rem;margin:0.35rem 0;">${escapeHtml(w.role || '')} · ${escapeHtml(w.task_title || w.task_id || 'no task')}</p>
+        </div>
+    `).join('')}`;
+}
+
+function renderNexussySafety(data, artifacts) {
+    const el = document.getElementById('nexussy-safety');
+    if (!el) return;
+    const changed = (artifacts || []).find(a => a.kind === 'changed_files');
+    const merge = (artifacts || []).find(a => a.kind === 'merge_report' || a.kind === 'conflict_report');
+    el.innerHTML = `
+        <h4>Safety / Merge Gate</h4>
+        <div class="message-meta" style="margin:0.5rem 0;"><span class="meta-pill">preview-first</span><span class="meta-pill">explicit merge only</span><span class="meta-pill">${changed ? 'changed files ready' : 'no changed_files yet'}</span></div>
+        <p style="color:var(--text-dim);font-size:0.84rem;">${merge ? 'Merge/conflict report is available in artifacts. Review before applying generated work.' : 'Nexussy artifacts will surface review/develop/merge reports here before any handoff.'}</p>
+    `;
+}
+
+function renderNexussyInterview(data) {
+    const el = document.getElementById('nexussy-interview');
+    if (!el) return;
+    const ids = nexussyActiveIds(data);
+    const status = data?.latest_status || {};
+    const paused = status?.paused || status?.run?.status === 'paused';
+    if (!ids.sessionId) {
+        el.innerHTML = '<h4>Interview</h4><p style="color:var(--text-dim);">Launch a pipeline to let Nexussy interview you inside Hermes.</p>';
+        return;
+    }
+    el.innerHTML = `
+        <h4>Interview</h4>
+        <p style="color:var(--text-dim);font-size:0.84rem;">Session ${escapeHtml(String(ids.sessionId).slice(0, 16))}${paused ? ' is paused for input.' : ' interview artifact can be opened from Artifacts.'}</p>
+        <textarea id="nexussy-interview-json" placeholder='Paste answer JSON, e.g. {"q1":"..."}' style="width:100%;min-height:92px;"></textarea>
+        <button class="btn primary" onclick="submitNexussyInterviewAnswer()">Submit Answers</button>
+        <button class="btn" onclick="loadNexussyArtifact('interview', '${escapeHtml(ids.sessionId)}')">Open Interview Artifact</button>
+    `;
+}
+
+async function loadNexussyEvents(runId) {
+    const el = document.getElementById('nexussy-events');
+    if (!el || !runId) return;
+    try {
+        const data = await fetchJsonOrThrow(`/api/nexussy/runs/${encodeURIComponent(runId)}/events?limit=80`);
+        const events = data.events || [];
+        el.innerHTML = `<h4>Recent Events</h4>${events.slice(-25).reverse().map(ev => `
+            <div class="activity-item" style="margin:0.45rem 0;"><div style="display:flex;justify-content:space-between;gap:0.5rem;"><strong>${escapeHtml(ev.type || 'event')}</strong><span class="meta-pill">#${escapeHtml(String(ev.sequence || ''))}</span></div><p style="color:var(--text-dim);font-size:0.8rem;margin:0.25rem 0 0;">${escapeHtml(JSON.stringify(ev.payload || {}).slice(0, 220))}</p></div>
+        `).join('') || '<p style="color:var(--text-dim);">No events yet.</p>'}`;
+    } catch (e) {
+        el.innerHTML = `<h4>Recent Events</h4><p style="color:var(--error);">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function startNexussySidecar() {
+    try {
+        const result = await fetchJsonOrThrow('/api/nexussy/sidecar/start', { method: 'POST' });
+        showToast(result.already_running ? 'Nexussy already running' : `Nexussy starting pid ${result.pid || 'unknown'}`);
+        setTimeout(loadNexussy, 1200);
+    } catch (e) {
+        showToast(`Nexussy start failed: ${e.message}`, true);
+    }
+}
+
+async function launchNexussy(event) {
+    if (event) event.preventDefault();
+    const payload = {
+        project_name: document.getElementById('nexussy-project-name')?.value?.trim() || '',
+        project_slug: document.getElementById('nexussy-project-slug')?.value?.trim() || undefined,
+        description: document.getElementById('nexussy-description')?.value?.trim() || '',
+        existing_repo_path: document.getElementById('nexussy-repo-path')?.value?.trim() || undefined,
+        start_stage: document.getElementById('nexussy-start-stage')?.value || 'interview',
+        stop_after_stage: document.getElementById('nexussy-stop-stage')?.value || 'develop',
+        auto_approve_interview: Boolean(document.getElementById('nexussy-auto-approve')?.checked),
+        auto_model_override: Boolean(document.getElementById('nexussy-auto-model-override')?.checked),
+        stage_model: document.getElementById('nexussy-stage-model')?.value?.trim() || 'openrouter/openai/gpt-4o-mini',
+        metadata: { source: 'hermes_dashboard', ussyverse: true },
+    };
+    try {
+        const result = await fetchJsonOrThrow('/api/nexussy/pipelines', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        nexussyActiveRunId = result.run_id || nexussyActiveRunId;
+        nexussyActiveSessionId = result.session_id || nexussyActiveSessionId;
+        showToast(`Nexussy pipeline launched: ${result.run_id || result.status || 'started'}`);
+        await loadNexussy();
+    } catch (e) {
+        showToast(`Nexussy launch failed: ${e.message}`, true);
+        await loadNexussy();
+    }
+}
+
+async function nexussyControl(action, confirmAction = false) {
+    const ids = nexussyActiveIds();
+    if (!ids.runId) return showToast('No active Nexussy run selected', true);
+    if (confirmAction && !confirm(`Confirm Nexussy ${action} for run ${ids.runId}?`)) return;
+    try {
+        await fetchJsonOrThrow(`/api/nexussy/runs/${encodeURIComponent(ids.runId)}/control`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, reason: `${action} from Hermes Dashboard` }),
+        });
+        showToast(`Nexussy ${action} sent`);
+        await loadNexussy();
+    } catch (e) {
+        showToast(`Nexussy ${action} failed: ${e.message}`, true);
+    }
+}
+
+async function sendNexussySteering() {
+    const ids = nexussyActiveIds();
+    const status = document.getElementById('nexussy-steering-status');
+    if (!ids.runId) return showToast('No active Nexussy run selected', true);
+    const priority = document.getElementById('nexussy-steer-priority')?.value || 'normal';
+    if (priority === 'urgent' && !confirm('Urgent steering can unblock paused waits. Send urgent steer?')) return;
+    const payload = {
+        target: document.getElementById('nexussy-steer-target')?.value || 'orchestrator',
+        worker_id: document.getElementById('nexussy-steer-worker')?.value?.trim() || undefined,
+        priority,
+        message: document.getElementById('nexussy-steer-message')?.value?.trim() || '',
+    };
+    try {
+        const result = await fetchJsonOrThrow(`/api/nexussy/runs/${encodeURIComponent(ids.runId)}/steer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (status) status.textContent = `Steering queued: ${JSON.stringify(result).slice(0, 160)}`;
+        showToast('Nexussy steering sent');
+        await loadNexussy();
+    } catch (e) {
+        if (status) status.textContent = e.message;
+        showToast(`Steering failed: ${e.message}`, true);
+    }
+}
+
+async function sendNexussyInject() {
+    const ids = nexussyActiveIds();
+    if (!ids.runId) return showToast('No active Nexussy run selected', true);
+    const message = document.getElementById('nexussy-steer-message')?.value?.trim() || '';
+    try {
+        await fetchJsonOrThrow(`/api/nexussy/runs/${encodeURIComponent(ids.runId)}/inject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message }),
+        });
+        showToast('Nexussy context injected');
+        await loadNexussy();
+    } catch (e) {
+        showToast(`Inject failed: ${e.message}`, true);
+    }
+}
+
+async function submitNexussyInterviewAnswer() {
+    const ids = nexussyActiveIds();
+    if (!ids.sessionId) return showToast('No active Nexussy session selected', true);
+    const raw = document.getElementById('nexussy-interview-json')?.value || '{}';
+    let answers;
+    try { answers = JSON.parse(raw); } catch (e) { return showToast('Interview answers must be JSON', true); }
+    try {
+        await fetchJsonOrThrow(`/api/nexussy/sessions/${encodeURIComponent(ids.sessionId)}/interview-answer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ answers }),
+        });
+        showToast('Interview answers submitted');
+        await loadNexussy();
+    } catch (e) {
+        showToast(`Interview submit failed: ${e.message}`, true);
+    }
 }
 
 // ── Cron Jobs ──
@@ -10542,6 +11722,7 @@ applyGraphSettingsToUi();
 log('inf', 'Dashboard initialized');
 loadActiveChatSession();
 startTokenUsagePolling();
+startApprovalPolling();
 loadStatus();
 loadModels();
 
