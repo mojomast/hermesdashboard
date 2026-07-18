@@ -27,3 +27,12 @@ def test_delegate_task_live_header_does_not_cap_child_sessions_at_three():
     assert "childEntries.slice(0, 3)" not in html
     assert "delegate-live-actions" in html
     assert "live subagent" in html
+
+
+def test_delegate_live_actions_are_not_nested_inside_the_tool_toggle_button():
+    html = dashboard_source()
+
+    pill = html[html.index('<button type="button" class="tool-call-pill"'):]
+    pill = pill[:pill.index('</button>')]
+    assert "${drawerBtn}" not in pill
+    assert "${drawerBtn}" in html

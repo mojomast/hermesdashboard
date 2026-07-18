@@ -93,6 +93,10 @@ def _extract_dashboard_js_helpers() -> str:
     middle_end = index_js.index("function getDelegateChildBucket")
     script_parts = [
         "function log() {}\n",
+        "globalThis.escapeHtml = function(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\\"/g, '&quot;').replace(/'/g, '&#039;'); };\n",
+        "globalThis.highlightJSON = function(value) { return escapeHtml(value); };\n",
+        "globalThis.formatMessageContent = function(value) { return escapeHtml(value); };\n",
+        "const toolCallCompletionTimes = new Map(); function getToolElapsed() { return ''; }\n",
         index_js[start:end],
         index_js[end:middle_end],
     ]
@@ -615,15 +619,123 @@ reduceAssistantTraceEvent(state, { type: 'tool_output', call_id: 'call-b', name:
 reduceAssistantTraceEvent(state, { type: 'content', text: 'Final answer' });
 return {
   eventTypes: state.events.map(event => event.type),
-  parallelCount: state.events[0]?.node?.payload?.toolNodes?.length || 0,
-  finalText: state.events[1]?.text || '',
+  callIds: state.events.filter(event => event.tool).map(event => event.tool.call_id),
+  finalText: state.events[2]?.text || '',
 };
             """
         )
 
-        self.assertEqual(result["eventTypes"], ["parallel_group", "content"])
-        self.assertEqual(result["parallelCount"], 2)
+        self.assertEqual(result["eventTypes"], ["tool_output", "tool_output", "content"])
+        self.assertEqual(result["callIds"], ["call-a", "call-b"])
         self.assertEqual(result["finalText"], "Final answer")
+
+    def test_explicit_parallel_group_survives_reduction_persistence_and_normalization(self):
+        result = _run_dashboard_trace_js(
+            """
+const state = createAssistantTraceState({ sessionId: 'parallel-explicit' });
+reduceAssistantTraceEvent(state, {
+  type: 'parallel_group',
+  node: {
+    kind: 'parallel_group',
+    node_id: 'group-1',
+    payload: {
+      label: 'Reviewer supplied group',
+      toolNodes: [
+        { kind: 'tool_run', node_id: 'tool-a', payload: { tool: { call_id: 'same', name: 'read_file', arguments: '{}' } } },
+        { kind: 'tool_run', node_id: 'tool-b', payload: { tool: { call_id: 'other', name: 'web_search', arguments: '{}' } } },
+      ],
+    },
+  },
+});
+const persisted = JSON.parse(JSON.stringify({ role: 'assistant', trace: state.trace, events: state.events }));
+const resumed = normalizeAssistantMessage(persisted);
+reduceAssistantTraceEvent(resumed, { type: 'tool_output', call_id: 'same', name: 'read_file', output: '' });
+return {
+  itemKinds: resumed.trace.items.map(node => node.kind),
+  eventTypes: resumed.events.map(event => event.type),
+  label: resumed.events[0]?.node?.payload?.label,
+  childTypes: resumed.events[0]?.node?.payload?.toolNodes.map(node => hasCapturedToolOutput(node.payload.tool) ? 'tool_output' : 'tool_call'),
+};
+            """
+        )
+
+        self.assertEqual(result["itemKinds"], ["parallel_group"])
+        self.assertEqual(result["eventTypes"], ["parallel_group"])
+        self.assertEqual(result["label"], "Reviewer supplied group")
+        self.assertEqual(result["childTypes"], ["tool_output", "tool_call"])
+
+    def test_empty_string_tool_output_is_captured_and_completed(self):
+        result = _run_dashboard_trace_js(
+            """
+const state = createAssistantTraceState({ sessionId: 'empty-output' });
+reduceAssistantTraceEvent(state, { type: 'tool_call', call_id: 'empty', name: 'terminal', arguments: '{}' });
+const before = state.events[0].type;
+reduceAssistantTraceEvent(state, { type: 'tool_output', call_id: 'empty', name: 'terminal', output: '' });
+const tool = state.trace.toolNodes[0].payload.tool;
+return {
+  before,
+  after: state.events[0].type,
+  captured: hasCapturedToolOutput(tool),
+  status: getToolStatusClass(tool),
+  outputPanel: renderToolOutput(tool.name, null, '', hasCapturedToolOutput(tool)),
+};
+            """
+        )
+
+        self.assertEqual(result["before"], "tool_call")
+        self.assertEqual(result["after"], "tool_output")
+        self.assertTrue(result["captured"])
+        self.assertEqual(result["status"], "complete")
+        self.assertIn("completed with empty output", result["outputPanel"])
+
+    def test_duplicate_call_ids_are_render_scoped_and_never_enter_inline_javascript(self):
+        result = _run_dashboard_trace_js(
+            """
+const attack = `shared');globalThis.__storedXss=true;//`;
+const first = { role: 'assistant', tools: [{ call_id: attack, name: 'read_file', arguments: '{"path":"one"}' }] };
+const second = { role: 'assistant', tools: [{ call_id: attack, name: 'read_file', arguments: '{"path":"two"}' }] };
+const firstHtml = renderAssistantMessage(first);
+const secondHtml = renderAssistantMessage(second);
+const firstKey = Array.from(toolCallData.keys())[0];
+const secondKey = Array.from(toolCallData.keys())[1];
+toolCallUiState.get(firstKey).expanded = true;
+return {
+  firstKey,
+  secondKey,
+  independent: firstKey !== secondKey && toolCallUiState.get(secondKey).expanded === false,
+  noInlineHandler: !firstHtml.includes('onclick=') && !secondHtml.includes('onclick='),
+  escapedAttribute: firstHtml.includes('&#039;'),
+  distinctInputs: toolCallData.get(firstKey).parsedArgs.raw !== toolCallData.get(secondKey).parsedArgs.raw,
+};
+            """
+        )
+
+        self.assertNotEqual(result["firstKey"], result["secondKey"])
+        self.assertTrue(result["independent"])
+        self.assertTrue(result["noInlineHandler"])
+        self.assertTrue(result["escapedAttribute"])
+        self.assertTrue(result["distinctInputs"])
+
+    def test_raw_tool_panel_safely_serializes_circular_and_bigint_payloads(self):
+        result = _run_dashboard_trace_js(
+            """
+const circular = { count: 9n };
+circular.self = circular;
+const key = getToolCallId({ call_id: 'raw' }, 0, { renderScope: 'raw-test' });
+const tool = { call_id: 'raw', name: 'custom', arguments: circular, output: circular };
+toolCallData.set(key, {
+  tool,
+  options: { node: { payload: circular } },
+  parsedArgs: parseToolPayload(circular),
+  parsedOutput: parseToolPayload(circular),
+});
+const html = renderToolPanelContent(key, 'raw');
+return { hasBigInt: html.includes('9n'), hasCircular: html.includes('[Circular]') };
+            """
+        )
+
+        self.assertTrue(result["hasBigInt"])
+        self.assertTrue(result["hasCircular"])
 
     def test_multiple_tool_waves_stay_separate_inside_one_step(self):
         result = _run_dashboard_trace_js(
@@ -649,11 +761,11 @@ return {
 
         self.assertEqual(
             result["eventTypes"],
-            ["content", "parallel_group", "content", "tool_output", "content"],
+            ["content", "tool_output", "tool_output", "content", "tool_output", "content"],
         )
         self.assertEqual(result["labels"][0], "Wave 1 intro")
-        self.assertEqual(result["labels"][2], " Wave 2 intro")
-        self.assertEqual(result["labels"][4], " Final")
+        self.assertEqual(result["labels"][3], " Wave 2 intro")
+        self.assertEqual(result["labels"][5], " Final")
 
     def test_resume_mid_run_preserves_timeline_order(self):
         result = _run_dashboard_trace_js(
@@ -865,7 +977,7 @@ return {
                 {"command": "python two.py", "labels": ["starting two"]},
             ],
         )
-        self.assertEqual(result["eventTypes"], ["parallel_group"])
+        self.assertEqual(result["eventTypes"], ["tool_call", "tool_call"])
 
     def test_progress_uses_tool_call_id_alias_for_matching_running_tool(self):
         result = _run_dashboard_trace_js(
@@ -924,6 +1036,128 @@ return {
         self.assertTrue(result["hasSecondError"])
         self.assertTrue(result["hasNoEmptyWarning"])
 
+    def test_tool_payload_and_call_normalization_preserve_falsy_values_and_skip_malformed_entries(self):
+        result = _run_dashboard_trace_js(
+            """
+const calls = normalizeToolCallEntries([
+  null,
+  false,
+  { id: 'zero', name: 'counter', arguments: 0, output: false },
+  { id: 'empty', function: { name: 'empty_tool', arguments: '' }, output: 0 },
+]);
+return {
+  parsedFalse: parseToolPayload(false),
+  parsedZero: parseToolPayload(0),
+  calls,
+};
+            """
+        )
+
+        self.assertEqual(result["parsedFalse"]["parsed"], False)
+        self.assertEqual(result["parsedZero"]["parsed"], 0)
+        self.assertEqual(len(result["calls"]), 2)
+        self.assertEqual(result["calls"][0]["arguments"], 0)
+        self.assertEqual(result["calls"][0]["output"], False)
+        self.assertEqual(result["calls"][1]["arguments"], "")
+        self.assertEqual(result["calls"][1]["output"], 0)
+
+    def test_falsy_tool_outputs_are_complete_and_circular_payloads_retain_structure(self):
+        result = _run_dashboard_trace_js(
+            """
+const circular = { call_id: 'circle', status: false };
+circular.self = circular;
+return {
+  falseStatus: getToolStatusClass({ call_id: 'false', name: 'flag', output: false }),
+  zeroStatus: getToolStatusClass({ call_id: 'zero', name: 'count', output: 0 }),
+  circularRaw: parseToolPayload(circular).raw,
+};
+            """
+        )
+
+        self.assertEqual(result["falseStatus"], "complete")
+        self.assertEqual(result["zeroStatus"], "complete")
+        self.assertIn('"call_id": "circle"', result["circularRaw"])
+        self.assertIn("[Circular]", result["circularRaw"])
+
+    def test_delegate_task_renderer_unwraps_nested_envelopes_and_renders_falsy_fields(self):
+        result = _run_dashboard_trace_js(
+            """
+globalThis.escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+globalThis.highlightJSON = (value) => String(value ?? '');
+const payload = { data: { output: { results: [
+  null,
+  { status: 'completed', title: 'Falsy result', result: false, duration_seconds: 0, api_calls: 0 },
+  { status: 'completed', title: 'Zero result', output: 0 }
+] } } };
+const raw = JSON.stringify(payload);
+const html = renderToolOutput('delegate_task', payload, raw);
+return {
+  hasFalsyResult: html.includes('false'),
+  hasZeroResult: html.includes('>0<'),
+  hasRaw: html.includes(raw),
+  noEmptyWarning: !html.includes('No delegated task results were returned.'),
+};
+            """
+        )
+
+        self.assertTrue(result["hasFalsyResult"])
+        self.assertTrue(result["hasZeroResult"])
+        self.assertTrue(result["hasRaw"])
+        self.assertTrue(result["noEmptyWarning"])
+
+    def test_execution_history_shows_latest_five_and_keeps_full_history_expandable(self):
+        result = _run_dashboard_trace_js(
+            """
+globalThis.escapeHtml = (value) => String(value ?? '');
+const entries = Array.from({length: 7}, (_, idx) => ({ html: `<i>call-${idx + 1}</i>` }));
+const html = renderToolCallList(entries);
+return {
+  hasBubble: html.includes('execution-history-bubble'),
+  hiddenCount: (html.match(/execution-history-older/g) || []).length,
+  visibleLatest: ['call-3', 'call-4', 'call-5', 'call-6', 'call-7'].every(value => html.includes(value)),
+  toggleLabel: html.includes('Show 2 earlier calls'),
+};
+            """
+        )
+
+        self.assertTrue(result["hasBubble"])
+        self.assertEqual(result["hiddenCount"], 1)
+        self.assertTrue(result["visibleLatest"])
+        self.assertTrue(result["toggleLabel"])
+
+    def test_adjacent_calls_are_not_inferred_to_be_parallel(self):
+        result = _run_dashboard_trace_js(
+            """
+const grouped = groupParallelToolEvents([
+  { type: 'tool_call', tool: { call_id: 'one', name: 'read_file' } },
+  { type: 'tool_call', tool: { call_id: 'two', name: 'terminal' } },
+]);
+return grouped.map(event => event.type);
+            """
+        )
+
+        self.assertEqual(result, ["tool_call", "tool_call"])
+
+    def test_debug_details_include_known_falsy_fields_other_fields_and_raw_payload(self):
+        result = _run_dashboard_trace_js(
+            """
+globalThis.escapeHtml = (value) => String(value ?? '');
+const html = renderLogDetails({ args: false, result: 0, error: '', call_id: 'abc', status: 'done' });
+return {
+  arguments: html.includes('Arguments') && html.includes('false'),
+  result: html.includes('Result') && html.includes('0'),
+  fields: html.includes('call_id') && html.includes('abc') && html.includes('status'),
+  raw: html.includes('Raw payload'),
+};
+            """
+        )
+
+        self.assertTrue(result["arguments"])
+        self.assertTrue(result["result"])
+        self.assertTrue(result["fields"])
+        self.assertTrue(result["raw"])
+
     def test_historical_hydration_uses_same_timeline_semantics(self):
         result = _run_dashboard_trace_js(
             """
@@ -954,7 +1188,7 @@ return {
             """
         )
 
-        self.assertEqual(result["eventTypes"], ["content", "parallel_group"])
+        self.assertEqual(result["eventTypes"], ["content", "tool_output", "tool_output"])
         self.assertEqual(
             result["itemKinds"], ["assistant_content", "tool_run", "tool_run"]
         )
