@@ -1010,8 +1010,7 @@ function startApprovalPolling() {
 }
 
 function renderConversation() {
-    chat.innerHTML = '';
-    conversation.forEach(msg => {
+    const rows = conversation.filter((msg) => {
         const hasRenderableAssistantState = msg.role === 'assistant' && (
             (typeof msg.content === 'string' && msg.content.length > 0)
             || (Array.isArray(msg.events) && msg.events.length > 0)
@@ -1022,10 +1021,17 @@ function renderConversation() {
                 || msg.trace.contentNode
             ))
         );
-        if (msg.role === 'user' || hasRenderableAssistantState) {
-            addMessage(msg.role, msg, false);
-        }
+        return msg.role === 'user' || hasRenderableAssistantState;
     });
+    chat.innerHTML = renderTranscriptSegments(buildTranscriptRenderSegments(rows), {
+        assistant: (body, segment) => {
+            const source = segment.message || segment.updates?.[0]?.message || {};
+            const normalized = segment.normalized || segment.updates?.[0]?.normalized || normalizeAssistantMessage(source);
+            return `<div class="message assistant">${renderAssistantMessageShell({ ...source, traceNode: null }, normalized, body)}</div>`;
+        },
+        boundary: (row) => `<div class="message ${escapeHtml(row?.role || 'user')}">${renderUserMessageContent(row?.content || '')}</div>`,
+    });
+    bindToolCardInteractions(chat);
     log('inf', `Restored ${conversation.length} messages from cache`);
 }
 
@@ -2230,48 +2236,54 @@ function renderOrphanDiagnosticNode(node, traceContext = currentSessionTraceCont
 }
 
 function renderSessionTranscript(traceContext) {
-    return (traceContext?.nodes || []).map(node => {
+    const rows = (traceContext?.nodes || []).map((node) => {
         if (node.kind === 'assistant_step') {
-            const message = { ...buildAssistantMessageFromTraceNode(node), renderTraceContext: traceContext };
-            return renderSessionMessage(message);
+            return { message: { ...buildAssistantMessageFromTraceNode(node), renderTraceContext: traceContext }, node };
         }
-        if (node.kind === 'user_message') {
-            return renderSessionMessage({ ...node.payload.message, traceNode: node });
-        }
-        if (node.kind === 'child_session') {
-            return renderInlineChildStage(node, traceContext);
-        }
-        if (node.kind === 'diagnostic_artifact' && node.payload?.artifact) {
-            return renderDiagnosticArtifactNode(node, traceContext);
-        }
-        if (node.kind === 'diagnostic_artifact' && node.payload?.orphan) {
-            return renderOrphanDiagnosticNode(node, traceContext);
-        }
-        return '';
-    }).join('');
+        return { kind: 'boundary', node };
+    });
+    return renderTranscriptSegments(buildTranscriptRenderSegments(rows), {
+        assistant: (body, segment) => {
+            const source = segment.message || segment.updates?.[0]?.message || {};
+            const normalized = segment.normalized || segment.updates?.[0]?.normalized || normalizeAssistantMessage(source);
+            return `<div class="message assistant">${renderAssistantMessageShell({ ...source, traceNode: null }, normalized, body)}</div>`;
+        },
+        boundary: (row) => {
+            const node = row?.node;
+            if (node?.kind === 'user_message') return renderSessionMessage({ ...node.payload.message, traceNode: node });
+            if (node?.kind === 'child_session') return renderInlineChildStage(node, traceContext);
+            if (node?.kind === 'diagnostic_artifact' && node.payload?.artifact) return renderDiagnosticArtifactNode(node, traceContext);
+            if (node?.kind === 'diagnostic_artifact' && node.payload?.orphan) return renderOrphanDiagnosticNode(node, traceContext);
+            return '';
+        },
+    });
 }
 
 function renderFloatingSessionTranscript(traceContext) {
-    return (traceContext?.nodes || []).map(node => {
+    const rows = (traceContext?.nodes || []).map((node) => {
         if (node.kind === 'assistant_step') {
-            const message = { ...buildAssistantMessageFromTraceNode(node), renderTraceContext: traceContext };
-            return `<div class="fp-msg" style="border-left-color:#06b6d4"><div class="fp-msg-role" style="color:#06b6d4">assistant</div>${renderAssistantMessage(message)}</div>`;
+            return { message: { ...buildAssistantMessageFromTraceNode(node), renderTraceContext: traceContext }, node };
         }
-        if (node.kind === 'user_message') {
-            const message = node.payload.message || {};
-            return `<div class="fp-msg" style="border-left-color:#a855f7"><div class="fp-msg-role" style="color:#a855f7">user</div><div style="font-size:0.8rem;line-height:1.4">${escapeHtml(message.content || '').replace(/\n/g, '<br>')}</div></div>`;
-        }
-        if (node.kind === 'child_session') {
-            return `<div class="fp-msg" style="border-left-color:#a855f7">${renderInlineChildStage(node, traceContext)}</div>`;
-        }
-        if (node.kind === 'diagnostic_artifact' && node.payload?.artifact) {
-            return `<div class="fp-msg" style="border-left-color:#f97316">${renderDiagnosticArtifactNode(node, traceContext)}</div>`;
-        }
-        if (node.kind === 'diagnostic_artifact' && node.payload?.orphan) {
-            return `<div class="fp-msg" style="border-left-color:#f97316">${renderOrphanDiagnosticNode(node, traceContext)}</div>`;
-        }
-        return '';
-    }).join('');
+        return { kind: 'boundary', node };
+    });
+    return renderTranscriptSegments(buildTranscriptRenderSegments(rows), {
+        assistant: (body, segment) => {
+            const source = segment.message || segment.updates?.[0]?.message || {};
+            const normalized = segment.normalized || segment.updates?.[0]?.normalized || normalizeAssistantMessage(source);
+            return `<div class="fp-msg" style="border-left-color:#06b6d4"><div class="fp-msg-role" style="color:#06b6d4">assistant</div>${renderAssistantMessageShell(source, normalized, body)}</div>`;
+        },
+        boundary: (row) => {
+            const node = row?.node;
+            if (node?.kind === 'user_message') {
+                const message = node.payload.message || {};
+                return `<div class="fp-msg" style="border-left-color:#a855f7"><div class="fp-msg-role" style="color:#a855f7">user</div><div style="font-size:0.8rem;line-height:1.4">${escapeHtml(message.content || '').replace(/\n/g, '<br>')}</div></div>`;
+            }
+            if (node?.kind === 'child_session') return `<div class="fp-msg" style="border-left-color:#a855f7">${renderInlineChildStage(node, traceContext)}</div>`;
+            if (node?.kind === 'diagnostic_artifact' && node.payload?.artifact) return `<div class="fp-msg" style="border-left-color:#f97316">${renderDiagnosticArtifactNode(node, traceContext)}</div>`;
+            if (node?.kind === 'diagnostic_artifact' && node.payload?.orphan) return `<div class="fp-msg" style="border-left-color:#f97316">${renderOrphanDiagnosticNode(node, traceContext)}</div>`;
+            return '';
+        },
+    });
 }
 
 async function hydrateChatFromSession(sessionId, options = {}) {
@@ -3233,6 +3245,7 @@ function ensureAssistantTracePendingDelegateChildren(state) {
 }
 
 const toolCallUiState = new Map();
+const executionHistoryUiState = new Map();
 const toolCallData = new Map();
 const assistantRenderScopes = new WeakMap();
 let assistantRenderScopeSequence = 0;
@@ -3842,21 +3855,33 @@ function renderToolBlock(tool, idx, options = {}) {
     `;
 }
 
-function renderToolCallList(entries = []) {
+function setExecutionHistoryExpanded(segmentKey, expanded) {
+    if (!segmentKey) return;
+    executionHistoryUiState.set(segmentKey, expanded === true);
+}
+
+function getExecutionHistorySegmentKey(entries = [], fallback = 'execution') {
+    const firstKey = entries[0]?.key || entries[0]?.tool?.call_id || 'first-update';
+    return `${fallback}:${firstKey}`;
+}
+
+function renderToolCallList(entries = [], options = {}) {
     if (!Array.isArray(entries) || !entries.length) return '';
     const validEntries = entries.filter(entry => entry && typeof entry === 'object');
     if (!validEntries.length) return '';
+    const segmentKey = options.segmentKey || getExecutionHistorySegmentKey(validEntries, options.renderScope || 'execution');
     const visibleStart = Math.max(0, validEntries.length - 3);
     const olderEntries = validEntries.slice(0, visibleStart);
     const latestEntries = validEntries.slice(visibleStart);
+    const isExpanded = executionHistoryUiState.get(segmentKey) === true;
     const olderHtml = olderEntries.length ? `
-        <details class="execution-history-older">
+        <details class="execution-history-older"${isExpanded ? ' open' : ''} data-execution-segment-key="${escapeHtml(segmentKey)}">
             <summary>Show ${olderEntries.length} earlier call${olderEntries.length === 1 ? '' : 's'}</summary>
             <div class="tool-call-list">${olderEntries.map(entry => entry.html || '').join('')}</div>
         </details>
     ` : '';
     return `
-        <section class="execution-history-bubble" aria-label="Execution history">
+        <section class="execution-history-bubble" aria-label="Execution history" data-execution-history-key="${escapeHtml(segmentKey)}">
             <div class="execution-history-header">
                 <span>Execution</span>
                 <span>${validEntries.length} call${validEntries.length === 1 ? '' : 's'}</span>
@@ -3912,6 +3937,175 @@ function renderParallelToolBatch(toolNodes = [], traceContext = null, label = ''
     `;
 }
 
+function makeParallelToolCardEntry(event, idx, traceContext = null, renderScope = 'parallel') {
+    const toolNodes = Array.isArray(event?.node?.payload?.toolNodes) ? event.node.payload.toolNodes : [];
+    const label = event?.node?.payload?.label || summarizeParallelGroupLabel(toolNodes.map(node => node?.payload?.tool));
+    const memberKeys = toolNodes.map((node, toolIdx) => getToolCallId(
+        node?.payload?.tool || {}, toolIdx, { node, traceContext, renderScope },
+    ));
+    return {
+        key: `${renderScope}:parallel-update:${memberKeys.join('|') || idx}`,
+        event,
+        html: renderParallelToolBatch(toolNodes, traceContext, `${label} · ${toolNodes.length} calls`, renderScope),
+    };
+}
+
+function isTranscriptToolUpdate(event) {
+    return event?.type === 'tool_call' || event?.type === 'tool_output'
+        || event?.type === 'tool_collection' || event?.type === 'parallel_group';
+}
+
+function getTranscriptToolUpdateIdentity(event, fallbackIndex = 0) {
+    if (event?.node?.node_id) return event.node.node_id;
+    const tool = event?.tool || event;
+    if (tool?.call_id || tool?.id) return tool.call_id || tool.id;
+    if (event?.type === 'tool_collection') {
+        const first = event.tools?.[0];
+        return first?.key || first?.tool?.call_id || first?.call_id || `collection-${fallbackIndex}`;
+    }
+    if (event?.type === 'parallel_group') {
+        const firstNode = event.node?.payload?.toolNodes?.[0];
+        return firstNode?.node_id || firstNode?.payload?.tool?.call_id || `parallel-${fallbackIndex}`;
+    }
+    return `update-${fallbackIndex}`;
+}
+
+function isMeaningfulTranscriptMeta(value) {
+    if (value === null || value === undefined || value === '') return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'number') return Number.isFinite(value) && value !== 0;
+    return true;
+}
+
+function mergeTranscriptUsageMetadata(updates = []) {
+    const uniqueMessages = new Set();
+    const normalizedRows = [];
+    (updates || []).forEach((update) => {
+        const source = update?.message;
+        if (source && uniqueMessages.has(source)) return;
+        if (source) uniqueMessages.add(source);
+        normalizedRows.push(update?.normalized || normalizeAssistantMessage(source || {}));
+    });
+
+    const usage = {};
+    const tokenTotals = {};
+    let lastPromptTokens = 0;
+    let promptBreakdown = [];
+    normalizedRows.forEach((normalized) => {
+        Object.entries(normalized?.usage || {}).forEach(([key, value]) => {
+            if (typeof value === 'number' && Number.isFinite(value) && /tokens?$/i.test(key)) {
+                tokenTotals[key] = (tokenTotals[key] || 0) + value;
+            } else if (isMeaningfulTranscriptMeta(value)) {
+                usage[key] = value;
+            }
+        });
+        if (isMeaningfulTranscriptMeta(normalized?.last_prompt_tokens)) {
+            lastPromptTokens = normalized.last_prompt_tokens;
+        }
+        if (isMeaningfulTranscriptMeta(normalized?.prompt_breakdown)) {
+            promptBreakdown = normalized.prompt_breakdown;
+        }
+    });
+
+    return {
+        ...(normalizedRows[normalizedRows.length - 1] || {}),
+        usage: Object.keys(usage).length || Object.keys(tokenTotals).length ? { ...usage, ...tokenTotals } : null,
+        last_prompt_tokens: lastPromptTokens,
+        prompt_breakdown: promptBreakdown,
+    };
+}
+
+function buildTranscriptRenderSegments(rows = []) {
+    const segments = [];
+    let pendingUpdates = [];
+    let pendingSegmentKey = '';
+    let transcriptPosition = 0;
+    const flushUpdates = () => {
+        if (!pendingUpdates.length) return;
+        segments.push({
+            type: 'execution',
+            updates: pendingUpdates,
+            segmentKey: pendingSegmentKey,
+            message: pendingUpdates[pendingUpdates.length - 1]?.message || {},
+            normalized: mergeTranscriptUsageMetadata(pendingUpdates),
+        });
+        pendingUpdates = [];
+        pendingSegmentKey = '';
+    };
+
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const message = row?.message || row;
+        if (row?.kind === 'boundary' || message?.role !== 'assistant') {
+            flushUpdates();
+            segments.push({ type: 'boundary', row, message });
+            transcriptPosition += 1;
+            return;
+        }
+        const normalized = mergeLegacyMarkersIntoEvents(normalizeAssistantMessage(message));
+        const renderScope = getAssistantRenderScope(message, normalized);
+        const events = normalized.events.length
+            ? normalized.events
+            : [{ type: 'content', text: normalized.content || '' }];
+        events.forEach((event) => {
+            if (isTranscriptToolUpdate(event)) {
+                if (!pendingUpdates.length) {
+                    const firstIdentity = getTranscriptToolUpdateIdentity(event, transcriptPosition);
+                    pendingSegmentKey = `${renderScope}:execution:${transcriptPosition}:${firstIdentity}`;
+                }
+                pendingUpdates.push({ event, message, normalized, renderScope, traceContext: normalized.renderTraceContext || null });
+                transcriptPosition += 1;
+                return;
+            }
+            if (event?.type === 'content' && !String(event.text || '').trim()) return;
+            flushUpdates();
+            segments.push({ type: 'assistant', event, message, normalized, renderScope });
+            transcriptPosition += 1;
+        });
+    });
+    flushUpdates();
+    return segments;
+}
+
+function renderTranscriptExecutionEntries(segment) {
+    const entries = [];
+    (segment?.updates || []).forEach((update, updateIdx) => {
+        const { event, renderScope, traceContext } = update;
+        if (event?.type === 'tool_collection') {
+            (event.tools || []).forEach((item, itemIdx) => {
+                if (item?.html) entries.push(item);
+                else entries.push(makeToolCardEntry(item?.tool || item, itemIdx, { traceContext, renderScope }));
+            });
+        } else if (event?.type === 'parallel_group') {
+            entries.push(makeParallelToolCardEntry(event, updateIdx, traceContext, renderScope));
+        } else if (event?.type === 'tool_call' || event?.type === 'tool_output') {
+            entries.push(makeToolCardEntry(event.tool || event, updateIdx, {
+                node: event.node || null, traceContext, renderScope,
+            }));
+        }
+    });
+    return entries;
+}
+
+function renderTranscriptSegments(segments = [], renderers = {}) {
+    return (segments || []).map((segment) => {
+        if (segment.type === 'boundary') return renderers.boundary ? renderers.boundary(segment.row, segment) : '';
+        if (segment.type === 'assistant') {
+            const body = segment.event?.type === 'content'
+                ? `<div>${formatMessageContent(segment.event.text || '')}</div>`
+                : groupSequentialToolCards([segment.event], segment.normalized?.renderTraceContext || null, segment.renderScope).join('');
+            return renderers.assistant ? renderers.assistant(body, segment) : body;
+        }
+        if (segment.type === 'execution') {
+            const entries = renderTranscriptExecutionEntries(segment);
+            const scope = segment.updates?.[0]?.renderScope || 'transcript';
+            const key = segment.segmentKey || getExecutionHistorySegmentKey(entries, scope);
+            const body = renderToolCallList(entries, { segmentKey: key, renderScope: scope });
+            return renderers.assistant ? renderers.assistant(body, segment) : body;
+        }
+        return '';
+    }).join('');
+}
+
 function syncToolCallUi(root = document) {
     if (!root) return;
     root.querySelectorAll('[data-tool-id]').forEach((node) => {
@@ -3951,13 +4145,11 @@ function groupSequentialToolCards(events = [], traceContext = null, renderScope 
             pendingTools.push(makeToolCardEntry(event.tool || event, idx, { node: event.node || null, traceContext, renderScope }));
             return;
         }
-        flushPendingTools();
         if (event.type === 'parallel_group') {
-            const toolNodes = Array.isArray(event.node?.payload?.toolNodes) ? event.node.payload.toolNodes : [];
-            const label = event.node?.payload?.label || summarizeParallelGroupLabel(toolNodes.map(node => node.payload.tool));
-            rendered.push(renderParallelToolBatch(toolNodes, traceContext, `${label} · ${toolNodes.length} calls`, renderScope));
+            pendingTools.push(makeParallelToolCardEntry(event, idx, traceContext, renderScope));
             return;
         }
+        flushPendingTools();
         if (event.type === 'diagnostic' && event.node?.payload?.orphan) {
             rendered.push(renderOrphanDiagnosticNode(event.node, traceContext));
             return;
@@ -4057,10 +4249,7 @@ function extractLegacyToolMarkers(content) {
     };
 }
 
-function renderAssistantMessage(message) {
-    const normalized = mergeLegacyMarkersIntoEvents(normalizeAssistantMessage(message));
-    const renderScope = getAssistantRenderScope(message, normalized);
-    const bodyHtml = renderAssistantEvents(normalized, renderScope);
+function renderAssistantMessageShell(message, normalized, bodyHtml) {
     const usage = normalized.usage || {};
     const wrapperIdValue = message?.traceNode?.dom_id ? scopedExecutionDomId(message.traceNode.dom_id, normalized.renderTraceContext || null) : '';
     const wrapperId = wrapperIdValue ? ` id="${escapeHtml(wrapperIdValue)}"` : '';
@@ -4080,6 +4269,12 @@ function renderAssistantMessage(message) {
             ${metaHtml ? `<div class="message-meta">${metaHtml}</div>` : ''}
         </div>
     `;
+}
+
+function renderAssistantMessage(message) {
+    const normalized = mergeLegacyMarkersIntoEvents(normalizeAssistantMessage(message));
+    const renderScope = getAssistantRenderScope(message, normalized);
+    return renderAssistantMessageShell(message, normalized, renderAssistantEvents(normalized, renderScope));
 }
 
 function normalizeToolCallEntries(toolCalls) {
@@ -5760,6 +5955,11 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // Listen for hash changes (browser back/forward) and close settings on outside click/Escape
 document.addEventListener('click', (event) => {
+    const executionSummary = event.target.closest?.('details[data-execution-segment-key] > summary');
+    if (executionSummary) {
+        const details = executionSummary.parentElement;
+        setExecutionHistoryExpanded(details.getAttribute('data-execution-segment-key'), !details.open);
+    }
     const toolToggle = event.target.closest?.('[data-tool-toggle]');
     if (toolToggle) {
         toggleToolCall(toolToggle.getAttribute('data-tool-toggle'));

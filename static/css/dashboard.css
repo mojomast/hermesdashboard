@@ -6,6 +6,7 @@
     --primary-border: rgba(255, 215, 0, 0.3);
     --bg-dark: #0f0f23;
     --bg-card: rgba(255, 255, 255, 0.02);
+    --subagent-window-surface: rgba(15, 15, 35, 0.96);
     --text: #e0e0e0;
     --text-dim: #888;
     --success: #4ade80;
@@ -26,6 +27,7 @@
     --primary-border: rgba(184, 134, 11, 0.25);
     --bg-dark: #f5f5f5;
     --bg-card: rgba(0, 0, 0, 0.03);
+    --subagent-window-surface: rgba(255, 255, 255, 0.98);
     --text: #1a1a2e;
     --text-dim: #666;
     --success: #16a34a;
@@ -3148,7 +3150,7 @@ body {
     margin: 0;
     border: 1px solid var(--primary-border);
     border-left: 3px solid var(--primary);
-    background: var(--bg-card, #14151b);
+    background: var(--subagent-window-surface);
     border-radius: 10px;
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.48);
     overflow: hidden;

@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 
 from tests.dashboard_sources import DASHBOARD_JS, dashboard_source
@@ -49,6 +50,26 @@ def test_subagent_windows_use_a_stable_body_level_layer_not_tool_markup():
     assert "function ensureSubagentWindowLayer" in html
     assert "anchorEl.closest('details, .tool-call-block, .tool-section')" not in html
     assert "host.insertAdjacentHTML('beforeend'" not in html
+
+
+def test_transcript_condensation_pipeline_is_wired_to_chat_session_and_floating_views():
+    html = dashboard_source()
+    conversation_renderer = html.split("function renderConversation()", 1)[1].split("function makeExecutionNodeId", 1)[0]
+    session_renderer = html.split("function renderSessionTranscript(traceContext)", 1)[1].split("async function hydrateChatFromSession", 1)[0]
+
+    assert "renderTranscriptSegments(buildTranscriptRenderSegments(rows)" in conversation_renderer
+    assert session_renderer.count("renderTranscriptSegments(buildTranscriptRenderSegments(rows)") == 2
+    assert "function buildTranscriptRenderSegments" in html
+    assert "function renderTranscriptExecutionEntries" in html
+
+
+def test_subagent_windows_use_dedicated_nearly_opaque_dark_and_light_surfaces():
+    css = DASHBOARD_JS.parent.parent.joinpath("css", "dashboard.css").read_text(encoding="utf-8")
+    assert "--subagent-window-surface: rgba(15, 15, 35, 0.96)" in css
+    assert "--subagent-window-surface: rgba(255, 255, 255, 0.98)" in css
+    rule = re.search(r"\.child-session-drawer\.subagent-window\s*\{([^}]*)\}", css, re.S)
+    assert rule and "background: var(--subagent-window-surface)" in rule.group(1)
+    assert "background: var(--bg-card" not in rule.group(1)
 
 
 def test_subagent_window_manager_supports_independent_focus_drag_resize_and_minimize():

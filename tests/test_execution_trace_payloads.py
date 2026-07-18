@@ -1129,6 +1129,138 @@ return {
         self.assertIn("call-7", result["latestHtml"])
         self.assertTrue(result["toggleLabel"])
 
+    def test_transcript_pipeline_condenses_adjacent_assistant_tool_rows_between_content(self):
+        result = _run_dashboard_trace_js(
+            """
+const toolRow = (prefix, count) => Array.from({length: count}, (_, idx) => ({
+  role: 'assistant', content: '', events: [{type: 'tool_call', tool: {
+    call_id: `${prefix}${idx + 1}`, name: `${prefix}${idx + 1}`, output: 'ok'}}]
+}));
+const rows = [
+  {role: 'assistant', content: 'A'}, ...toolRow('t', 6),
+  {role: 'assistant', content: 'B'}, ...toolRow('u', 5),
+  {role: 'assistant', content: 'C'},
+];
+const segments = buildTranscriptRenderSegments(rows);
+const html = renderTranscriptSegments(segments, {assistant: body => body, boundary: () => ''});
+return {
+  types: segments.map(segment => segment.type),
+  counts: segments.filter(segment => segment.type === 'execution').map(segment => segment.updates.length),
+  bubbles: (html.match(/execution-history-bubble/g) || []).length,
+  labels: ['Show 3 earlier calls', 'Show 2 earlier calls'].map(label => html.includes(label)),
+  firstLatest: html.split('execution-history-latest')[1].split('</section>')[0],
+  secondLatest: html.split('execution-history-latest')[2].split('</section>')[0],
+};
+            """
+        )
+        self.assertEqual(result["types"], ["assistant", "execution", "assistant", "execution", "assistant"])
+        self.assertEqual(result["counts"], [6, 5])
+        self.assertEqual(result["bubbles"], 2)
+        self.assertEqual(result["labels"], [True, True])
+        self.assertNotIn("t3", result["firstLatest"])
+        self.assertTrue(all(name in result["firstLatest"] for name in ("t4", "t5", "t6")))
+        self.assertNotIn("u2", result["secondLatest"])
+        self.assertTrue(all(name in result["secondLatest"] for name in ("u3", "u4", "u5")))
+
+    def test_parallel_group_is_one_ordered_update_without_splitting_execution_segment(self):
+        result = _run_dashboard_trace_js(
+            """
+const parallelNode = {payload: {label: 'pair', toolNodes: [
+  {payload: {tool: {call_id: 'p1', name: 'read_file', output: 'a'}}},
+  {payload: {tool: {call_id: 'p2', name: 'read_file', output: 'b'}}},
+]}};
+const rows = [{role: 'assistant', events: [
+  {type: 'tool_call', tool: {call_id: 'before', name: 'before', output: 'ok'}},
+  {type: 'parallel_group', node: parallelNode},
+  {type: 'tool_call', tool: {call_id: 'after', name: 'after', output: 'ok'}},
+]}];
+const segments = buildTranscriptRenderSegments(rows);
+const html = renderTranscriptSegments(segments, {assistant: body => body, boundary: () => ''});
+return {types: segments.map(x => x.type), count: segments[0].updates.length,
+  bubbles: (html.match(/execution-history-bubble/g) || []).length,
+  parallel: html.includes('parallel 2')};
+            """
+        )
+        self.assertEqual(result, {"types": ["execution"], "count": 3, "bubbles": 1, "parallel": True})
+
+    def test_execution_segment_expansion_has_stable_key_across_live_rerenders(self):
+        result = _run_dashboard_trace_js(
+            """
+const rows = Array.from({length: 4}, (_, idx) => ({
+  role: 'assistant', events: [{type: 'tool_call', tool: {call_id: `live-${idx + 1}`, name: 'terminal'}}]
+}));
+const render = () => {
+  const segments = buildTranscriptRenderSegments(rows);
+  return {segments, html: renderTranscriptSegments(segments, {assistant: body => body, boundary: () => ''})};
+};
+const first = render();
+const key = first.segments[0].segmentKey;
+setExecutionHistoryExpanded(key, true);
+rows.push({role: 'assistant', events: [{type: 'tool_call', tool: {call_id: 'live-5', name: 'terminal'}}]});
+const second = render();
+return {
+  sameKey: key === second.segments[0].segmentKey,
+  initiallyClosed: !first.html.includes('<details class="execution-history-older" open'),
+  remainsOpen: second.html.includes('<details class="execution-history-older" open'),
+  appendedCallRendered: second.html.includes('live-5'),
+};
+            """
+        )
+        self.assertEqual(result, {
+            "sameKey": True,
+            "initiallyClosed": True,
+            "remainsOpen": True,
+            "appendedCallRendered": True,
+        })
+
+    def test_execution_segment_keys_do_not_collide_between_segments(self):
+        result = _run_dashboard_trace_js(
+            """
+const rows = [
+  {role: 'assistant', events: [{type: 'tool_call', tool: {call_id: 'same', name: 'terminal'}}]},
+  {role: 'user', content: 'boundary'},
+  {role: 'assistant', events: [{type: 'tool_call', tool: {call_id: 'same', name: 'terminal'}}]},
+];
+const segments = buildTranscriptRenderSegments(rows).filter(segment => segment.type === 'execution');
+return {count: segments.length, unique: new Set(segments.map(segment => segment.segmentKey)).size};
+            """
+        )
+        self.assertEqual(result, {"count": 2, "unique": 2})
+
+    def test_merged_execution_shell_aggregates_unique_row_usage_and_keeps_latest_context(self):
+        result = _run_dashboard_trace_js(
+            """
+const first = {role: 'assistant', usage: {total_tokens: 11, prompt_tokens: 7, model: 'old'},
+  last_prompt_tokens: 101, events: [
+    {type: 'tool_call', tool: {call_id: 'a', name: 'terminal'}},
+    {type: 'tool_output', tool: {call_id: 'a', name: 'terminal', output: 'ok'}},
+  ]};
+const second = {role: 'assistant', usage: {total_tokens: 22, prompt_tokens: 13, model: 'new'},
+  last_prompt_tokens: 202, events: [{type: 'tool_call', tool: {call_id: 'b', name: 'read_file'}}]};
+const segment = buildTranscriptRenderSegments([first, second])[0];
+const firstNormalized = normalizeAssistantMessage(first);
+const secondNormalized = normalizeAssistantMessage(second);
+const deduped = mergeTranscriptUsageMetadata([
+  {message: first, normalized: firstNormalized},
+  {message: first, normalized: firstNormalized},
+  {message: second, normalized: secondNormalized},
+]);
+const html = renderTranscriptSegments([segment], {
+  assistant: (body, merged) => renderAssistantMessageShell(merged.message, merged.normalized, body), boundary: () => ''
+});
+return {usage: segment.normalized.usage, dedupedTotal: deduped.usage.total_tokens,
+  context: segment.normalized.last_prompt_tokens,
+  total33: html.includes('Total: 33'), prompt20: html.includes('Prompt: 20')};
+            """
+        )
+        self.assertEqual(result["usage"]["total_tokens"], 33)
+        self.assertEqual(result["usage"]["prompt_tokens"], 20)
+        self.assertEqual(result["usage"]["model"], "new")
+        self.assertEqual(result["dedupedTotal"], 33)
+        self.assertEqual(result["context"], 202)
+        self.assertTrue(result["total33"])
+        self.assertTrue(result["prompt20"])
+
     def test_adjacent_calls_are_not_inferred_to_be_parallel(self):
         result = _run_dashboard_trace_js(
             """
