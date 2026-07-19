@@ -591,12 +591,33 @@ def _route_child_stream_event(run_id: str, payload: dict) -> None:
 def _normalize_sse_payload(parsed: dict) -> list[dict]:
     payloads: list[dict] = []
     if parsed.get("tool") and not parsed.get("choices"):
+        call_id = str(
+            parsed.get("call_id")
+            or parsed.get("tool_call_id")
+            or parsed.get("toolCallId")
+            or ""
+        ).strip()
+        status = str(parsed.get("status") or "").strip().lower()
+        if call_id and status == "running":
+            payloads.append(
+                {
+                    "type": "tool_call",
+                    "name": parsed.get("tool"),
+                    "call_id": call_id,
+                    "arguments": parsed.get("arguments") or parsed.get("args") or "",
+                    "progress": parsed.get("label") or parsed.get("message") or "running",
+                    "status": status,
+                }
+            )
+            return payloads
         payloads.append(
             {
                 "type": "tool_progress",
                 "name": parsed.get("tool"),
                 "progress": parsed.get("label") or parsed.get("message") or "running",
                 "arguments": parsed,
+                "call_id": call_id,
+                "status": status,
             }
         )
         return payloads

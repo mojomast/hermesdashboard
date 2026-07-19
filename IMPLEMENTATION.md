@@ -113,6 +113,8 @@ Current behavior:
 - persisted rows replay through the same assistant-step reduction path used by live SSE events instead of maintaining a separate historical event builder
 - multi-tool assistant turns render as explicit grouped batches so parallel waves stay visually coherent
 - live chat tool calls render as compact single-line rows with lazy `Input`, `Output`, `Metrics`, and `Raw` drill-down panels
+- `_normalize_sse_payload` maps Hermes API lifecycle `toolCallId` values to canonical `call_id`; a correlated `status: running` event becomes the initial `tool_call`, while completion events update that row as `tool_progress`
+- uncorrelated legacy progress remains `tool_progress` and is not promoted into a tool row by name alone
 - unmatched persisted and live tool rows render as orphan diagnostics instead of fake assistant messages or name-matched fallback attachments
 - child sessions and related request-dump artifacts are attached inline in the parent session detail view
 - side-panel activity items can deep-link into the normalized transcript when the backend can derive a target

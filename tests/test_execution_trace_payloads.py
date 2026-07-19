@@ -579,6 +579,40 @@ class ExecutionTracePayloadTests(unittest.TestCase):
         self.assertEqual(payloads[0]["type"], "tool_call")
         self.assertEqual(payloads[0]["call_id"], "call_abc123")
 
+    def test_normalize_sse_payload_maps_correlated_hermes_tool_lifecycle(self):
+        started = dashboard_app._normalize_sse_payload(
+            {
+                "tool": "terminal",
+                "label": "Run git status",
+                "toolCallId": "tool_modern_1",
+                "status": "running",
+            }
+        )
+        completed = dashboard_app._normalize_sse_payload(
+            {
+                "tool": "terminal",
+                "toolCallId": "tool_modern_1",
+                "status": "completed",
+            }
+        )
+
+        self.assertEqual(
+            started,
+            [
+                {
+                    "type": "tool_call",
+                    "name": "terminal",
+                    "call_id": "tool_modern_1",
+                    "arguments": "",
+                    "progress": "Run git status",
+                    "status": "running",
+                }
+            ],
+        )
+        self.assertEqual(completed[0]["type"], "tool_progress")
+        self.assertEqual(completed[0]["call_id"], "tool_modern_1")
+        self.assertEqual(completed[0]["status"], "completed")
+
     def test_child_event_metadata_accepts_top_level_session_id(self):
         self.assertEqual(
             dashboard_app._event_metadata({"type": "tool_call", "session_id": "child-top"})["session_id"],

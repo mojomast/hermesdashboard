@@ -217,7 +217,8 @@ The dashboard chat bridge is designed to preserve the entire Hermes run stream i
 
 Current behavior:
 
-- forwards Hermes `hermes.tool.progress` SSE events into dashboard `tool_progress` events
+- normalizes Hermes `hermes.tool.progress` lifecycle events, including camelCase `toolCallId`, into correlated dashboard tool rows
+- promotes a correlated `status: running` lifecycle event to `tool_call`, then applies later lifecycle events as `tool_progress` updates to the same row
 - forwards streamed content and usage metadata incrementally
 - sends heartbeats while long tools are quiet so browsers and proxies keep the stream open
 - cleans stale dashboard transport errors and UI-only trace metadata before sending history back to Hermes
@@ -231,6 +232,7 @@ This repo is intended to work with upstream Hermes installs, not just local fork
 
 Compatibility notes:
 
+- current Hermes API servers emit tool lifecycle correlation as `toolCallId`; the dashboard normalizes it to canonical `call_id` so live tool calls remain visible
 - the dashboard no longer requires `agent.session_summarizer` from the Hermes runtime
 - session summary backfill/regeneration endpoints now fall back to dashboard-local summary generation using `state.db`
 - config/env metadata features use local fallbacks when optional Hermes CLI internals are unavailable
