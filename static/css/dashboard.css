@@ -269,6 +269,27 @@
     margin: 0.35rem 0 0.1rem;
 }
 
+.context-gauge-drawer {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: clamp(120px, 12vw, 180px);
+    min-width: 120px;
+    max-width: 180px;
+    margin-left: 0.75rem;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.context-gauge-drawer-label {
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 720px) {
     .token-usage-widget {
         max-width: 7.5rem;

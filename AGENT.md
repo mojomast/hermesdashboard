@@ -90,6 +90,8 @@ Dashboard backend routes in `app.py`:
 - `GET /api/sessions/{session_id}`
 - `POST /api/sessions/{session_id}/summary` — regenerate a single session summary
 - `GET /api/sessions/{session_id}/files`
+- `GET /api/sessions/{session_id}/context` — context-window gauge payload `{session_id, model, context_used, context_max, percent, breakdown, source, stale}`; frontend renders gauge bars in the nav token widget and chat context panel (amber >70%, red >90%)
+- `GET /api/token-usage?session_id=...` — token/cost windows; embeds the same gauge as a `context` sub-object when `session_id` is provided
 - `DELETE /api/sessions/{session_id}`
 - `GET /api/files/content?path=...`
 - `GET /api/memory`

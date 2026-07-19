@@ -6525,6 +6525,7 @@ async function viewSession(id) {
     }
 
     await loadSessionTokens(id);
+    await loadSessionContextGauge(id);
 }
 
 async function loadSessionFiles(id) {
@@ -12715,6 +12716,70 @@ async function loadSessionTokens(sessionId) {
         }
     } catch (err) {
         console.error('Failed to load session tokens:', err);
+    }
+}
+
+function drawerContextGaugeTooltip(info, breakdown) {
+    const lines = [contextGaugeTooltip(info)];
+    if (breakdown && typeof breakdown === 'object') {
+        Object.entries(breakdown)
+            .filter(([, value]) => Number(value) > 0)
+            .sort((a, b) => Number(b[1]) - Number(a[1]))
+            .slice(0, 5)
+            .forEach(([key, value]) => {
+                const label = key.replace(/_tokens$/, '').replace(/_/g, ' ');
+                lines.push(`${label}: ${formatTokenCount(Number(value))}`);
+            });
+    }
+    return lines.join('\n');
+}
+
+function renderDrawerContextGauge(host, info, breakdown) {
+    const tooltip = drawerContextGaugeTooltip(info, breakdown);
+    host.innerHTML = `${renderContextGaugeHtml(info.percent, tooltip)}<span class="context-gauge-drawer-label" title="${escapeHtml(tooltip)}">${escapeHtml(contextGaugeTooltip(info))}</span>`;
+    host.style.display = '';
+}
+
+async function loadSessionContextGauge(sessionId) {
+    const host = document.getElementById('session-context-gauge');
+    if (!host) return;
+    host.innerHTML = '';
+    host.style.display = 'none';
+    if (!sessionId) return;
+
+    const showFallback = (used) => {
+        const n = Number(used);
+        if (!Number.isFinite(n) || n < 0) return;
+        host.textContent = `context: ${formatTokenCount(n)} tokens`;
+        host.style.display = '';
+    };
+
+    if (sessionContextCache.sessionId === sessionId && sessionContextCache.info) {
+        const cached = sessionContextCache.info;
+        if (cached.stale) {
+            showFallback(cached.used);
+        } else {
+            renderDrawerContextGauge(host, cached, null);
+        }
+        return;
+    }
+
+    try {
+        const resp = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/context`, {
+            headers: { 'Accept': 'application/json' },
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (activeSessionDetailId !== sessionId) return;
+        const info = normalizeContextInfo(data);
+        sessionContextCache = { sessionId, info };
+        if (!info || info.stale) {
+            showFallback(data && data.context_used);
+            return;
+        }
+        renderDrawerContextGauge(host, info, data && data.breakdown);
+    } catch (err) {
+        console.warn('Failed to load session context gauge:', err);
     }
 }
 // === END TRACK A ===

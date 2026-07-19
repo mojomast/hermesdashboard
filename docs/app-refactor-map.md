@@ -85,7 +85,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | dashboard_backend/core/paths.py | repo/user/home path constants, safe path helpers | HOME_DIR/HERMES paths, env vars | used by most routes | shared import tests + full pytest |
 | dashboard_backend/core/responses.py | JSON/HTML/plain response helpers and error envelopes | none or Starlette response classes | all API wrappers | full pytest |
 | dashboard_backend/core/config.py | settings, models, personality, secrets, provider config | CONFIG caches/env | /api/settings, /api/models, /api/personality, /api/secrets | settings/model tests |
-| dashboard_backend/services/token_usage.py | ✅ EXTRACTED: TOKEN_USAGE_FIELDS and token usage aggregation helpers; app wrappers remain | session DB/filesystem reads only | /api/token-usage via wrapper/route | tests/test_token_usage_dashboard.py |
+| dashboard_backend/services/token_usage.py | ✅ EXTRACTED: TOKEN_USAGE_FIELDS and token usage aggregation helpers; app wrappers remain | session DB/filesystem reads only | /api/token-usage and /api/sessions/{session_id}/context via wrappers/routes | tests/test_token_usage_dashboard.py |
 | dashboard_backend/services/message_board.py | ✅ EXTRACTED: message-board SQLite schema/read/write helpers; endpoint wrappers remain in app.py | message board sqlite path via HERMES_HOME | /api/message-board* via app wrappers | tests/test_message_board.py |
 | dashboard_backend/services/sessions.py | session listing, traces, transcript/history projections | session paths/caches | /api/sessions*, /api/traces* | session/execution trace tests |
 | dashboard_backend/services/dashboard_state.py + dashboard_backend/routes/dashboard_state.py | ✅ ROUTE WRAPPER EXTRACTED: persistence service owns SQLite load/save/delete; route module owns Request parsing/JSON envelopes; app wrappers retain endpoint identity and monkeypatch seams | state sqlite path, lock, allowed keys injected by app wrappers | /api/dashboard-state/* via app-level delegates | tests/test_dashboard_state_persistence.py, tests/test_dashboard_state_routes.py |
@@ -175,6 +175,8 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | `_aggregate_token_usage_sessions` | 2363-2395 | `def _aggregate_token_usage_sessions(conn: sqlite3.Connection, label: str, *, start: float | None = None, end: float | No` | `dashboard_backend/services/token_usage.py` | TOKEN_USAGE_FIELDS |
 | `get_token_usage_summary` | 2398-2473 | `def get_token_usage_summary(*, now: datetime.datetime | None = None, current_session_id: str | None = None) -> dict:    ` | `dashboard_backend/services/token_usage.py` | HERMES_HOME |
 | `get_token_usage_endpoint` | 2476-2478 | `async def get_token_usage_endpoint(request):     session_id = str(request.query_params.get("session_id") or "").strip() ` | `dashboard_backend/services/token_usage.py` | — |
+| `get_session_context_gauge` (compat wrapper) | 2546-2550 | `def get_session_context_gauge(session_id: str) -> dict:     return _get_session_context_gauge_impl(         hermes_home=HERMES_HOME,` | `dashboard_backend/services/token_usage.py` | HERMES_HOME |
+| `get_session_context_gauge` (service impl) | token_usage.py 253-335 | `def get_session_context_gauge(*, hermes_home: Path, session_id: str) -> dict:` — context-window gauge payload (`session_id`, `model`, `context_used`, `context_max`, `percent`, `breakdown`, `source`, `stale`); prefers latest `prompt_budgets` row, falls back to latest `api_calls` row; never raises, returns stale payload when no data | `dashboard_backend/services/token_usage.py` | — |
 | `get_sessions` | 2481-2566 | `async def get_sessions(request):     db_path = HERMES_HOME / "state.db"     if not db_path.exists():         return JSON` | `dashboard_backend/services/sessions.py` | HERMES_HOME |
 | `search_sessions` | 2569-2712 | `async def search_sessions(request):     db_path = HERMES_HOME / "state.db"     if not db_path.exists():         return J` | `dashboard_backend/services/sessions.py` | HERMES_HOME |
 | `get_session_sources` | 2715-2728 | `async def get_session_sources(request):     db_path = HERMES_HOME / "state.db"     if not db_path.exists():         retu` | `dashboard_backend/services/sessions.py` | HERMES_HOME |
@@ -449,6 +451,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | `_run_dashboard_update_command` | 9590-9623 | `def _run_dashboard_update_command(args: list[str], cwd: Path, timeout: int = 120) -> dict:     started = time.time()    ` | `app.py/bootstrap or dashboard_backend/core/*` | — |
 | `_dashboard_auto_update` | 9626-9706 | `def _dashboard_auto_update(allow_dirty: bool = False, install_dependencies: bool = True) -> tuple[int, dict]:     root =` | `app.py/bootstrap or dashboard_backend/core/*` | DASHBOARD_REPO_ROOT |
 | `dashboard_auto_update_endpoint` | 9709-9717 | `async def dashboard_auto_update_endpoint(request):     try:         body = await request.json()     except Exception:   ` | `app.py/bootstrap or dashboard_backend/core/*` | — |
+| `get_session_context_endpoint` | 9609-9615 | `async def get_session_context_endpoint(request):     session_id = request.path_params["session_id"]     gauge = get_se` | `dashboard_backend/services/token_usage.py` | HERMES_HOME |
 
 ## Route registry and groups
 | Line | Kind | Path | Endpoint | Methods |
@@ -482,6 +485,7 @@ Bounded-context audit for surgical extraction of the Hermes Dashboard backend mo
 | 9766 | Route | `"/api/sessions/{session_id}"` | `get_session)` | `—` |
 | 9767 | Route | `"/api/sessions/{session_id}/files"` | `get_session_files)` | `—` |
 | 9768 | Route | `"/api/sessions/{session_id}/tokens"` | `get_session_tokens)` | `—` |
+| 12245 | Route | `"/api/sessions/{session_id}/context"` | `get_session_context_endpoint)` | `—` |
 | 9769 | Route | `"/api/sessions/{session_id}/stream"` | `session_stream)` | `—` |
 | 9775 | Route | `"/api/sessions/{session_id}/steer"` | `steer_session` | `"POST"` |
 | 9776 | Route | `"/api/sessions/{session_id}"` | `delete_session` | `"DELETE"` |
