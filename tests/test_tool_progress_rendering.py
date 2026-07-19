@@ -88,7 +88,7 @@ def test_subagent_window_manager_supports_independent_focus_drag_resize_and_mini
 def test_delegate_bubble_only_renders_compact_child_status_and_open_controls():
     html = dashboard_source()
     renderer = html.split("function renderDelegateChildStreams(tool)", 1)[1]
-    renderer = renderer.split("function renderDelegateOpenDrawerGrid", 1)[0]
+    renderer = renderer.split("const liveChildSessionMap", 1)[0]
 
     assert "subagent-monitor-row" in renderer
     assert "live-view-btn" in renderer

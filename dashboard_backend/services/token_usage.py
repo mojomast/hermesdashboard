@@ -7,6 +7,7 @@ This module owns read-only token usage projections. Route handlers remain wired 
 from __future__ import annotations
 
 import datetime
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Optional
@@ -156,6 +157,184 @@ def _aggregate_token_usage_sessions(conn: sqlite3.Connection, label: str, *, sta
     return window
 
 
+CONTEXT_BREAKDOWN_FIELDS = (
+    "system_prompt_tokens",
+    "developer_prompt_tokens",
+    "tool_schema_tokens",
+    "memory_tokens",
+    "conversation_history_tokens",
+    "tool_result_tokens",
+    "current_user_message_tokens",
+)
+
+
+def _empty_context_gauge(session_id: str) -> dict:
+    return {
+        "session_id": session_id,
+        "model": None,
+        "context_used": None,
+        "context_max": None,
+        "percent": None,
+        "breakdown": {},
+        "source": "none",
+        "stale": True,
+    }
+
+
+def _read_context_length_cache(path: Path) -> dict[str, int]:
+    lengths: dict[str, int] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return lengths
+    in_section = False
+    for line in lines:
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+        if not line.startswith((" ", "\t")):
+            in_section = line.rstrip().rstrip(":").strip() == "context_lengths"
+            continue
+        if not in_section or ":" not in line:
+            continue
+        key, _, value = line.strip().rpartition(":")
+        key = key.strip().strip("'\"")
+        value = value.strip().strip("'\"")
+        try:
+            lengths[key] = int(float(value))
+        except (TypeError, ValueError):
+            continue
+    return lengths
+
+
+def _lookup_context_max(hermes_home: Path, model: str | None, base_url: str | None) -> int | None:
+    if not model:
+        return None
+    cache_path = hermes_home / "context_length_cache.yaml"
+    lengths = _read_context_length_cache(cache_path) if cache_path.exists() else {}
+    if lengths:
+        candidates = []
+        if base_url:
+            candidates.append(f"{model}@{base_url}")
+            candidates.append(f"{model}@{base_url.rstrip('/')}/")
+        candidates.append(model)
+        for candidate in candidates:
+            if candidate in lengths:
+                return lengths[candidate]
+        for key, value in lengths.items():
+            if key == model or key.startswith(f"{model}@"):
+                return value
+    dev_cache_path = hermes_home / "models_dev_cache.json"
+    if dev_cache_path.exists():
+        try:
+            data = json.loads(dev_cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            data = None
+        if isinstance(data, dict):
+            for provider in data.values():
+                models = provider.get("models") if isinstance(provider, dict) else None
+                if not isinstance(models, dict):
+                    continue
+                entry = models.get(model)
+                if not isinstance(entry, dict):
+                    for model_id, candidate in models.items():
+                        if isinstance(model_id, str) and model_id.startswith(model) and isinstance(candidate, dict):
+                            entry = candidate
+                            break
+                if not isinstance(entry, dict):
+                    continue
+                limit = entry.get("limit")
+                if isinstance(limit, dict):
+                    context = limit.get("context")
+                    if isinstance(context, (int, float)) and context > 0:
+                        return int(context)
+    return None
+
+
+def get_session_context_gauge(*, hermes_home: Path, session_id: str) -> dict:
+    """Return context-window gauge data for a single session.
+
+    Prefers the latest prompt_budgets row for per-category input token breakdown;
+    falls back to the latest api_calls row (input + cache read/write). Context max
+    comes from context_length_cache.yaml, then models_dev_cache.json. Never raises;
+    returns a stale payload when no data is available.
+    """
+    gauge = _empty_context_gauge(str(session_id))
+    db_path = hermes_home / "state.db"
+    if not db_path.exists():
+        return gauge
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        model: str | None = None
+        base_url: str | None = None
+        session_row = None
+        if _sqlite_table_exists(conn, "sessions"):
+            session_columns = _sqlite_table_columns(conn, "sessions")
+            select_columns = [column for column in ("model", "model_config") if column in session_columns]
+            if select_columns:
+                session_row = conn.execute(
+                    f"SELECT {', '.join(select_columns)} FROM sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone()
+        if _sqlite_table_exists(conn, "prompt_budgets"):
+            budget_columns = _sqlite_table_columns(conn, "prompt_budgets")
+            wanted = {"session_id", "total_input_tokens", *CONTEXT_BREAKDOWN_FIELDS}
+            if wanted.issubset(budget_columns):
+                order_column = "timestamp" if "timestamp" in budget_columns else "rowid"
+                budget_row = conn.execute(
+                    f"SELECT * FROM prompt_budgets WHERE session_id = ? ORDER BY {order_column} DESC, rowid DESC LIMIT 1",
+                    (session_id,),
+                ).fetchone()
+                if budget_row:
+                    data = dict(budget_row)
+                    breakdown = {field: int(data.get(field) or 0) for field in CONTEXT_BREAKDOWN_FIELDS}
+                    gauge["breakdown"] = breakdown
+                    gauge["context_used"] = int(data.get("total_input_tokens") or 0)
+                    gauge["source"] = "prompt_budgets"
+                    gauge["stale"] = False
+        if _sqlite_table_exists(conn, "api_calls"):
+            api_columns = _sqlite_table_columns(conn, "api_calls")
+            if "session_id" in api_columns:
+                select_columns = [column for column in ("model", "input_tokens", "cache_read_tokens", "cache_write_tokens", "start_time") if column in api_columns]
+                if select_columns:
+                    order_column = "start_time" if "start_time" in api_columns else "rowid"
+                    api_row = conn.execute(
+                        f"SELECT {', '.join(select_columns)} FROM api_calls WHERE session_id = ? ORDER BY {order_column} DESC, rowid DESC LIMIT 1",
+                        (session_id,),
+                    ).fetchone()
+                    if api_row:
+                        api_data = dict(api_row)
+                        model = api_data.get("model") or model
+                        if gauge["stale"]:
+                            used = sum(int(api_data.get(field) or 0) for field in ("input_tokens", "cache_read_tokens", "cache_write_tokens"))
+                            gauge["context_used"] = used
+                            gauge["source"] = "api_calls"
+                            gauge["stale"] = False
+        if session_row is not None:
+            session_data = dict(session_row)
+            if not model:
+                model = session_data.get("model") or None
+            raw_config = session_data.get("model_config")
+            if raw_config:
+                try:
+                    config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
+                except Exception:
+                    config = None
+                if isinstance(config, dict):
+                    candidate = config.get("base_url") or config.get("api_base")
+                    if isinstance(candidate, str) and candidate.strip():
+                        base_url = candidate.strip()
+        gauge["model"] = model
+        gauge["context_max"] = _lookup_context_max(hermes_home, model, base_url)
+        if gauge["context_used"] is not None and gauge["context_max"]:
+            gauge["percent"] = round(100.0 * gauge["context_used"] / gauge["context_max"], 2)
+        return gauge
+    except Exception:
+        return gauge
+    finally:
+        conn.close()
+
+
 def get_token_usage_summary(*, hermes_home: Path, now: datetime.datetime | None = None, current_session_id: str | None = None) -> dict:
     """Return consumed-token totals for dashboard top-bar windows.
 
@@ -188,8 +367,11 @@ def get_token_usage_summary(*, hermes_home: Path, now: datetime.datetime | None 
         "generated_at": generated_at,
         "current_session_id": current_session_id or "",
         "windows": windows,
+        "context": None,
         "warnings": [],
     }
+    if current_session_id:
+        payload["context"] = get_session_context_gauge(hermes_home=hermes_home, session_id=current_session_id)
     if not db_path.exists():
         payload["warnings"].append("state.db not found")
         return payload

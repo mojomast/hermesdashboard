@@ -114,6 +114,7 @@ from dashboard_backend.services.token_usage import (
     _empty_token_usage_window as _empty_token_usage_window_impl,
     _token_usage_total as _token_usage_total_impl,
     _window_from_row as _window_from_row_impl,
+    get_session_context_gauge as _get_session_context_gauge_impl,
     get_token_usage_summary as _get_token_usage_summary_impl,
 )
 
@@ -2542,6 +2543,13 @@ def get_token_usage_summary(*, now: datetime.datetime | None = None, current_ses
     )
 
 
+def get_session_context_gauge(session_id: str) -> dict:
+    return _get_session_context_gauge_impl(
+        hermes_home=HERMES_HOME,
+        session_id=session_id,
+    )
+
+
 async def get_token_usage_endpoint(request):
     session_id = str(request.query_params.get("session_id") or "").strip() or None
     return JSONResponse(get_token_usage_summary(current_session_id=session_id))
@@ -3216,37 +3224,6 @@ async def update_memory(request):
             f.write(data["user_profile"])
 
     return JSONResponse({"success": True})
-
-
-SKILL_DESCRIPTIONS = {
-    "apple": "Apple ecosystem integrations - Shortcuts, Music, Reminders, and device automation",
-    "autonomous-ai-agents": "Multi-agent orchestration patterns for autonomous task execution",
-    "creative": "Creative tools for image generation, art, and design workflows",
-    "data-science": "Data analysis, visualization, ML model training, and Jupyter workflows",
-    "devops": "Infrastructure automation, deployment pipelines, monitoring, and container management",
-    "diagramming": "Create diagrams, flowcharts, architecture visualizations, and technical drawings",
-    "dogfood": "Internal Hermes development and testing utilities",
-    "domain": "Domain management, DNS configuration, and SSL certificate handling",
-    "email": "Email composition, management, and automation workflows",
-    "feeds": "RSS/Atom feed monitoring, aggregation, and content parsing",
-    "gaming": "Game development, server management, and gaming platform integrations",
-    "gifs": "GIF creation, processing, and animation workflows",
-    "github": "GitHub workflow automation - repos, PRs, issues, code reviews, CI/CD pipelines",
-    "inference-sh": "Inference.sh model deployment and serverless AI inference",
-    "leisure": "Entertainment, games, trivia, and recreational activities",
-    "mcp": "Model Context Protocol server management and tool integrations",
-    "media": "Audio/video processing, transcoding, and media management",
-    "mlops": "ML operations - model versioning, experiment tracking, deployment pipelines",
-    "note-taking": "Note management, knowledge base integration, and organization tools",
-    "productivity": "Productivity enhancements - calendars, tasks, reminders, workflows",
-    "red-teaming": "Security testing, penetration testing, and vulnerability assessment",
-    "research": "Academic research, paper analysis, citation management, and literature review",
-    "smart-home": "Home automation - lights, climate, security, and IoT device control",
-    "social-media": "Social platform integrations - posting, scheduling, analytics",
-    "software-development": "Software engineering tools - debugging, testing, documentation",
-    "web-automation": "Browser automation, web scraping, and form handling",
-    "web-browsing": "Web navigation, content extraction, and online research",
-}
 
 
 def parse_description_md(filepath):
@@ -9629,6 +9606,14 @@ async def get_session_tokens(request):
     )
 
 
+async def get_session_context_endpoint(request):
+    session_id = request.path_params["session_id"]
+    gauge = get_session_context_gauge(session_id)
+    if gauge.get("stale") and not (HERMES_HOME / "state.db").exists():
+        return JSONResponse({"error": "No sessions database"}, status_code=404)
+    return JSONResponse(gauge)
+
+
 DND_CONTROLLER_TYPES = {"human", "subagent"}
 DND_CHARACTER_KINDS = {"pc", "npc", "monster", "companion"}
 DND_WORLD_ENTITY_TYPES = {"location", "faction", "npc", "quest", "encounter", "item", "lore", "deity", "settlement"}
@@ -12257,6 +12242,7 @@ routes = [
     Route("/api/sessions/{session_id}", get_session),
     Route("/api/sessions/{session_id}/files", get_session_files),
     Route("/api/sessions/{session_id}/tokens", get_session_tokens),
+    Route("/api/sessions/{session_id}/context", get_session_context_endpoint),
     Route("/api/sessions/{session_id}/stream", session_stream),
     Route(
         "/api/sessions/{session_id}/interrupt",

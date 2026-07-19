@@ -304,6 +304,70 @@ function getCurrentTokenUsageSessionId() {
     return (activeRun && activeRun.sessionId) || activeChatSessionId || '';
 }
 
+function contextGaugeLevel(percent) {
+    if (percent > 90) return 'crit';
+    if (percent > 70) return 'warn';
+    return 'ok';
+}
+
+function contextGaugeColor(percent) {
+    const level = contextGaugeLevel(percent);
+    if (level === 'crit') return '#ef4444';
+    if (level === 'warn') return '#f59e0b';
+    return 'var(--accent, #4ade80)';
+}
+
+function renderContextGaugeHtml(percent, title) {
+    const level = contextGaugeLevel(percent);
+    const levelClass = level === 'crit' ? ' context-gauge-crit' : level === 'warn' ? ' context-gauge-warn' : '';
+    const width = Math.max(0, Math.min(100, percent));
+    return `<div class="context-gauge${levelClass}" title="${escapeHtml(title)}" style="width:100%;height:5px;min-height:5px;border-radius:3px;overflow:hidden;background:var(--bg-secondary, rgba(128,128,128,0.25));margin-top:3px;"><div class="context-gauge-fill${levelClass}" style="width:${width.toFixed(1)}%;height:100%;background:${contextGaugeColor(percent)};border-radius:3px;"></div></div>`;
+}
+
+function normalizeContextInfo(context) {
+    if (!context || typeof context !== 'object') return null;
+    const max = Number(context.context_max);
+    if (!Number.isFinite(max) || max <= 0) return null;
+    const used = Number(context.context_used);
+    let percent = Number(context.percent);
+    if (!Number.isFinite(percent) && Number.isFinite(used)) percent = (used / max) * 100;
+    if (!Number.isFinite(percent) || percent < 0) return null;
+    return {
+        used: Number.isFinite(used) && used >= 0 ? used : null,
+        max,
+        percent,
+        stale: context.stale === true,
+    };
+}
+
+function contextGaugeTooltip(info) {
+    const usedText = info.used !== null ? formatTokenCount(info.used) : '?';
+    return `${usedText} / ${formatTokenCount(info.max)} tokens (${Math.round(info.percent)}%)${info.stale ? ' (stale)' : ''}`;
+}
+
+let sessionContextCache = { sessionId: null, info: null };
+
+async function refreshSessionContextInfo(sessionId) {
+    const targetId = sessionId || null;
+    sessionContextCache = { sessionId: targetId, info: null };
+    if (!targetId) return;
+    try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(targetId)}/context`, {
+            headers: { 'Accept': 'application/json' },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (sessionContextCache.sessionId !== targetId) return;
+        sessionContextCache.info = normalizeContextInfo(data);
+        if (targetId === getCurrentTokenUsageSessionId()) {
+            const lastAssistant = [...conversation].reverse().find(msg => msg.role === 'assistant');
+            if (lastAssistant) updateContextDisplay(normalizeAssistantMessage(lastAssistant));
+        }
+    } catch (error) {
+        console.warn('Failed to load session context:', error);
+    }
+}
+
 function renderTokenUsageSummary(data) {
     lastTokenUsagePayload = data || null;
     const windows = (data && data.windows) || {};
@@ -334,13 +398,28 @@ function renderTokenUsageSummary(data) {
 
     const widget = document.getElementById('token-usage-widget');
     if (widget) {
+        const contextInfo = normalizeContextInfo(data && data.context);
         widget.title = [
             `Session: ${formatTokenExact(sessionTotal)} tokens`,
             `Today: ${formatTokenExact(dayTotal)} tokens`,
             `Week: ${formatTokenExact(week.total_tokens)} tokens`,
             `Month: ${formatTokenExact(month.total_tokens)} tokens`,
             `Overall: ${formatTokenExact(overall.total_tokens)} tokens`,
-        ].join('\n');
+            contextInfo ? `Context: ${contextGaugeTooltip(contextInfo)}` : null,
+        ].filter(Boolean).join('\n');
+
+        let gaugeHost = widget.querySelector(':scope > .context-gauge-host');
+        if (contextInfo) {
+            if (!gaugeHost) {
+                gaugeHost = document.createElement('div');
+                gaugeHost.className = 'context-gauge-host';
+                gaugeHost.style.width = '100%';
+                widget.appendChild(gaugeHost);
+            }
+            gaugeHost.innerHTML = renderContextGaugeHtml(contextInfo.percent, contextGaugeTooltip(contextInfo));
+        } else if (gaugeHost) {
+            gaugeHost.remove();
+        }
     }
 }
 
@@ -500,7 +579,7 @@ let conversation = [];
 let models = {};
 let currentConfig = {};
 let settingsData = null;
-let debugVisible = true;
+let debugVisible = false;
 let currentSessionFiles = [];
 let currentSessionTraceContext = null;
 let pendingSessionExecutionTarget = null;
@@ -668,6 +747,7 @@ function loadActiveChatSession() {
         activeChatSessionId = null;
         log('warn', 'Failed to load active chat session: ' + e.message);
     }
+    void refreshSessionContextInfo(activeChatSessionId);
 }
 
 function updateActiveChatBanner() {
@@ -765,15 +845,6 @@ function resumeActiveRunFromBanner() {
         sendBtn.disabled = false;
         updateActiveRunBanner();
     });
-}
-
-function detachChatSession() {
-    activeChatSessionId = null;
-    saveActiveChatSession();
-    refreshTokenUsageSoon();
-    clearChat();
-    updateActiveChatBanner();
-    showToast('Started a new chat');
 }
 
 function activeApprovalSessionId() {
@@ -1032,6 +1103,7 @@ function renderConversation() {
         boundary: (row) => `<div class="message ${escapeHtml(row?.role || 'user')}">${renderUserMessageContent(row?.content || '')}</div>`,
     });
     bindToolCardInteractions(chat);
+    highlightToolCode(chat);
     log('inf', `Restored ${conversation.length} messages from cache`);
 }
 
@@ -2300,6 +2372,7 @@ async function hydrateChatFromSession(sessionId, options = {}) {
     log('req', `GET /api/sessions/${sessionId} for chat hydration`);
     const data = await fetchJsonOrThrow(`/api/sessions/${sessionId}`);
     activeChatSessionId = sessionId;
+    void refreshSessionContextInfo(sessionId);
     conversation = buildConversationFromSessionData(data);
     saveConversation();
     if (!options.preserveActiveRun) {
@@ -2551,27 +2624,6 @@ function describeToolLog(toolName, phase, payload = null) {
         return summary ? `${prefix} • completed: ${summary}` : `${prefix} • completed`;
     }
     return prefix;
-}
-
-function renderToolRequest(parsedArgs, rawArgs) {
-    if (parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
-        const important = Object.entries(parsedArgs).slice(0, 5);
-        if (important.length) {
-            return `
-                <div class="tool-section">
-                    <label>Request</label>
-                    <div class="tool-request-summary">${important.map(([key, value]) => `
-                        <div class="tool-request-item">
-                            <div class="tool-request-key">${escapeHtml(key)}</div>
-                            <div class="tool-request-value">${escapeHtml(summarizeValue(value) || '(empty)')}</div>
-                        </div>
-                    `).join('')}</div>
-                </div>
-            `;
-        }
-    }
-    if (!rawArgs) return '';
-    return `<div class="tool-section tool-call-args"><label>Request</label><pre>${escapeHtml(rawArgs)}</pre></div>`;
 }
 
 function unwrapDelegateTaskEnvelope(payload, depth = 0) {
@@ -2829,11 +2881,6 @@ function renderDelegateChildStreams(tool) {
         </div>`);
     });
     return `<div class="tool-section"><label>Subagent Activity</label>${liveSummary}<div class="subagent-monitor-list">${monitorRows.join('')}</div></div>`;
-}
-
-function renderDelegateOpenDrawerGrid(tool) {
-    // External subagent windows live outside assistant markup and survive its rerenders.
-    return '';
 }
 
 // Global mapping for child sessions discovered via live stream
@@ -3435,47 +3482,6 @@ function restoreOpenToolState(container, openKey) {
     syncToolCallUi(container);
 }
 
-function renderToolProgress(tool) {
-    const progress = Array.isArray(tool.progress) ? tool.progress : [];
-    if (!progress.length) return '';
-    const hasGroups = progress.some(item => item && typeof item === 'object' && Number.isInteger(item.task_index));
-    if (hasGroups) {
-        const grouped = new Map();
-        progress.forEach(item => {
-            const key = Number.isInteger(item.task_index) ? String(item.task_index) : 'ungrouped';
-            if (!grouped.has(key)) grouped.set(key, []);
-            grouped.get(key).push(item);
-        });
-        return `
-            <div class="tool-section">
-                <label>Live Progress</label>
-                <div class="tool-progress-list">${Array.from(grouped.entries()).map(([key, items]) => {
-                    const first = items[0] || {};
-                    const title = key === 'ungrouped'
-                        ? 'General'
-                        : `Task ${Number(first.task_index) + 1}${Number.isInteger(first.task_count) ? ` of ${first.task_count}` : ''}`;
-                    return `
-                        <div class="tool-progress-group">
-                            <div class="tool-progress-group-title">${escapeHtml(title)}</div>
-                            ${items.map(entry => `
-                                <div class="tool-progress-item">${escapeHtml(entry.label || '')}</div>
-                            `).join('')}
-                        </div>
-                    `;
-                }).join('')}</div>
-            </div>
-        `;
-    }
-    return `
-        <div class="tool-section">
-            <label>Live Progress</label>
-            <div class="tool-progress-list">${progress.map(item => `
-                <div class="tool-progress-item">${escapeHtml(typeof item === 'object' ? (item.label || '') : item)}</div>
-            `).join('')}</div>
-        </div>
-    `;
-}
-
 function formatTimestamp(ts) {
     if (!ts) return '';
     const date = new Date(Number(ts) * 1000 || ts);
@@ -3593,26 +3599,6 @@ function renderPromptBreakdownRows(items) {
     }).join('')}</div>`;
 }
 
-function getToolIcon(toolName) {
-    const icons = {
-        'delegate_task': '🔀',
-        'read_file': '📄',
-        'write_file': '✏️',
-        'patch': '🔧',
-        'terminal': '💻',
-        'session_search': '🔍',
-        'skill_view': '📚',
-        'web_search': '🌐',
-        'web_fetch': '🌐',
-        'browser_navigate': '🌐',
-        'todo_read': '📋',
-        'todo_write': '📋',
-        'memory_read': '🧠',
-        'memory_write': '🧠',
-    };
-    return icons[toolName] || '🔧';
-}
-
 function getToolHeaderDetail(toolName, parsedArgs, rawArgs) {
     if (!parsedArgs || typeof parsedArgs !== 'object') return '';
     switch(toolName) {
@@ -3642,26 +3628,6 @@ function getToolHeaderDetail(toolName, parsedArgs, rawArgs) {
     }
 }
 
-function getToolResultSummary(toolName, parsedOutput, rawOutput) {
-    if (!rawOutput) return '';
-    const len = rawOutput.length;
-    if (parsedOutput && parsedOutput.error) {
-        return `<span style="color:var(--error);">✗ error</span>`;
-    }
-    if (parsedOutput && parsedOutput.success === false) {
-        return `<span style="color:var(--error);">✗ failed</span>`;
-    }
-    if (toolName === 'delegate_task' && parsedOutput) {
-        const results = Array.isArray(parsedOutput.results) ? parsedOutput.results : [];
-        const ok = results.filter(r => r.status === 'completed').length;
-        return `<span style="color:var(--success);">✓ ${ok}/${results.length}</span>`;
-    }
-    if (len > 1000) {
-        return `<span style="color:var(--success);">✓ ${(len/1024).toFixed(1)}KB</span>`;
-    }
-    return `<span style="color:var(--success);">✓</span>`;
-}
-
 function getDelegationProgressSummary(progress) {
     if (!progress.length) return '';
     // Count distinct task indices
@@ -3671,6 +3637,17 @@ function getDelegationProgressSummary(progress) {
         return `${taskIndices.size}/${taskCount} tasks`;
     }
     return `${progress.length} updates`;
+}
+
+function highlightToolCode(containerEl) {
+    if (!window.hljs || !containerEl || typeof containerEl.querySelectorAll !== 'function') return;
+    containerEl.querySelectorAll('.tool-output-json, .tool-output-text, .tool-raw-json').forEach((el) => {
+        if (el.dataset.hljsDone === 'true') return;
+        try {
+            window.hljs.highlightElement(el);
+            el.dataset.hljsDone = 'true';
+        } catch (e) { /* leave unhighlighted */ }
+    });
 }
 
 function formatToolOutputText(rawOutput) {
@@ -3851,21 +3828,68 @@ function renderToolMetricsPanel(tool, parsedArgs, parsedOutput, options = {}) {
     `;
 }
 
+function getToolPanelCopyText(id, panel) {
+    const entry = toolCallData.get(id);
+    if (!entry) return '';
+    const { tool, parsedArgs, parsedOutput, options } = entry;
+    if (panel === 'input') return parsedArgs.raw || '';
+    if (panel === 'output') return parsedOutput.raw || '';
+    if (panel === 'raw') {
+        return safePayloadStringify({
+            tool,
+            node: options?.node || null,
+            parsedArgs: parsedArgs.parsed,
+            parsedOutput: parsedOutput.parsed,
+        }, '');
+    }
+    return '';
+}
+
+function copyToolPanelContent(id, panel, btn) {
+    const text = getToolPanelCopyText(id, panel);
+    const flash = () => {
+        if (!btn) return;
+        btn.textContent = 'copied';
+        setTimeout(() => { btn.textContent = 'copy'; }, 1200);
+    };
+    const fallback = () => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+            document.execCommand('copy');
+            flash();
+        } catch (e) {
+            showToast('Copy failed', true);
+        }
+        ta.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(flash).catch(fallback);
+    } else {
+        fallback();
+    }
+}
+
 function renderToolPanelContent(id, panel) {
     const entry = toolCallData.get(id);
     if (!entry) return '';
     const { tool, parsedArgs, parsedOutput, options } = entry;
+    const copyBtn = (panelName) => `<button type="button" class="tool-copy-btn" data-tool-copy-key="${escapeHtml(id)}" data-tool-copy-panel="${panelName}">copy</button>`;
     if (panel === 'input') {
         const content = parsedArgs.raw ? highlightJSON(parsedArgs.raw) : escapeHtml('No input captured');
         return `
-            <div class="tool-call-panel-header">Input</div>
+            <div class="tool-call-panel-header">Input ${copyBtn('input')}</div>
             <div class="tool-call-panel-body"><pre class="tool-output-json">${content}</pre></div>
         `;
     }
     if (panel === 'output') {
         const errorText = parsedOutput.parsed?.error || parsedOutput.parsed?.message || tool?.error || '';
         return `
-            <div class="tool-call-panel-header">Output</div>
+            <div class="tool-call-panel-header">Output ${copyBtn('output')}</div>
             <div class="tool-call-panel-body">
                 ${getToolStatusClass(tool) === 'error' && errorText ? `<div class="tool-call-error-banner">${escapeHtml(String(errorText))}</div>` : ''}
                 ${renderToolOutput(tool.name || 'tool', parsedOutput.parsed, parsedOutput.raw || '', hasCapturedToolOutput(tool))}
@@ -3884,8 +3908,8 @@ function renderToolPanelContent(id, panel) {
             parsedOutput: parsedOutput.parsed,
         };
         return `
-            <div class="tool-call-panel-header">Raw Event</div>
-            <div class="tool-call-panel-body"><pre class="tool-output-json">${highlightJSON(safePayloadStringify(rawPayload, '[Unserializable raw event]'))}</pre></div>
+            <div class="tool-call-panel-header">Raw Event ${copyBtn('raw')}</div>
+            <div class="tool-call-panel-body"><pre class="tool-output-json tool-raw-json">${highlightJSON(safePayloadStringify(rawPayload, '[Unserializable raw event]'))}</pre></div>
         `;
     }
     return '';
@@ -3984,7 +4008,7 @@ function renderToolBlock(tool, idx, options = {}) {
                 <span class="tool-call-status-dot ${statusClass}"></span>
                 <span class="tool-call-name">${escapeHtml(toolName)}</span>
                 <span class="tool-call-action-badge">${escapeHtml(actionLabel)}</span>
-                <span class="tool-call-summary-text">${escapeHtml(targetSummary || collapsedSummary || '-')}</span>
+                <span class="tool-call-summary-text" title="${escapeHtml(targetDetail || collapsedSummary || '')}">${escapeHtml(targetSummary || collapsedSummary || '-')}</span>
                 <span class="tool-call-meta">
                     <span class="tool-call-timer" data-call-id="${escapeHtml(tool.call_id || '')}">${escapeHtml(durationLabel || '')}</span>
                     <span class="tool-call-chevron">▶</span>
@@ -4334,9 +4358,16 @@ function toggleToolCall(id) {
         if (statusClass === 'error') {
             state.activePanel = 'output';
             state.renderedPanels.add('output');
+        } else if (statusClass === 'complete' && hasCapturedToolOutput(entry.tool)) {
+            state.activePanel = 'output';
+            state.renderedPanels.add('output');
         }
     }
     syncToolCallUi(document);
+    if (state.expanded) {
+        const node = document.querySelector(`[data-tool-id="${CSS.escape(id)}"]`);
+        if (node) highlightToolCode(node);
+    }
 }
 
 function toggleToolPanel(id, panel) {
@@ -4358,6 +4389,7 @@ function toggleToolPanel(id, panel) {
         panelNode.setAttribute('data-tool-panel', `${id}:${panel}`);
         panelNode.innerHTML = renderToolPanelContent(id, panel);
         host.appendChild(panelNode);
+        highlightToolCode(panelNode);
     }
     syncToolCallUi(document);
 }
@@ -4682,6 +4714,7 @@ function addMessage(role, message, save = true) {
         div.innerHTML = renderUserMessageContent(content);
     }
     chat.appendChild(div);
+    if (role === 'assistant') highlightToolCode(div);
     scrollChatToBottom(true);
     return div;
 }
@@ -4744,12 +4777,16 @@ function clearLog() {
     log('inf', 'Log cleared');
 }
 
-function toggleDebug() {
+function applyDebugVisibility() {
     const panel = document.getElementById('debug-panel');
     const reopen = document.getElementById('debug-reopen');
-    debugVisible = !debugVisible;
-    panel.classList.toggle('collapsed', !debugVisible);
+    if (panel) panel.classList.toggle('collapsed', !debugVisible);
     if (reopen) reopen.classList.toggle('visible', !debugVisible);
+}
+
+function toggleDebug() {
+    debugVisible = !debugVisible;
+    applyDebugVisibility();
 }
 
 // Image modal
@@ -5820,15 +5857,6 @@ async function submitMessageBoardReply(event, askAgent = true) {
     }
 }
 
-function configByPath(obj, path, fallback = undefined) {
-    let current = obj;
-    for (const part of path.split('.')) {
-        if (current == null || typeof current !== 'object' || !(part in current)) return fallback;
-        current = current[part];
-    }
-    return current;
-}
-
 function parseJsonField(id, fallback) {
     const value = document.getElementById(id)?.value?.trim();
     if (!value) return fallback;
@@ -6115,6 +6143,12 @@ document.addEventListener('click', (event) => {
             panelToggle.getAttribute('data-tool-panel-key'),
             panelToggle.getAttribute('data-tool-panel-name'),
         );
+        return;
+    }
+    const toolCopy = event.target.closest?.('[data-tool-copy-key]');
+    if (toolCopy) {
+        event.stopPropagation();
+        copyToolPanelContent(toolCopy.getAttribute('data-tool-copy-key'), toolCopy.getAttribute('data-tool-copy-panel'), toolCopy);
         return;
     }
     const childRoute = event.target.closest?.('[data-session-route]');
@@ -6543,6 +6577,7 @@ function finalizeActiveRun(assistantState) {
         saveConversation();
     }
     clearActiveRun();
+    void refreshSessionContextInfo(activeChatSessionId);
 }
 
 function buildChatRequestMessages(messages) {
@@ -6737,6 +6772,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                     if (parsed.session_id && activeRun.sessionId !== parsed.session_id) {
                         activeRun.sessionId = parsed.session_id;
                         activeChatSessionId = parsed.session_id;
+                        void refreshSessionContextInfo(parsed.session_id);
                         saveActiveChatSession();
                         updateActiveChatBanner();
                         saveActiveRun();
@@ -6848,6 +6884,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
         clearInterval(renderLoop);
         log('inf', 'Render loop stopped');
         if (renderDirty) scheduleRender();
+        if (assistantDiv) highlightToolCode(assistantDiv);
         if (persistDirty) persistActiveAssistantState(assistantState);
         toolCallTimers.clear();
         stopToolTimerUpdates();
@@ -7004,10 +7041,6 @@ function renderSessionMessage(message) {
     }
 
     return `<div class="message ${message.role}${traceClass}"${traceId}>${metaHtml}${formatSessionTranscriptContent(message.content || '')}</div>`;
-}
-
-function mergeSessionMessages(data) {
-    return buildConversationFromSessionData(data);
 }
 
 async function previewSessionFile(path, previewable = true) {
@@ -9677,33 +9710,6 @@ function formatRelativeTime(date) {
 }
 
 // Save functions
-async function saveModel() {
-    const model = getElementValue('model-select', '');
-    const provider = getElementValue('provider-select', 'auto');
-    try {
-        log('req', `POST /api/model {model: ${model}, provider: ${provider}}`);
-        await fetchJsonOrThrow('/api/model', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model, provider })
-        });
-        log('res', 'Model updated');
-        showToast('Model updated');
-        loadStatus();
-    } catch (e) {
-        showToast('Model update failed: ' + e.message, true);
-        log('err', 'Model update failed: ' + e.message, true);
-    }
-}
-
-async function savePersonality() {
-    await saveAgentPersonalitySettings();
-}
-
-async function saveAgentSettings() {
-    await saveMemorySessionSettings();
-}
-
 async function saveMemory(silent = false) {
     log('req', 'POST /api/memory');
     await fetchJsonOrThrow('/api/memory', {
@@ -10170,6 +10176,12 @@ function updateContextDisplay(assistantMessage) {
     contextSummary.textContent = lastPromptTokens
         ? `Current estimated prompt context: ${lastPromptTokens.toLocaleString()} tokens`
         : `Last response used ${total.toLocaleString()} total tokens`;
+    if (lastPromptTokens && sessionContextCache.info && sessionContextCache.info.max) {
+        const max = sessionContextCache.info.max;
+        const percent = (lastPromptTokens / max) * 100;
+        const liveInfo = { used: lastPromptTokens, max, percent, stale: sessionContextCache.info.stale };
+        contextSummary.innerHTML = `${renderContextGaugeHtml(percent, contextGaugeTooltip(liveInfo))}<span>Current estimated prompt context: ${escapeHtml(formatTokenCount(lastPromptTokens))} / ${escapeHtml(formatTokenCount(max))} (${Math.round(percent)}%)</span>`;
+    }
     contextPills.innerHTML = [
         renderMetaPill('Prompt', usage.prompt_tokens),
         renderMetaPill('Completion', usage.completion_tokens),
@@ -10315,6 +10327,7 @@ function clearChat() {
     activeChatSessionId = null;
     saveActiveChatSession();
     refreshTokenUsageSoon();
+    void refreshSessionContextInfo(null);
     updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
     updateActiveChatBanner();
     log('inf', 'Chat cleared');
@@ -10737,24 +10750,6 @@ function initGraphSettingsControls() {
   });
 
   applyGraphSettingsToUi();
-}
-
-// ── Shape generators ──
-function hexagonPath(r) {
-  const a = Math.PI / 3;
-  let pts = [];
-  for (let i = 0; i < 6; i++) {
-    pts.push([r * Math.cos(a * i - Math.PI / 6), r * Math.sin(a * i - Math.PI / 6)]);
-  }
-  return pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ',' + p[1]).join(' ') + 'Z';
-}
-
-function diamondPath(r) {
-  return `M0,${-r} L${r},0 L0,${r} L${-r},0 Z`;
-}
-
-function squarePath(r) {
-  return `M${-r},${-r} L${r},${-r} L${r},${r} L${-r},${r} Z`;
 }
 
 // ── Node type helpers ──
@@ -12408,6 +12403,7 @@ applyGraphSettingsToUi();
 
 // Initialize (lazy: only load essentials for chat)
 log('inf', 'Dashboard initialized');
+applyDebugVisibility();
 loadActiveChatSession();
 startTokenUsagePolling();
 startApprovalPolling();
