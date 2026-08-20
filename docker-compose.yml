@@ -9,6 +9,7 @@ services:
     environment:
       DASHBOARD_HOST: "0.0.0.0"
       DASHBOARD_PORT: "8081"
+      DASHBOARD_RUNNING_IN_DOCKER: "true"
       HERMES_HOME: "/hermes-home"
       HERMES_AGENT_PATH: "/hermes-agent"
       HERMES_API: "${DOCKER_HERMES_API:-http://host.docker.internal:8642}"

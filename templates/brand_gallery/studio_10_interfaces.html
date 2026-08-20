@@ -1,0 +1,328 @@
+<style>
+    .s10-collection {
+        --s10-white: #f4f5ef;
+        margin-top: 58px;
+    }
+    .s10-heading {
+        display: grid;
+        grid-template-columns: auto minmax(12rem, 1fr) auto;
+        align-items: center;
+        gap: 18px;
+        margin: 0 0 20px;
+    }
+    .s10-heading::after {
+        content: "";
+        grid-column: 2;
+        grid-row: 1;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(255,255,255,.2), transparent);
+    }
+    .s10-kicker {
+        color: #a9ffcf;
+        font: 700 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+        letter-spacing: .2em;
+        text-transform: uppercase;
+    }
+    .s10-title {
+        margin: 7px 0 0;
+        color: var(--s10-white);
+        font-size: clamp(22px, 3vw, 35px);
+        line-height: 1;
+        letter-spacing: -.035em;
+    }
+    .s10-index {
+        grid-column: 3;
+        grid-row: 1;
+        color: rgba(255,255,255,.42);
+        font: 600 9px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+        letter-spacing: .16em;
+        white-space: nowrap;
+    }
+    .s10-collection .concept::after { content: "COMPACT LOCKUP  280 x 48"; }
+    .s10-collection .stage { position: relative; }
+    .s10-collection .brand { max-height: 118px; }
+    .s10-collection text { text-rendering: geometricPrecision; }
+    .s10-mono { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
+
+    .s10-eink { color: #171914; background: #d9d9cb; }
+    .s10-eink::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: .28;
+        background-image: radial-gradient(#303327 .55px, transparent .65px);
+        background-size: 3px 3px;
+    }
+    .s10-eink::after, .s10-eink .tags { color: rgba(16,18,13,.5); }
+    .s10-eink .meta { color: #171914; }
+    .s10-eink .s10-paper { fill: #e8e8dc; stroke: #20231c; stroke-width: 1.5; }
+    .s10-eink .s10-check { fill: none; stroke: #20231c; stroke-width: 2; }
+    .s10-eink .s10-main { fill: #171914; font: 800 26px/1 ui-monospace, monospace; letter-spacing: -.8px; }
+    .s10-eink .s10-small { fill: #303328; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 1px; }
+
+    .s10-calibration {
+        background-color: #e9e6db;
+        background-image: linear-gradient(rgba(23,26,24,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(23,26,24,.08) 1px, transparent 1px);
+        background-size: 20px 20px;
+        color: #151816;
+    }
+    .s10-calibration::after, .s10-calibration .tags { color: rgba(21,24,22,.48); }
+    .s10-calibration .meta { color: #151816; }
+    .s10-calibration .s10-target { fill: none; stroke: #111512; stroke-width: 2; }
+    .s10-calibration .s10-accent-fill { fill: #f0442d; }
+    .s10-calibration .s10-accent-line { stroke: #f0442d; stroke-width: 1.5; }
+    .s10-calibration .s10-main { fill: #111512; font: 800 27px/1 Arial, sans-serif; letter-spacing: -1px; }
+    .s10-calibration .s10-small { fill: #323832; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 1.2px; }
+
+    .s10-sonar { background: radial-gradient(ellipse at 23% 48%, #153b40 0, #082328 24%, #04171b 58%, #020b0e 100%); }
+    .s10-sonar .s10-sonar-ring { fill: none; stroke: #5ce8c0; stroke-width: 1; opacity: .58; }
+    .s10-sonar .s10-sonar-beam { fill: #5ce8c0; opacity: .12; }
+    .s10-sonar .s10-ping { fill: #e4ff71; }
+    .s10-sonar .s10-main { fill: #d5fff0; font: 700 26px/1 "Arial Narrow", Arial, sans-serif; letter-spacing: .3px; }
+    .s10-sonar .s10-small { fill: #5ce8c0; font: 600 7px/1 ui-monospace, monospace; letter-spacing: 1.4px; }
+
+    .s10-thermal { color: #17130d; background: linear-gradient(135deg, #b49a5b 0, #e0c879 24%, #8b7138 25%, #c7a95c 49%, #ead58a 50%, #9e813f 74%, #cfb263 75%); }
+    .s10-thermal::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: .35;
+        background: repeating-linear-gradient(45deg, transparent 0 11px, rgba(255,255,255,.16) 12px, transparent 13px 24px);
+    }
+    .s10-thermal::after, .s10-thermal .tags { color: rgba(23,19,13,.55); }
+    .s10-thermal .meta { color: #17130d; }
+    .s10-thermal .s10-label { fill: #f1ebd8; stroke: #17130d; stroke-width: 2; }
+    .s10-thermal .s10-main { fill: #17130d; font: 900 24px/1 Arial, sans-serif; letter-spacing: -.7px; }
+    .s10-thermal .s10-small { fill: #17130d; font: 700 6.5px/1 ui-monospace, monospace; letter-spacing: 1px; }
+    .s10-thermal .s10-code { fill: #17130d; }
+
+    .s10-medical { background: linear-gradient(145deg, #162028, #080d11 72%); }
+    .s10-medical .s10-screen { fill: #0b1217; stroke: #71818b; stroke-width: 1; }
+    .s10-medical .s10-slice { fill: none; stroke: #c4d1d7; stroke-width: 5; opacity: .8; }
+    .s10-medical .s10-slice-core { fill: none; stroke: #6d7d85; stroke-width: 2; }
+    .s10-medical .s10-cross { stroke: #48d9ff; stroke-width: 1; }
+    .s10-medical .s10-main { fill: #f3f7f8; font: 650 25px/1 Arial, sans-serif; letter-spacing: -.6px; }
+    .s10-medical .s10-small { fill: #48d9ff; font: 600 7px/1 ui-monospace, monospace; letter-spacing: 1.1px; }
+
+    .s10-synth { background: #292b2b; box-shadow: inset 0 0 0 5px #151616, 0 24px 70px rgba(0,0,0,.3); }
+    .s10-synth .s10-panel { fill: #383b3a; stroke: #777b75; stroke-width: 1; }
+    .s10-synth .s10-jack { fill: #111; stroke: #c1c4ba; stroke-width: 2; }
+    .s10-synth .s10-knob { fill: #e2e2d7; stroke: #101111; stroke-width: 2; }
+    .s10-synth .s10-knob-line { stroke: #101111; stroke-width: 2; }
+    .s10-synth .s10-cable { fill: none; stroke: #ff8b3d; stroke-width: 3; }
+    .s10-synth .s10-main { fill: #f4f4e9; font: 700 24px/1 "Arial Narrow", Arial, sans-serif; letter-spacing: 1.2px; }
+    .s10-synth .s10-small { fill: #c9ff56; font: 600 6.5px/1 ui-monospace, monospace; letter-spacing: 1.2px; }
+
+    .s10-metrology { background: #071417; }
+    .s10-metrology::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent 49.8%, rgba(255,67,49,.08) 50%, transparent 50.2%);
+    }
+    .s10-metrology .s10-ruler { stroke: #547176; stroke-width: 1; }
+    .s10-metrology .s10-laser { stroke: #ff4331; stroke-width: 1.5; }
+    .s10-metrology .s10-bracket { fill: none; stroke: #8eafb4; stroke-width: 1.2; }
+    .s10-metrology .s10-main { fill: #e7f0f0; font: 700 25px/1 ui-monospace, monospace; letter-spacing: -1px; }
+    .s10-metrology .s10-small { fill: #65d3df; font: 600 6.5px/1 ui-monospace, monospace; letter-spacing: 1px; }
+    .s10-metrology .s10-digits { fill: #ff5d4c; font: 700 9px/1 ui-monospace, monospace; }
+
+    .s10-routing { color: #101414; background: #d3dc35; }
+    .s10-routing::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: .14;
+        background: repeating-linear-gradient(90deg, #101414 0 2px, transparent 2px 8px);
+    }
+    .s10-routing::after, .s10-routing .tags { color: rgba(16,20,20,.52); }
+    .s10-routing .meta { color: #101414; }
+    .s10-routing .s10-route-label { fill: #eef2e3; stroke: #101414; stroke-width: 2; }
+    .s10-routing .s10-route { fill: none; stroke: #087b65; stroke-width: 5; stroke-linejoin: round; }
+    .s10-routing .s10-node { fill: #ff4b2e; stroke: #101414; stroke-width: 1.5; }
+    .s10-routing .s10-main { fill: #101414; font: 900 23px/1 Arial, sans-serif; letter-spacing: -.8px; }
+    .s10-routing .s10-small { fill: #101414; font: 700 6.5px/1 ui-monospace, monospace; letter-spacing: .8px; }
+
+    .s10-token { background: linear-gradient(150deg, #181b1c, #070808); }
+    .s10-token .s10-pcb { fill: #102d25; stroke: #3c6155; stroke-width: 1; }
+    .s10-token .s10-trace { fill: none; stroke: #bd9b47; stroke-width: 1.3; }
+    .s10-token .s10-chip { fill: #090c0c; stroke: #bd9b47; stroke-width: 1; }
+    .s10-token .s10-contact { fill: #d2ad52; }
+    .s10-token .s10-main { fill: #f0ead8; font: 700 24px/1 ui-monospace, monospace; letter-spacing: -.7px; }
+    .s10-token .s10-small { fill: #6ff2c1; font: 600 6.5px/1 ui-monospace, monospace; letter-spacing: 1px; }
+
+    .s10-wafer { color: #122126; background: linear-gradient(120deg, #8cb7c3, #d9e2d7 42%, #92a7c4 67%, #c8d9c9); }
+    .s10-wafer::after, .s10-wafer .tags { color: rgba(18,33,38,.5); }
+    .s10-wafer .meta { color: #122126; }
+    .s10-wafer .s10-wafer-disc { fill: #b7cfd0; stroke: #273f45; stroke-width: 1.5; }
+    .s10-wafer .s10-die { fill: none; stroke: #55737a; stroke-width: .7; }
+    .s10-wafer .s10-flat { stroke: #273f45; stroke-width: 3; }
+    .s10-wafer .s10-main { fill: #102328; font: 700 24px/1 "Arial Narrow", Arial, sans-serif; letter-spacing: 1px; }
+    .s10-wafer .s10-small { fill: #29444a; font: 700 6.5px/1 ui-monospace, monospace; letter-spacing: 1.2px; }
+
+    @media (max-width: 520px) {
+        .s10-collection { margin-top: 40px; }
+        .s10-heading { grid-template-columns: 1fr auto; }
+        .s10-heading::after { display: none; }
+        .s10-index { grid-column: 2; }
+        .s10-collection .brand { width: 100%; }
+    }
+    @media (forced-colors: active) {
+        .s10-collection .concept { forced-color-adjust: none; }
+    }
+</style>
+
+<section class="s10-collection" aria-labelledby="s10-collection-title">
+    <header class="s10-heading">
+        <div>
+            <div class="s10-kicker">Studio 10 / Engineered systems</div>
+            <h2 class="s10-title" id="s10-collection-title">Interfaces With Consequence</h2>
+        </div>
+        <div class="s10-index">CONCEPTS 101-110</div>
+    </header>
+
+    <div class="grid" aria-label="Studio 10 Hermes Dashboard compact-header logo concepts">
+        <article class="concept s10-eink">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="E-Ink Flight Checklist logo for Hermes Dashboard">
+                    <rect class="s10-paper" x="12" y="19" width="416" height="80" rx="2"/>
+                    <rect class="s10-check" x="28" y="38" width="24" height="24"/>
+                    <path class="s10-check" d="m33 49 7 7 17-23"/>
+                    <text class="s10-main" x="70" y="57">Hermes Dashboard</text>
+                    <text class="s10-small" x="71" y="76">FLIGHT DECK / SYSTEMS NOMINAL</text>
+                    <path class="s10-check" d="M28 82h24M326 34h82M326 40h55"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">101</div><div class="name">E-Ink Flight Checklist</div></div><div class="tags">spacecraft procedure<br>paperlike certainty</div></div>
+        </article>
+
+        <article class="concept s10-calibration">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Calibration Fiducial logo for Hermes Dashboard">
+                    <circle class="s10-target" cx="55" cy="59" r="38"/><circle class="s10-target" cx="55" cy="59" r="24"/><circle class="s10-target" cx="55" cy="59" r="8"/>
+                    <path class="s10-target" d="M55 13v92M9 59h92"/><path class="s10-accent-line" d="M21 25 89 93M89 25 21 93"/>
+                    <rect class="s10-accent-fill" x="48" y="52" width="14" height="14"/>
+                    <text class="s10-main" x="116" y="58">Hermes Dashboard</text>
+                    <text class="s10-small" x="118" y="78">ROBOT FRAME / CAL 00.000</text>
+                    <path class="s10-target" d="M116 30h292M408 30v12"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">102</div><div class="name">Calibration Fiducial</div></div><div class="tags">robotic vision<br>zero-error alignment</div></div>
+        </article>
+
+        <article class="concept s10-sonar">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Bathymetric Sonar logo for Hermes Dashboard">
+                    <path class="s10-sonar-beam" d="M64 59 8 104h112z"/>
+                    <circle class="s10-sonar-ring" cx="64" cy="59" r="42"/><circle class="s10-sonar-ring" cx="64" cy="59" r="28"/><circle class="s10-sonar-ring" cx="64" cy="59" r="14"/>
+                    <path class="s10-sonar-ring" d="M64 17v84M22 59h84M64 59 25 88"/>
+                    <circle class="s10-ping" cx="39" cy="78" r="3"/><circle class="s10-ping" cx="78" cy="70" r="2"/>
+                    <text class="s10-main" x="126" y="58">Hermes Dashboard</text>
+                    <text class="s10-small" x="128" y="78">DEPTH 04 820 M / RETURN LOCKED</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">103</div><div class="name">Bathymetric Sonar</div></div><div class="tags">subsea instrument<br>pressure-proof signal</div></div>
+        </article>
+
+        <article class="concept s10-thermal">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Thermal Foil Asset Tag logo for Hermes Dashboard">
+                    <path class="s10-label" d="M18 26h385l19 33-19 33H18z"/>
+                    <path class="s10-code" d="M31 38h3v42h-3zm6 0h7v42h-7zm11 0h2v42h-2zm6 0h5v42h-5zm9 0h2v42h-2zm6 0h8v42h-8zm12 0h3v42h-3z"/>
+                    <text class="s10-main" x="101" y="59">Hermes Dashboard</text>
+                    <text class="s10-small" x="103" y="76">ORBITAL ASSET / HD-10 / DO NOT FOLD</text>
+                    <circle cx="401" cy="59" r="8" fill="none" stroke="#17130d" stroke-width="2"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">104</div><div class="name">Thermal Foil Asset Tag</div></div><div class="tags">satellite hardware<br>serialized utility</div></div>
+        </article>
+
+        <article class="concept s10-medical">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Radiology Slice logo for Hermes Dashboard">
+                    <rect class="s10-screen" x="14" y="18" width="94" height="82" rx="2"/>
+                    <ellipse class="s10-slice" cx="61" cy="59" rx="29" ry="34"/><ellipse class="s10-slice-core" cx="61" cy="59" rx="13" ry="19"/>
+                    <path class="s10-cross" d="M61 20v78M18 59h86"/>
+                    <text class="s10-main" x="127" y="57">Hermes Dashboard</text>
+                    <text class="s10-small" x="129" y="76">SERIES 10 / AXIAL / 0.625 MM</text>
+                    <path class="s10-cross" d="M127 87h282M401 82v10"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">105</div><div class="name">Radiology Slice</div></div><div class="tags">medical imaging<br>clinical precision</div></div>
+        </article>
+
+        <article class="concept s10-synth">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Patch Matrix logo for Hermes Dashboard">
+                    <rect class="s10-panel" x="10" y="20" width="420" height="78" rx="3"/>
+                    <circle class="s10-jack" cx="34" cy="43" r="9"/><circle class="s10-jack" cx="34" cy="76" r="9"/>
+                    <circle class="s10-knob" cx="70" cy="59" r="17"/><path class="s10-knob-line" d="M70 59V45"/>
+                    <path class="s10-cable" d="M34 43c26-25 34 15 55 15"/>
+                    <text class="s10-main" x="104" y="58">HERMES DASHBOARD</text>
+                    <text class="s10-small" x="106" y="78">CONTROL VOLTAGE / PATCH 10</text>
+                    <circle class="s10-jack" cx="397" cy="45" r="7"/><circle class="s10-jack" cx="397" cy="74" r="7"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">106</div><div class="name">Patch Matrix</div></div><div class="tags">modular synthesis<br>tactile signal path</div></div>
+        </article>
+
+        <article class="concept s10-metrology">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Datum Beam logo for Hermes Dashboard">
+                    <path class="s10-ruler" d="M15 28h410M15 91h410M28 28v10m14-10v6m14-6v10m14-10v6m14-6v10m14-10v6m14-6v10M28 81v10m14-6v6m14-10v10m14-6v6m14-10v10m14-6v6m14-10v10"/>
+                    <path class="s10-laser" d="M14 59h412M72 20v78"/>
+                    <path class="s10-bracket" d="M20 45v-9h9M20 73v9h9M417 45v-9h-9M417 73v9h-9"/>
+                    <text class="s10-main" x="92" y="61">Hermes Dashboard</text>
+                    <text class="s10-small" x="94" y="78">LASER DATUM / AXIS H / PASS</text>
+                    <text class="s10-digits" x="350" y="48">+0.002</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">107</div><div class="name">Datum Beam</div></div><div class="tags">laser metrology<br>micron-scale confidence</div></div>
+        </article>
+
+        <article class="concept s10-routing">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Aisle Vector logo for Hermes Dashboard">
+                    <path class="s10-route-label" d="M15 20h410v78H15z"/>
+                    <path class="s10-route" d="M34 82V37h38v22h31"/>
+                    <circle class="s10-node" cx="34" cy="82" r="7"/><circle class="s10-node" cx="103" cy="59" r="7"/>
+                    <path fill="#087b65" d="m103 51 16 8-16 8z"/>
+                    <text class="s10-main" x="137" y="57">Hermes Dashboard</text>
+                    <text class="s10-small" x="139" y="76">ZONE H10 / ROUTE CLEAR / BAY 04</text>
+                    <path stroke="#101414" stroke-width="2" d="M137 84h268"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">108</div><div class="name">Aisle Vector</div></div><div class="tags">autonomous logistics<br>machine-readable motion</div></div>
+        </article>
+
+        <article class="concept s10-token">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Trust Anchor logo for Hermes Dashboard">
+                    <rect class="s10-pcb" x="12" y="20" width="416" height="78" rx="9"/>
+                    <path class="s10-trace" d="M28 37h19l12 12h22M28 80h22l14-14h17M102 33h18l11 11h23M102 84h18l11-11h23"/>
+                    <rect class="s10-chip" x="77" y="37" width="31" height="44" rx="3"/>
+                    <circle class="s10-contact" cx="30" cy="37" r="3"/><circle class="s10-contact" cx="30" cy="80" r="3"/>
+                    <text class="s10-main" x="132" y="58">Hermes Dashboard</text>
+                    <text class="s10-small" x="134" y="77">SECURE ELEMENT / KEY SLOT 10</text>
+                    <path class="s10-contact" d="M391 34h20v12h-20zm0 19h20v12h-20zm0 19h20v12h-20z"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">109</div><div class="name">Trust Anchor</div></div><div class="tags">cryptographic token<br>tamper-evident identity</div></div>
+        </article>
+
+        <article class="concept s10-wafer">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Wafer Die Mark logo for Hermes Dashboard">
+                    <circle class="s10-wafer-disc" cx="62" cy="59" r="45"/>
+                    <path class="s10-die" d="M25 31h74M18 44h88M17 57h90M18 70h88M25 83h74M35 20v78M48 15v88M61 14v90M74 15v88M87 20v78"/>
+                    <path class="s10-flat" d="M42 100h40"/>
+                    <rect x="55" y="51" width="13" height="13" fill="#f3f6de" stroke="#102328"/>
+                    <text class="s10-main" x="126" y="57">HERMES DASHBOARD</text>
+                    <text class="s10-small" x="128" y="77">FAB 10 / LOT HD8363 / DIE 04</text>
+                    <path class="s10-die" d="M126 87h286"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">110</div><div class="name">Wafer Die Mark</div></div><div class="tags">cleanroom silicon<br>fabrication provenance</div></div>
+        </article>
+    </div>
+</section>

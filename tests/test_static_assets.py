@@ -7,7 +7,7 @@ def test_dashboard_template_links_extracted_static_assets():
 
     assert '<link rel="stylesheet" href="/static/css/dashboard.css' in html
     assert '<script src="/static/js/dashboard.js' in html
-    assert 'dashboard-refractor-20260718' in html
+    assert 'browser-terminal-multi-20260819' in html
     assert '<style>' not in html
     assert 'type="module"' not in html
     assert '{% include' not in html

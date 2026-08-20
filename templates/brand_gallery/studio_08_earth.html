@@ -1,0 +1,197 @@
+<style>
+    .s8-studio {
+        --s8-lichen: #b8d87a;
+        --s8-silt: #d9c6a3;
+        --s8-ocean: #57d5d0;
+        margin-top: 58px;
+    }
+    .s8-studio .s8-heading { display: grid; grid-template-columns: auto 1fr; align-items: end; gap: 24px; margin: 0 0 22px; }
+    .s8-studio .s8-kicker { color: var(--s8-lichen); font: 700 10px/1 ui-monospace, monospace; letter-spacing: .2em; text-transform: uppercase; }
+    .s8-studio .s8-title { margin: 8px 0 0; font: 650 clamp(25px, 4vw, 42px)/1 system-ui, sans-serif; letter-spacing: -.045em; }
+    .s8-studio .s8-description { justify-self: end; max-width: 530px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; text-align: right; }
+    .s8-studio .concept { background: #10130f; }
+    .s8-studio .s8-light { color: #172018; }
+    .s8-studio .s8-light::after { color: rgba(23,32,24,.38); }
+    .s8-studio .s8-light .meta { color: #172018; }
+    .s8-studio .s8-light .tags { color: rgba(23,32,24,.55); }
+    .s8-studio .s8-label { font: 700 8px/1 ui-monospace, monospace; letter-spacing: .14em; }
+    .s8-studio .s8-main { font: 700 33px/1 system-ui, sans-serif; letter-spacing: -1.7px; }
+    .s8-studio .s8-sub { font: 600 10px/1 ui-monospace, monospace; letter-spacing: 3.1px; }
+
+    .s8-studio .s8-strata { background: linear-gradient(155deg, #221b15, #0d1210 72%); }
+    .s8-studio .s8-strata-line { fill: none; stroke-width: 7; stroke-linecap: round; opacity: .95; }
+    .s8-studio .s8-strata-core { fill: #171c18; stroke: #e7bf7a; stroke-width: 1; }
+    .s8-studio .s8-strata-tick { stroke: #e7bf7a; stroke-width: 1; opacity: .5; }
+    .s8-studio .s8-strata .s8-main { fill: #f1eadb; }
+    .s8-studio .s8-strata .s8-sub { fill: #d0a862; }
+
+    .s8-studio .s8-current { background-color: #061d25; background-image: radial-gradient(circle at 15% 20%, rgba(53,211,202,.14), transparent 42%); }
+    .s8-studio .s8-current-flow { fill: none; stroke: url(#s8-current-gradient); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 8 7; animation: s8-drift 7s linear infinite; }
+    .s8-studio .s8-current-contour { fill: none; stroke: #418390; stroke-width: .65; opacity: .45; }
+    .s8-studio .s8-current .s8-main { fill: #eafffb; }
+    .s8-studio .s8-current .s8-sub { fill: #57d5d0; }
+
+    .s8-studio .s8-mycelium { background: radial-gradient(circle at 25% 50%, #243321, #101410 62%); }
+    .s8-studio .s8-mycelium-thread { fill: none; stroke: #d9ecb4; stroke-width: 1.15; stroke-linecap: round; opacity: .75; }
+    .s8-studio .s8-mycelium-node { fill: #f1ffd6; filter: url(#s8-mycelium-glow); animation: s8-breathe 3.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    .s8-studio .s8-mycelium .s8-main { fill: #f1f3df; }
+    .s8-studio .s8-mycelium .s8-sub { fill: #a9d178; }
+
+    .s8-studio .s8-herbarium { background: #e7dfca; }
+    .s8-studio .s8-herbarium-stem { fill: none; stroke: #49624a; stroke-width: 1.7; stroke-linecap: round; }
+    .s8-studio .s8-herbarium-leaf { fill: #6e8464; stroke: #3f5941; stroke-width: .7; }
+    .s8-studio .s8-herbarium-rule { stroke: #9b442e; stroke-width: .7; }
+    .s8-studio .s8-herbarium .s8-main { fill: #243628; font-family: Georgia, serif; font-weight: 600; }
+    .s8-studio .s8-herbarium .s8-sub, .s8-studio .s8-herbarium .s8-label { fill: #8e4936; }
+
+    .s8-studio .s8-mirage { background: linear-gradient(#98cbc1 0 45%, #e4b86f 46% 72%, #8e5131); }
+    .s8-studio .s8-mirage-band { opacity: .26; animation: s8-shimmer 5s ease-in-out infinite alternate; }
+    .s8-studio .s8-mirage-dune { fill: #a85d34; }
+    .s8-studio .s8-mirage .s8-main { fill: #fff8df; filter: url(#s8-mirage-waver); }
+    .s8-studio .s8-mirage .s8-sub { fill: #402a20; }
+
+    .s8-studio .s8-glacial { background: linear-gradient(145deg, #dff7f4, #8fc5cf); }
+    .s8-studio .s8-glacial-core { fill: url(#s8-glacial-core); stroke: rgba(255,255,255,.7); stroke-width: 1; }
+    .s8-studio .s8-glacial-bubble { fill: none; stroke: #efffff; stroke-width: 1; opacity: .85; }
+    .s8-studio .s8-glacial-mark { stroke: #1f6575; stroke-width: .8; }
+    .s8-studio .s8-glacial .s8-main { fill: #123f50; }
+    .s8-studio .s8-glacial .s8-sub { fill: #23697a; }
+
+    .s8-studio .s8-volcanic { background: #150d0b; }
+    .s8-studio .s8-volcanic-contour { fill: none; stroke: #7d3020; stroke-width: 1; }
+    .s8-studio .s8-volcanic-hot { fill: none; stroke: url(#s8-volcanic-heat); stroke-width: 4; stroke-linecap: round; filter: url(#s8-volcanic-glow); animation: s8-thermal 3s ease-in-out infinite; }
+    .s8-studio .s8-volcanic .s8-main { fill: #fff0d2; }
+    .s8-studio .s8-volcanic .s8-sub { fill: #ff7145; }
+
+    .s8-studio .s8-rings { background: #d3b27c; }
+    .s8-studio .s8-ring-line { fill: none; stroke: #79532f; stroke-width: 1; opacity: .72; }
+    .s8-studio .s8-ring-year { fill: none; stroke: #f4dfab; stroke-width: 2; stroke-dasharray: 3 3; }
+    .s8-studio .s8-rings .s8-main { fill: #2d2117; }
+    .s8-studio .s8-rings .s8-sub { fill: #633e25; }
+
+    .s8-studio .s8-cloud { background: linear-gradient(140deg, #161a20, #262d34); }
+    .s8-studio .s8-cloud-track { fill: none; stroke: #dce9e7; stroke-width: 1.1; stroke-linecap: round; opacity: .65; animation: s8-condense 4s ease-in-out infinite alternate; }
+    .s8-studio .s8-cloud-dot { fill: #fff; opacity: .7; }
+    .s8-studio .s8-cloud .s8-main { fill: #f3f5ee; font-weight: 560; }
+    .s8-studio .s8-cloud .s8-sub { fill: #9ec8c6; }
+
+    .s8-studio .s8-crystal { background: radial-gradient(circle at 22% 50%, #342946, #11121b 65%); }
+    .s8-studio .s8-crystal-edge { fill: none; stroke: url(#s8-crystal-spectrum); stroke-width: 1.2; }
+    .s8-studio .s8-crystal-face { fill: url(#s8-crystal-face); stroke: #c9b9ff; stroke-width: .7; }
+    .s8-studio .s8-crystal-node { fill: #fff; animation: s8-facet 3.2s ease-in-out infinite; }
+    .s8-studio .s8-crystal .s8-main { fill: #f6f0ff; }
+    .s8-studio .s8-crystal .s8-sub { fill: #b9a2fa; }
+
+    @keyframes s8-drift { to { stroke-dashoffset: -60; } }
+    @keyframes s8-breathe { 50% { opacity: .35; transform: scale(.7); } }
+    @keyframes s8-shimmer { to { transform: translateX(24px) skewX(-8deg); } }
+    @keyframes s8-thermal { 50% { opacity: .55; } }
+    @keyframes s8-condense { to { stroke-dasharray: 2 5; opacity: .35; } }
+    @keyframes s8-facet { 50% { opacity: .25; } }
+    @media (max-width: 850px) { .s8-studio .s8-heading { grid-template-columns: 1fr; gap: 10px; } .s8-studio .s8-description { justify-self: start; text-align: left; } }
+    @media (max-width: 520px) { .s8-studio { margin-top: 42px; } .s8-studio .s8-description { font-size: 12px; } }
+    @media (prefers-reduced-motion: reduce) { .s8-studio *, .s8-studio *::before, .s8-studio *::after { animation: none !important; } }
+</style>
+
+<section class="s8-studio" aria-labelledby="s8-collection-title">
+    <header class="s8-heading">
+        <div>
+            <div class="s8-kicker">Studio 08 / Earth systems</div>
+            <h2 class="s8-title" id="s8-collection-title">Signals from a living planet</h2>
+        </div>
+        <p class="s8-description">Ten compact identities built from deep time, fluid motion, field specimens, atmospheric traces, and the structures matter makes under pressure.</p>
+    </header>
+
+    <div class="grid" aria-label="Earth systems Hermes Dashboard logo concepts 81 through 90">
+        <article class="concept s8-strata">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Strata Archive logo reading Hermes Dashboard">
+                <rect class="s8-strata-core" x="18" y="17" width="58" height="84" rx="29"/>
+                <path class="s8-strata-line" stroke="#93603e" d="M25 35c14 5 29-6 44 0"/><path class="s8-strata-line" stroke="#d7a75f" d="M22 50c17-4 32 7 51 0"/><path class="s8-strata-line" stroke="#79815c" d="M22 66c17 5 31-6 51-1"/><path class="s8-strata-line" stroke="#b95f40" d="M26 82c13-3 27 5 43 0"/>
+                <path class="s8-strata-tick" d="M84 25h9m-9 17h5m-5 17h9m-9 17h5m-5 17h9"/><text class="s8-main" x="112" y="59">Hermes</text><text class="s8-sub" x="114" y="82">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">81</div><div class="name">Strata Archive</div></div><div class="tags">geological core<br>deep-time record</div></div>
+        </article>
+
+        <article class="concept s8-current">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Pelagic Flow logo reading Hermes Dashboard">
+                <defs><linearGradient id="s8-current-gradient"><stop stop-color="#9cfff0"/><stop offset="1" stop-color="#3188b2"/></linearGradient></defs>
+                <path class="s8-current-contour" d="M4 25c48-22 64 30 109 8s61 18 97 0M1 87c39-27 76 14 113-4s61 16 96-2"/>
+                <path class="s8-current-flow" d="M7 61c27-34 64-31 87-5 20 22 45 20 69-1 17-15 35-17 55-7"/><path class="s8-current-flow" d="M21 76c29-12 43-8 61 5" style="animation-direction:reverse"/>
+                <circle cx="49" cy="52" r="3" fill="#9cfff0"/><text class="s8-main" x="108" y="63">Hermes</text><text class="s8-sub" x="110" y="85">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">82</div><div class="name">Pelagic Flow</div></div><div class="tags">ocean currents<br>global circulation</div></div>
+        </article>
+
+        <article class="concept s8-mycelium">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Mycelial Relay logo reading Hermes Dashboard">
+                <defs><filter id="s8-mycelium-glow"><feGaussianBlur stdDeviation="2" result="s8-mg"/><feMerge><feMergeNode in="s8-mg"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+                <path class="s8-mycelium-thread" d="M18 83C31 74 29 55 48 54S53 31 72 25M48 54c18 8 21 24 42 20M39 69C25 60 23 43 17 34M58 45c14 0 24-8 33-20M62 61c12-3 25 4 34 16"/>
+                <circle class="s8-mycelium-node" cx="48" cy="54" r="4"/><circle class="s8-mycelium-node" cx="72" cy="25" r="2.5" style="animation-delay:.6s"/><circle class="s8-mycelium-node" cx="90" cy="74" r="3" style="animation-delay:1.2s"/>
+                <text class="s8-main" x="116" y="61">Hermes</text><text class="s8-sub" x="118" y="83">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">83</div><div class="name">Mycelial Relay</div></div><div class="tags">living network<br>distributed exchange</div></div>
+        </article>
+
+        <article class="concept s8-herbarium s8-light">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Herbarium Index logo reading Hermes Dashboard">
+                <path class="s8-herbarium-stem" d="M65 101C62 77 68 51 53 17M62 73c-15-10-22-18-28-30M64 61c12-12 18-22 19-35"/>
+                <path class="s8-herbarium-leaf" d="M50 58C30 60 26 49 28 37c15 2 24 8 22 21ZM67 48c18-4 22-15 19-27-14 4-21 13-19 27ZM57 31C43 26 42 16 45 8c11 4 15 11 12 23Z"/>
+                <path class="s8-herbarium-rule" d="M105 20v79M99 25h12M99 94h12"/><text class="s8-label" x="119" y="30">PLATE H-08 / SPECIMEN 81</text><text class="s8-main" x="117" y="65">Hermes</text><text class="s8-sub" x="120" y="86">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">84</div><div class="name">Herbarium Index</div></div><div class="tags">botanical plate<br>observed / catalogued</div></div>
+        </article>
+
+        <article class="concept s8-mirage">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Mirage Meridian logo reading Hermes Dashboard">
+                <defs><filter id="s8-mirage-waver"><feTurbulence type="fractalNoise" baseFrequency=".01 .12" numOctaves="1" seed="8" result="s8-mn"/><feDisplacementMap in="SourceGraphic" in2="s8-mn" scale="2"/></filter></defs>
+                <path class="s8-mirage-dune" d="M0 94c38-24 75-28 112-8 37 20 76 17 108-2v34H0Z"/><g class="s8-mirage-band" fill="none" stroke="#fff5cf"><path d="M10 47c31-7 57 8 88 0s59 6 91-1"/><path d="M29 55c25-5 49 7 76 1s52 3 78-2"/></g>
+                <circle cx="54" cy="33" r="10" fill="#fff2b8" opacity=".8"/><text class="s8-main" x="111" y="62">Hermes</text><text class="s8-sub" x="113" y="83">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">85</div><div class="name">Mirage Meridian</div></div><div class="tags">desert refraction<br>heat / horizon</div></div>
+        </article>
+
+        <article class="concept s8-glacial s8-light">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Glacial Memory logo reading Hermes Dashboard">
+                <defs><linearGradient id="s8-glacial-core" x1="0" x2="1"><stop stop-color="#f5ffff"/><stop offset=".5" stop-color="#8dd2dc"/><stop offset="1" stop-color="#eaffff"/></linearGradient></defs>
+                <rect class="s8-glacial-core" x="20" y="16" width="70" height="87" rx="12"/><path class="s8-glacial-mark" d="M28 36h54M28 61h54M28 84h54" opacity=".5"/>
+                <circle class="s8-glacial-bubble" cx="43" cy="28" r="4"/><circle class="s8-glacial-bubble" cx="67" cy="48" r="2.5"/><circle class="s8-glacial-bubble" cx="48" cy="75" r="6"/><circle class="s8-glacial-bubble" cx="71" cy="91" r="3"/>
+                <text class="s8-main" x="115" y="61">Hermes</text><text class="s8-sub" x="117" y="83">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">86</div><div class="name">Glacial Memory</div></div><div class="tags">ice core / archive<br>atmospheric time</div></div>
+        </article>
+
+        <article class="concept s8-volcanic">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Thermal Caldera logo reading Hermes Dashboard">
+                <defs><linearGradient id="s8-volcanic-heat"><stop stop-color="#ff3c19"/><stop offset=".5" stop-color="#ffbd2e"/><stop offset="1" stop-color="#fff4a6"/></linearGradient><filter id="s8-volcanic-glow"><feGaussianBlur stdDeviation="2.5" result="s8-vg"/><feMerge><feMergeNode in="s8-vg"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+                <path class="s8-volcanic-contour" d="M10 57c5-31 66-50 91-12 26 38-22 72-59 57C16 91-2 77 10 57Zm14 4c5-22 43-33 61-12 19 23-9 44-32 39-18-4-34-11-29-27Zm17 1c3-10 22-15 30-5 9 11-5 19-16 18-9-1-17-6-14-13Z"/>
+                <path class="s8-volcanic-hot" d="M39 69c8-6 12-14 21-14s12 9 20 12"/><text class="s8-main" x="124" y="61">Hermes</text><text class="s8-sub" x="126" y="83">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">87</div><div class="name">Thermal Caldera</div></div><div class="tags">volcanic field<br>energy / pressure</div></div>
+        </article>
+
+        <article class="concept s8-rings s8-light">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Annual Chronicle logo reading Hermes Dashboard">
+                <ellipse class="s8-ring-line" cx="62" cy="59" rx="54" ry="45"/><ellipse class="s8-ring-line" cx="62" cy="59" rx="45" ry="37"/><ellipse class="s8-ring-line" cx="61" cy="60" rx="35" ry="29"/><ellipse class="s8-ring-year" cx="59" cy="60" rx="24" ry="20"/><ellipse class="s8-ring-line" cx="57" cy="61" rx="13" ry="10"/>
+                <path d="M58 9v101" stroke="#3e2919" stroke-width=".7" opacity=".35"/><text class="s8-main" x="135" y="59">Hermes</text><text class="s8-sub" x="137" y="81">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">88</div><div class="name">Annual Chronicle</div></div><div class="tags">tree-ring chronology<br>growth / evidence</div></div>
+        </article>
+
+        <article class="concept s8-cloud">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Cloud Chamber logo reading Hermes Dashboard">
+                <path class="s8-cloud-track" d="M12 87C28 68 22 27 48 21s29 32 12 42c-12 8-10 27 17 35M25 96C37 78 40 67 31 55M72 17c-10 15-8 31 6 42 9 7 12 19 9 35M5 45c15 4 26-4 30-20"/>
+                <g class="s8-cloud-dot"><circle cx="48" cy="21" r="2"/><circle cx="60" cy="63" r="1.7"/><circle cx="31" cy="55" r="1.5"/><circle cx="78" cy="59" r="2"/></g><text class="s8-main" x="116" y="61">Hermes</text><text class="s8-sub" x="118" y="83">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">89</div><div class="name">Vapor Trace</div></div><div class="tags">cloud chamber<br>invisible made visible</div></div>
+        </article>
+
+        <article class="concept s8-crystal">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Crystal Lattice logo reading Hermes Dashboard">
+                <defs><linearGradient id="s8-crystal-spectrum"><stop stop-color="#73e4dc"/><stop offset=".5" stop-color="#be8cff"/><stop offset="1" stop-color="#ffc67c"/></linearGradient><linearGradient id="s8-crystal-face"><stop stop-color="#91e4dd" stop-opacity=".55"/><stop offset="1" stop-color="#926ce0" stop-opacity=".12"/></linearGradient></defs>
+                <path class="s8-crystal-edge" d="M17 59 41 20h45l23 39-23 39H41Zm24-39 22 39 23-39M41 98l22-39 23 39M17 59h92"/><path class="s8-crystal-face" d="m41 20 22 39-22 39-24-39Z"/>
+                <g class="s8-crystal-node"><circle cx="17" cy="59" r="2.5"/><circle cx="41" cy="20" r="2.5"/><circle cx="86" cy="20" r="2.5"/><circle cx="109" cy="59" r="2.5"/></g><text class="s8-main" x="132" y="61">Hermes</text><text class="s8-sub" x="134" y="83">DASHBOARD</text>
+            </svg></div>
+            <div class="meta"><div><div class="number">90</div><div class="name">Crystal Lattice</div></div><div class="tags">mineral geometry<br>ordered matter</div></div>
+        </article>
+    </div>
+</section>

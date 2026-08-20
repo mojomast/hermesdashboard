@@ -1,0 +1,208 @@
+<style>
+    .s4-heading { margin: 48px 0 22px; }
+    .s4-heading .s4-kicker { color: #d5a85f; font: 700 10px/1 ui-monospace, monospace; letter-spacing: .2em; text-transform: uppercase; }
+    .s4-heading h2 { margin: 8px 0 6px; font: 700 clamp(25px, 4vw, 42px)/1 Georgia, serif; letter-spacing: -.035em; }
+    .s4-heading p { max-width: 680px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .s4-heading + .grid { margin-bottom: 18px; }
+    .s4-light { color: #20150d; }
+    .s4-light::after { color: rgba(32,21,13,.43); }
+    .s4-light .meta { color: #20150d; }
+    .s4-light .tags { color: rgba(32,21,13,.56); }
+    .s4-brand-text { font-family: Georgia, "Times New Roman", serif; }
+    .s4-small-text { font-family: ui-monospace, "Courier New", monospace; }
+
+    .s4-pottery { background: #bd542d; border-color: #35170f; box-shadow: inset 0 0 0 7px #c96a3d, inset 0 0 0 9px #35170f; }
+    .s4-pottery .s4-ink { fill: #24120d; }
+    .s4-pottery .s4-cut { fill: none; stroke: #c96a3d; stroke-width: 2; stroke-linecap: round; }
+    .s4-pottery .s4-main { fill: #24120d; font-size: 37px; font-weight: 700; letter-spacing: 2px; }
+    .s4-pottery .s4-sub { fill: #24120d; font-size: 10px; font-weight: 700; letter-spacing: 4px; }
+    .s4-pottery .s4-band { fill: none; stroke: #24120d; stroke-width: 4; stroke-dasharray: 17 4 4 4; }
+
+    .s4-manuscript { background: radial-gradient(circle at 48% 40%, #f5e4b8, #c9a86e); }
+    .s4-manuscript::before { content: ""; position: absolute; inset: 13px; border: 1px solid rgba(104,52,21,.43); box-shadow: inset 0 0 0 4px rgba(201,153,52,.45); pointer-events: none; }
+    .s4-manuscript .s4-main { fill: #3e251b; font-size: 36px; font-weight: 700; }
+    .s4-manuscript .s4-sub { fill: #7b1f24; font-size: 10px; font-weight: 700; letter-spacing: 3.3px; }
+    .s4-manuscript .s4-gold { fill: #b58020; stroke: #6c4515; stroke-width: 1; }
+    .s4-manuscript .s4-vine { fill: none; stroke: #31533a; stroke-width: 2; stroke-linecap: round; }
+
+    .s4-runestone { background: linear-gradient(145deg, #66706c, #313937); }
+    .s4-runestone::before { content: ""; position: absolute; inset: 0; opacity: .22; background: repeating-linear-gradient(114deg, transparent 0 17px, #d9d1b7 18px, transparent 19px 35px); }
+    .s4-runestone .s4-rune { fill: none; stroke: #d4c7a4; stroke-width: 5; stroke-linecap: square; stroke-linejoin: bevel; filter: url(#s4-stone-shadow); }
+    .s4-runestone .s4-main { fill: #eee4c6; font-size: 32px; font-weight: 700; letter-spacing: 3px; }
+    .s4-runestone .s4-sub { fill: #c4b891; font-size: 9px; font-weight: 700; letter-spacing: 3.5px; }
+    .s4-runestone .s4-notch { stroke: #978d71; stroke-width: 2; }
+
+    .s4-alchemy { background: #17231e; }
+    .s4-alchemy::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 49.8%, rgba(226,190,104,.06) 50%, transparent 50.2%); }
+    .s4-alchemy .s4-line { fill: none; stroke: #c7a75c; stroke-width: 1.4; }
+    .s4-alchemy .s4-mercury { fill: none; stroke: #e0c87e; stroke-width: 2.4; }
+    .s4-alchemy .s4-main { fill: #eee2bc; font-size: 34px; font-style: italic; }
+    .s4-alchemy .s4-sub { fill: #b9974e; font-size: 9px; font-weight: 700; letter-spacing: 3.5px; }
+    .s4-alchemy .s4-note { fill: #678476; font-size: 7px; }
+
+    .s4-chart { background-color: #d9c58f; background-image: linear-gradient(rgba(79,105,99,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(79,105,99,.12) 1px, transparent 1px); background-size: 22px 22px; }
+    .s4-chart .s4-coast { fill: none; stroke: #5c725f; stroke-width: 2; stroke-linecap: round; }
+    .s4-chart .s4-route { fill: none; stroke: #9a3e2e; stroke-width: 2; stroke-dasharray: 4 5; }
+    .s4-chart .s4-main { fill: #243b38; font-size: 34px; font-style: italic; font-weight: 700; }
+    .s4-chart .s4-sub { fill: #823629; font-size: 9px; font-weight: 700; letter-spacing: 3px; }
+    .s4-chart .s4-compass { fill: #9a3e2e; stroke: #3f574d; stroke-width: 1; }
+
+    .s4-seal { background: linear-gradient(135deg, #2b0b0c, #0d0909 72%); }
+    .s4-seal .s4-disc { fill: #8c1720; stroke: #d9a34a; stroke-width: 2; filter: url(#s4-seal-shadow); }
+    .s4-seal .s4-wing { fill: #d8aa55; }
+    .s4-seal .s4-main { fill: #f4d99a; font-size: 31px; font-weight: 700; letter-spacing: 1.5px; }
+    .s4-seal .s4-sub { fill: #be8543; font-size: 9px; font-weight: 700; letter-spacing: 3.4px; }
+    .s4-seal .s4-rule { stroke: #8c1720; stroke-width: 1; }
+
+    .s4-oracle { background: #201732; }
+    .s4-oracle::before { content: ""; position: absolute; inset: 15px; border: 1px solid #a97f45; border-radius: 10px; pointer-events: none; }
+    .s4-oracle .s4-card { fill: #efe0bb; stroke: #c19a57; stroke-width: 2; }
+    .s4-oracle .s4-road { fill: none; stroke: #332446; stroke-width: 2; }
+    .s4-oracle .s4-main { fill: #f4e5bb; font-size: 32px; font-weight: 700; letter-spacing: 2px; }
+    .s4-oracle .s4-sub { fill: #cfaa66; font-size: 9px; font-weight: 700; letter-spacing: 3.2px; }
+    .s4-oracle .s4-eye { fill: #9b3d54; }
+
+    .s4-heraldry { background: linear-gradient(120deg, #172a49, #0b172a); }
+    .s4-heraldry .s4-banner { fill: #b5a15d; }
+    .s4-heraldry .s4-field { fill: #9d2e32; stroke: #dfc66e; stroke-width: 2; }
+    .s4-heraldry .s4-bird { fill: #f1d985; }
+    .s4-heraldry .s4-main { fill: #f0dfaa; font-size: 33px; font-weight: 700; letter-spacing: 1px; }
+    .s4-heraldry .s4-sub { fill: #aebed2; font-size: 9px; font-weight: 700; letter-spacing: 3.2px; }
+
+    .s4-tablet { background: #967050; box-shadow: inset 0 0 45px rgba(52,29,18,.4); }
+    .s4-tablet .s4-clay { fill: #a9825e; stroke: #593d2c; stroke-width: 2; }
+    .s4-tablet .s4-cuneiform { fill: none; stroke: #4e3528; stroke-width: 3; stroke-linecap: square; }
+    .s4-tablet .s4-main { fill: #2e2019; font-size: 32px; font-weight: 700; letter-spacing: 1.5px; }
+    .s4-tablet .s4-sub { fill: #432d22; font-size: 9px; font-weight: 700; letter-spacing: 3px; }
+
+    .s4-guild { background: #171310; }
+    .s4-guild::before { content: ""; position: absolute; inset: 10px; border: 1px dashed rgba(214,158,72,.3); border-radius: 16px; pointer-events: none; }
+    .s4-guild .s4-mark { fill: #df9f3f; stroke: #f1ca76; stroke-width: 1; }
+    .s4-guild .s4-cutout { fill: #171310; }
+    .s4-guild .s4-main { fill: #f0d6a2; font-size: 35px; font-weight: 700; }
+    .s4-guild .s4-sub { fill: #c88643; font-size: 9px; font-weight: 700; letter-spacing: 3.5px; }
+    .s4-guild .s4-stamp { fill: none; stroke: #6d4a28; stroke-width: 1.2; }
+
+    @media (max-width: 520px) {
+        .s4-heading { margin-top: 34px; }
+        .s4-heading p { font-size: 12px; }
+        .s4-pottery { box-shadow: inset 0 0 0 4px #c96a3d, inset 0 0 0 6px #35170f; }
+    }
+</style>
+
+<header class="s4-heading">
+    <div class="s4-kicker">Studio 04 / Mythic artifacts</div>
+    <h2>Marks from imagined histories.</h2>
+    <p>Ten compact Hermes Dashboard signatures built as recovered objects: fired, inked, carved, sealed, charted, and struck by hand.</p>
+</header>
+
+<section class="grid" aria-label="Studio 4 mythic artifact logo concepts">
+    <article class="concept s4-pottery s4-light" aria-labelledby="s4-name-41">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Attic Courier logo reading Hermes Dashboard">
+                <path class="s4-band" d="M8 19H432M8 99H432"/>
+                <g transform="translate(17 24)"><path class="s4-ink" d="M11 58C7 45 10 28 22 17c8 2 15 7 19 14l17-13-7 24 18 8-24 5-8 22-7-20Z"/><path class="s4-cut" d="m18 30 16 12 16-15M18 52l26-2M29 22l1 35"/><circle class="s4-ink" cx="20" cy="12" r="7"/></g>
+                <text class="s4-brand-text s4-main" x="101" y="61">HERMES</text><text class="s4-small-text s4-sub" x="104" y="82">DASHBOARD</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">41</div><div class="name" id="s4-name-41">Attic Courier</div></div><div class="tags">black-figure pottery<br>fired clay / motion</div></div>
+    </article>
+
+    <article class="concept s4-manuscript s4-light" aria-labelledby="s4-name-42">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Scriptorium Wing logo reading Hermes Dashboard">
+                <path class="s4-vine" d="M15 88c34-8 12-65 50-59 25 4 4 42 31 40M26 75l-11-9m22-4 12 8M58 34l-8-13m20 17 13-9"/>
+                <path class="s4-gold" d="M28 34h42v47H28zM37 40h9v13h14V40h6v34h-6V59H46v15h-9z"/>
+                <text class="s4-brand-text s4-main" x="91" y="61">Hermes</text><text class="s4-small-text s4-sub" x="94" y="81">DASHBOARD / XLII</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">42</div><div class="name" id="s4-name-42">Scriptorium Wing</div></div><div class="tags">illuminated manuscript<br>gilded initial / vellum</div></div>
+    </article>
+
+    <article class="concept s4-runestone" aria-labelledby="s4-name-43">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Waystone Relay logo reading Hermes Dashboard">
+                <defs><filter id="s4-stone-shadow"><feDropShadow dx="1" dy="2" stdDeviation=".5" flood-color="#17201e"/></filter></defs>
+                <g class="s4-rune"><path d="M18 85V31m0 25 31-25v54M59 31v54m0-27 28-27m-28 27 30 27"/><path d="m24 23 9-9 9 9M67 23l9-9 9 9"/></g>
+                <path class="s4-notch" d="M104 26h314M104 91h314"/>
+                <text class="s4-brand-text s4-main" x="111" y="61">HERMES</text><text class="s4-small-text s4-sub" x="114" y="81">DASHBOARD / WAY 43</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">43</div><div class="name" id="s4-name-43">Waystone Relay</div></div><div class="tags">runic stone inscription<br>carved route / iron age</div></div>
+    </article>
+
+    <article class="concept s4-alchemy" aria-labelledby="s4-name-44">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Mercury Codex logo reading Hermes Dashboard">
+                <circle class="s4-line" cx="58" cy="57" r="42"/><path class="s4-line" d="m58 17 35 61H23Zm-35 61h70M26 34l64 46"/>
+                <g class="s4-mercury"><circle cx="58" cy="48" r="13"/><path d="M58 61v24M46 73h24M47 28c1-9 8-13 11-13s10 4 11 13"/></g>
+                <text class="s4-brand-text s4-main" x="119" y="59">Hermes</text><text class="s4-small-text s4-sub" x="122" y="80">DASHBOARD / OPUS 44</text><text class="s4-small-text s4-note" x="352" y="36">HG / VIA</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">44</div><div class="name" id="s4-name-44">Mercury Codex</div></div><div class="tags">alchemical codex<br>diagram / transformation</div></div>
+    </article>
+
+    <article class="concept s4-chart s4-light" aria-labelledby="s4-name-45">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Westward Dispatch logo reading Hermes Dashboard">
+                <g transform="translate(13 18)"><circle class="s4-coast" cx="42" cy="40" r="31"/><path class="s4-compass" d="m42 7 6 27 27 6-27 6-6 27-6-27-27-6 27-6Z"/><circle cx="42" cy="40" r="4" fill="#d9c58f"/></g>
+                <path class="s4-route" d="M79 70c38 26 49-37 90-12s52-17 78-10"/>
+                <text class="s4-brand-text s4-main" x="106" y="58">Hermes</text><text class="s4-small-text s4-sub" x="109" y="80">DASHBOARD / PORT 45</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">45</div><div class="name" id="s4-name-45">Westward Dispatch</div></div><div class="tags">nautical explorer chart<br>compass / passage</div></div>
+    </article>
+
+    <article class="concept s4-seal" aria-labelledby="s4-name-46">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Consular Signet logo reading Hermes Dashboard">
+                <defs><filter id="s4-seal-shadow"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity=".55"/></filter></defs>
+                <circle class="s4-disc" cx="61" cy="59" r="43"/><path class="s4-wing" d="M33 62c15-3 24-13 29-30 9 9 13 20 11 33 10-8 18-8 23-7-10 15-22 21-36 20-12 0-21-6-27-16Zm25-15v28h7V47Z"/>
+                <path class="s4-rule" d="M117 28h292M117 86h292"/>
+                <text class="s4-brand-text s4-main" x="124" y="60">HERMES</text><text class="s4-small-text s4-sub" x="127" y="80">DASHBOARD / IMPERIUM</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">46</div><div class="name" id="s4-name-46">Consular Signet</div></div><div class="tags">imperial seal<br>wax / authority</div></div>
+    </article>
+
+    <article class="concept s4-oracle" aria-labelledby="s4-name-47">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Oracle of Roads logo reading Hermes Dashboard">
+                <rect class="s4-card" x="20" y="9" width="67" height="99" rx="4"/><path class="s4-road" d="M34 91c2-25 35-34 17-66m18 67c-3-21-22-31-8-67"/><path class="s4-eye" d="M30 54q24-23 48 0-24 23-48 0Zm24-8a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z"/>
+                <text class="s4-brand-text s4-main" x="111" y="59">HERMES</text><text class="s4-small-text s4-sub" x="114" y="81">DASHBOARD / ARCANA XLVII</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">47</div><div class="name" id="s4-name-47">Oracle of Roads</div></div><div class="tags">oracle tarot card<br>fate / crossroads</div></div>
+    </article>
+
+    <article class="concept s4-heraldry" aria-labelledby="s4-name-48">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Winged Standard logo reading Hermes Dashboard">
+                <path class="s4-banner" d="M17 17h76v15H17z"/><path class="s4-field" d="M25 28h60v48L55 99 25 76Z"/><path class="s4-bird" d="M34 54c13-2 17-10 21-18 5 5 8 11 8 18 7-5 13-5 17-3-8 12-17 17-28 15l-9 14 2-17c-5-2-8-5-11-9Z"/>
+                <text class="s4-brand-text s4-main" x="111" y="58">Hermes</text><text class="s4-small-text s4-sub" x="114" y="80">DASHBOARD / HOUSE OF 48</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">48</div><div class="name" id="s4-name-48">Winged Standard</div></div><div class="tags">medieval heraldic banner<br>house colors / oath</div></div>
+    </article>
+
+    <article class="concept s4-tablet s4-light" aria-labelledby="s4-name-49">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Tablet of Routes logo reading Hermes Dashboard">
+                <path class="s4-clay" d="M16 18q0-9 9-9h68q9 0 9 9v82q0 9-9 9H25q-9 0-9-9Z"/>
+                <g class="s4-cuneiform"><path d="m29 29 12 6-12 5m22-11 13 6-13 5m22-11 12 6-12 5M29 53l9 5-9 5m18-10 17 5-17 5m26-10 12 5-12 5M29 77l15 6-15 4m25-10 9 6-9 4m19-10 12 6-12 4"/></g>
+                <text class="s4-brand-text s4-main" x="122" y="59">HERMES</text><text class="s4-small-text s4-sub" x="125" y="80">DASHBOARD / TABLET 49</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">49</div><div class="name" id="s4-name-49">Tablet of Routes</div></div><div class="tags">Mesopotamian clay tablet<br>cuneiform / record</div></div>
+    </article>
+
+    <article class="concept s4-guild" aria-labelledby="s4-name-50">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Guild of Swift Hands logo reading Hermes Dashboard">
+                <circle class="s4-stamp" cx="59" cy="59" r="49"/><path class="s4-mark" d="M20 30 59 12l39 18v42L59 106 20 72Z"/><path class="s4-cutout" d="M37 36h10v18h24V36h10v48H71V64H47v20H37z"/><path class="s4-cutout" d="m27 32 18 4-13 12m59-16-18 4 13 12"/>
+                <text class="s4-brand-text s4-main" x="126" y="58">Hermes</text><text class="s4-small-text s4-sub" x="129" y="80">DASHBOARD / MAKERS GUILD</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">50</div><div class="name" id="s4-name-50">Guild of Swift Hands</div></div><div class="tags">fantasy maker's mark<br>workshop / provenance</div></div>
+    </article>
+</section>

@@ -1,0 +1,207 @@
+<style>
+    .s1-collection-title {
+        grid-column: 1 / -1;
+        margin: 32px 0 2px;
+        color: #d8cbb5;
+        font: 700 11px/1.2 ui-monospace, monospace;
+        letter-spacing: .2em;
+        text-transform: uppercase;
+    }
+    .s1-card { color: #272018; }
+    .s1-card::after { color: rgba(39,32,24,.42); }
+    .s1-card .meta { color: inherit; }
+    .s1-card .tags { color: color-mix(in srgb, currentColor 58%, transparent); }
+    .s1-card .stage { position: relative; place-items: center start; padding-inline: clamp(20px, 7%, 52px); }
+    .s1-card .brand { width: min(390px, 94%); }
+    .s1-paper-grain::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: .2;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70'%3E%3Cfilter id='s1-css-noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='2' seed='12'/%3E%3C/filter%3E%3Crect width='70' height='70' filter='url(%23s1-css-noise)' opacity='.22'/%3E%3C/svg%3E");
+        mix-blend-mode: multiply;
+    }
+
+    .s1-letterpress { background: #dfd2b9; box-shadow: inset 0 0 55px rgba(81,51,29,.1); }
+    .s1-letterpress .s1-lp-rule { stroke: #4e251f; stroke-width: 2; }
+    .s1-letterpress .s1-lp-main { fill: #50261f; font: 800 43px/1 Georgia, serif; letter-spacing: -2px; }
+    .s1-letterpress .s1-lp-sub { fill: #6b3528; font: 700 10px/1 ui-monospace, monospace; letter-spacing: 4px; }
+    .s1-letterpress .s1-lp-ghost { fill: #26110e; opacity: .16; transform: translate(1px, 1px); }
+
+    .s1-risograph { background: #f1e5c8; }
+    .s1-risograph .s1-riso-cyan { fill: #087f91; opacity: .78; transform: translate(-2px, 1px); }
+    .s1-risograph .s1-riso-red { fill: #ef3f4f; opacity: .75; transform: translate(2px, -1px); mix-blend-mode: multiply; }
+    .s1-risograph .s1-riso-main { font: 900 40px/1 Arial, sans-serif; letter-spacing: -2px; }
+    .s1-risograph .s1-riso-sub { fill: #213a3d; font: 800 10px/1 ui-monospace, monospace; letter-spacing: 3.5px; }
+    .s1-risograph .s1-riso-dot { fill: url(#s1-riso-dots); opacity: .55; }
+
+    .s1-collage { background: #bbad90; }
+    .s1-collage .s1-collage-shadow { fill: #342a22; opacity: .25; transform: translate(4px, 5px); }
+    .s1-collage .s1-collage-paper { fill: #eee0bf; }
+    .s1-collage .s1-collage-red { fill: #ba392a; }
+    .s1-collage .s1-collage-main { fill: #201d19; font: 900 39px/1 Arial Black, sans-serif; letter-spacing: -2px; }
+    .s1-collage .s1-collage-sub { fill: #fff5dc; font: 800 10px/1 ui-monospace, monospace; letter-spacing: 3px; }
+
+    .s1-blueprint { color: #e5f5f4; background-color: #164d67; background-image: linear-gradient(rgba(219,243,239,.09) 1px, transparent 1px), linear-gradient(90deg, rgba(219,243,239,.09) 1px, transparent 1px); background-size: 18px 18px; }
+    .s1-blueprint::after { color: rgba(229,245,244,.5); }
+    .s1-blueprint .s1-bp-line { fill: none; stroke: #d9f0e8; stroke-width: 1; }
+    .s1-blueprint .s1-bp-faint { opacity: .42; stroke-dasharray: 3 3; }
+    .s1-blueprint .s1-bp-main { fill: #f0faf5; font: 700 38px/1 Arial, sans-serif; letter-spacing: -1px; }
+    .s1-blueprint .s1-bp-sub { fill: #d9f0e8; font: 600 9px/1 ui-monospace, monospace; letter-spacing: 3px; }
+    .s1-blueprint .s1-bp-note { fill: #aad1cf; font: 500 6px/1 ui-monospace, monospace; }
+
+    .s1-stamp { background: #d8c49b; }
+    .s1-stamp .s1-stamp-ink { fill: #7d2520; }
+    .s1-stamp .s1-stamp-line { fill: none; stroke: #7d2520; stroke-width: 3; stroke-dasharray: 77 2 19 1; }
+    .s1-stamp .s1-stamp-main { font: 900 37px/1 Arial Black, sans-serif; letter-spacing: -1px; }
+    .s1-stamp .s1-stamp-sub { font: 800 9px/1 ui-monospace, monospace; letter-spacing: 2.8px; }
+    .s1-stamp .s1-stamp-distress { filter: url(#s1-stamp-distress); }
+
+    .s1-engraving { background: #d7b47b; box-shadow: inset 0 0 80px rgba(79,39,16,.18); }
+    .s1-engraving .s1-engrave-line { fill: none; stroke: #4f2a18; stroke-width: 1; }
+    .s1-engraving .s1-engrave-hatch { stroke-width: .65; opacity: .56; }
+    .s1-engraving .s1-engrave-main { fill: #442316; font: italic 700 41px/1 Georgia, serif; letter-spacing: -2px; }
+    .s1-engraving .s1-engrave-sub { fill: #5d321e; font: 700 9px/1 ui-monospace, monospace; letter-spacing: 3px; }
+
+    .s1-patch { color: #f4d989; background: #273b35; }
+    .s1-patch::after { color: rgba(244,217,137,.46); }
+    .s1-patch .s1-patch-base { fill: #b24c36; stroke: #edca78; stroke-width: 3; stroke-dasharray: 2 3; }
+    .s1-patch .s1-patch-inner { fill: none; stroke: #f0d98e; stroke-width: 1.4; stroke-dasharray: 1 2; }
+    .s1-patch .s1-patch-main { fill: #fff0b6; stroke: #fff0b6; stroke-width: .45; font: 900 34px/1 Arial, sans-serif; letter-spacing: -1px; }
+    .s1-patch .s1-patch-sub { fill: #f8db83; font: 800 8px/1 ui-monospace, monospace; letter-spacing: 3px; }
+
+    .s1-sign { color: #f8e7bc; background: #31524b; }
+    .s1-sign::after { color: rgba(248,231,188,.48); }
+    .s1-sign .s1-sign-shadow { fill: #142f2b; transform: translate(3px, 4px); }
+    .s1-sign .s1-sign-main { fill: #f1c65c; stroke: #f6e2a9; stroke-width: .8; paint-order: stroke; font: italic 800 43px/1 Georgia, serif; letter-spacing: -2px; }
+    .s1-sign .s1-sign-sub { fill: #f8e7bc; font: 800 9px/1 Arial, sans-serif; letter-spacing: 4px; }
+    .s1-sign .s1-sign-flourish { fill: none; stroke: #d85b43; stroke-width: 4; stroke-linecap: round; }
+
+    .s1-paperfold { background: #ede7d7; }
+    .s1-paperfold .s1-fold-shadow { fill: #857f72; opacity: .32; transform: translate(5px, 6px); }
+    .s1-paperfold .s1-fold-a { fill: #ef5b42; }
+    .s1-paperfold .s1-fold-b { fill: #c33c33; }
+    .s1-paperfold .s1-fold-c { fill: #f6cc65; }
+    .s1-paperfold .s1-fold-main { fill: #252523; font: 900 38px/1 Arial, sans-serif; letter-spacing: -2px; }
+    .s1-paperfold .s1-fold-sub { fill: #5a5550; font: 700 9px/1 ui-monospace, monospace; letter-spacing: 3px; }
+
+    .s1-library { background: #918a73; }
+    .s1-library .s1-label { fill: #e8dbb9; stroke: #463d31; stroke-width: 1; }
+    .s1-library .s1-label-rule { stroke: #958468; stroke-width: .8; }
+    .s1-library .s1-label-main { fill: #29251f; font: 700 36px/1 Georgia, serif; letter-spacing: -1px; }
+    .s1-library .s1-label-sub { fill: #4e4538; font: 700 9px/1 ui-monospace, monospace; letter-spacing: 2.5px; }
+    .s1-library .s1-label-code { fill: #645847; font: 600 7px/1 ui-monospace, monospace; }
+    .s1-library .s1-label-mark { fill: none; stroke: #9a3d31; stroke-width: 2; }
+
+    @media (max-width: 520px) {
+        .s1-card .stage { padding-inline: 18px; }
+        .s1-card .brand { width: 100%; }
+        .s1-collection-title { margin-top: 22px; }
+    }
+</style>
+
+<h2 class="s1-collection-title">Studio 1 / Tactile Analog Craft / Concepts 11-20</h2>
+<section class="grid" aria-label="Studio 1 tactile analog Hermes Dashboard logo concepts">
+    <article class="concept s1-card s1-paper-grain s1-letterpress" aria-label="Concept 11, Pressed Dispatch, letterpress ink logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard letterpress ink lockup">
+                <text class="s1-lp-main s1-lp-ghost" x="45" y="63">Hermes</text><text class="s1-lp-main" x="44" y="62">Hermes</text>
+                <line class="s1-lp-rule" x1="45" y1="73" x2="283" y2="73"/><text class="s1-lp-sub" x="47" y="91">DASHBOARD</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">11</div><div class="name">Pressed Dispatch</div></div><div class="tags">letterpress ink<br>pressed / imperfect</div></div>
+    </article>
+
+    <article class="concept s1-card s1-paper-grain s1-risograph" aria-label="Concept 12, Offset Messenger, risograph overprint logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard risograph overprint lockup">
+                <defs><pattern id="s1-riso-dots" width="5" height="5" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".8" fill="#123d48"/></pattern></defs>
+                <circle class="s1-riso-red" cx="52" cy="57" r="34"/><circle class="s1-riso-cyan" cx="63" cy="51" r="34"/><rect class="s1-riso-dot" x="27" y="24" width="72" height="67"/>
+                <text class="s1-riso-main s1-riso-cyan" x="112" y="62">Hermes</text><text class="s1-riso-main s1-riso-red" x="112" y="62">Hermes</text><text class="s1-riso-sub" x="115" y="84">DASHBOARD / EDITION 02</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">12</div><div class="name">Offset Messenger</div></div><div class="tags">risograph<br>overprint / vivid</div></div>
+    </article>
+
+    <article class="concept s1-card s1-paper-grain s1-collage" aria-label="Concept 13, Torn Bulletin, torn-paper collage logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard torn-paper collage lockup">
+                <path class="s1-collage-shadow" d="M20 29 67 22l38 7 49-5 65 8 77-5 72 8-7 54-70-3-58 7-79-5-68 6-70-8z"/>
+                <path class="s1-collage-paper" d="M17 25 66 19l39 7 49-6 65 8 78-5 72 8-7 53-70-3-59 8-79-6-68 7-71-9z"/>
+                <path class="s1-collage-red" d="M25 72 363 68l-1 20-337 3z"/><text class="s1-collage-main" x="40" y="62">Hermes</text><text class="s1-collage-sub" x="44" y="85">DASHBOARD</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">13</div><div class="name">Torn Bulletin</div></div><div class="tags">paper collage<br>cut / assembled</div></div>
+    </article>
+
+    <article class="concept s1-card s1-blueprint" aria-label="Concept 14, Courier Specification, technical blueprint logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard technical blueprint lockup">
+                <rect class="s1-bp-line" x="18" y="24" width="370" height="68"/><line class="s1-bp-line s1-bp-faint" x1="31" y1="14" x2="31" y2="104"/><line class="s1-bp-line s1-bp-faint" x1="13" y1="81" x2="407" y2="81"/>
+                <path class="s1-bp-line" d="M35 58h20m-10-10v20m-7-17 14 14m0-14-14 14"/><text class="s1-bp-main" x="75" y="64">Hermes</text><text class="s1-bp-sub" x="78" y="82">DASHBOARD // DWG-14</text><text class="s1-bp-note" x="326" y="37">SCALE 1:1</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">14</div><div class="name">Courier Specification</div></div><div class="tags">blueprint<br>measured / exact</div></div>
+    </article>
+
+    <article class="concept s1-card s1-paper-grain s1-stamp" aria-label="Concept 15, Cleared for Transit, rubber inspection stamp logo">
+        <div class="stage">
+            <svg class="brand s1-stamp-distress" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard rubber inspection stamp lockup">
+                <defs><filter id="s1-stamp-distress"><feTurbulence type="fractalNoise" baseFrequency=".035 .4" numOctaves="1" seed="7" result="s1-stamp-noise"/><feDisplacementMap in="SourceGraphic" in2="s1-stamp-noise" scale="1.2"/></filter></defs>
+                <g class="s1-stamp-ink" transform="rotate(-2 210 59)"><rect class="s1-stamp-line" x="20" y="24" width="350" height="70" rx="5"/><text class="s1-stamp-main" x="38" y="64">Hermes</text><text class="s1-stamp-sub" x="41" y="83">DASHBOARD / INSPECTED</text><circle class="s1-stamp-line" cx="340" cy="59" r="23"/></g>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">15</div><div class="name">Cleared for Transit</div></div><div class="tags">rubber stamp<br>approved / utility</div></div>
+    </article>
+
+    <article class="concept s1-card s1-paper-grain s1-engraving" aria-label="Concept 16, Mercurial Plate, copperplate engraving logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard copperplate engraving lockup">
+                <g class="s1-engrave-line s1-engrave-hatch"><path d="M22 32 67 87M28 27l44 55M35 24l42 51M383 31l-42 56M377 27l-41 54M370 24l-39 50"/><path d="M18 37h65M16 43h70M337 37h63M334 43h67"/></g>
+                <path class="s1-engrave-line" d="M18 59c22-34 45-34 68 0-23 34-46 34-68 0Zm316 0c22-34 45-34 68 0-23 34-46 34-68 0Z"/>
+                <text class="s1-engrave-main" x="94" y="65">Hermes</text><path class="s1-engrave-line" d="M100 73c55 8 140 8 224 0"/><text class="s1-engrave-sub" x="142" y="88">DASHBOARD</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">16</div><div class="name">Mercurial Plate</div></div><div class="tags">copperplate<br>etched / classical</div></div>
+    </article>
+
+    <article class="concept s1-card s1-patch" aria-label="Concept 17, Field Operator, embroidered patch logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard embroidered patch lockup">
+                <path class="s1-patch-base" d="M23 22h342l23 37-23 37H23L6 59Z"/><path class="s1-patch-inner" d="M29 29h331l18 30-18 30H29L15 59Z"/>
+                <path class="s1-patch-inner" d="m38 59 13-18 13 18-13 18z"/><text class="s1-patch-main" x="83" y="62">Hermes</text><text class="s1-patch-sub" x="86" y="81">DASHBOARD / FIELD UNIT</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">17</div><div class="name">Field Operator</div></div><div class="tags">embroidered patch<br>durable / crew</div></div>
+    </article>
+
+    <article class="concept s1-card s1-paper-grain s1-sign" aria-label="Concept 18, Painted Route, hand-painted sign logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard hand-painted sign lockup">
+                <text class="s1-sign-main s1-sign-shadow" x="35" y="65">Hermes</text><text class="s1-sign-main" x="35" y="65">Hermes</text><path class="s1-sign-flourish" d="M42 76c78 9 170 8 269-2 26-3 48 1 61 10"/><text class="s1-sign-sub" x="45" y="94">DASHBOARD</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">18</div><div class="name">Painted Route</div></div><div class="tags">sign painting<br>human / spirited</div></div>
+    </article>
+
+    <article class="concept s1-card s1-paper-grain s1-paperfold" aria-label="Concept 19, Folded Wing, folded paper cutout logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard folded paper cutout lockup">
+                <path class="s1-fold-shadow" d="m20 62 48-40 18 25 35-12-28 32 26 27-47-18-29 21z"/><path class="s1-fold-a" d="m15 57 48-40 6 52z"/><path class="s1-fold-b" d="m63 17 18 25 35-12-52 39z"/><path class="s1-fold-c" d="m15 57 49 12-26 23z"/><path class="s1-fold-a" d="m64 69 50 20-26-27 28-32z"/>
+                <text class="s1-fold-main" x="130" y="62">Hermes</text><text class="s1-fold-sub" x="133" y="83">DASHBOARD / PAPER 19</text>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">19</div><div class="name">Folded Wing</div></div><div class="tags">paper cutout<br>folded / dimensional</div></div>
+    </article>
+
+    <article class="concept s1-card s1-paper-grain s1-library" aria-label="Concept 20, Olympus Catalogue, archival library label logo">
+        <div class="stage">
+            <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard archival library label lockup">
+                <rect class="s1-label" x="19" y="17" width="380" height="84" rx="2"/><line class="s1-label-rule" x1="31" y1="43" x2="386" y2="43"/><line class="s1-label-rule" x1="31" y1="82" x2="386" y2="82"/>
+                <text class="s1-label-code" x="31" y="35">OLYMPUS SYSTEMS ARCHIVE</text><text class="s1-label-main" x="31" y="73">Hermes</text><text class="s1-label-sub" x="191" y="72">DASHBOARD</text><text class="s1-label-code" x="31" y="94">CALL NO. HERM / 20 / UI</text><circle class="s1-label-mark" cx="367" cy="60" r="14"/>
+            </svg>
+        </div>
+        <div class="meta"><div><div class="number">20</div><div class="name">Olympus Catalogue</div></div><div class="tags">library label<br>indexed / archival</div></div>
+    </article>
+</section>

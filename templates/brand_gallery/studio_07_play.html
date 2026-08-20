@@ -1,0 +1,167 @@
+<style>
+    .s7-studio {
+        --s7-cream: #fff7df;
+        color: #f8f4ff;
+    }
+    .s7-studio .s7-heading { margin: 0 0 24px; }
+    .s7-studio .s7-kicker { color: #ffcc43; font: 800 10px/1 ui-monospace, monospace; letter-spacing: .2em; text-transform: uppercase; }
+    .s7-studio .s7-title { margin: 8px 0 5px; font: 850 clamp(28px, 4vw, 46px)/1 system-ui, sans-serif; letter-spacing: -.045em; }
+    .s7-studio .s7-intro { max-width: 680px; margin: 0; color: #a9adc0; font-size: 14px; line-height: 1.55; }
+    .s7-studio .stage { position: relative; }
+    .s7-studio .brand { max-height: 130px; }
+
+    .s7-studio .s7-cartoon { background: radial-gradient(circle at 51% 42%, #65d8ff 0 24%, #1673c8 62%, #072d70); }
+    .s7-studio .s7-cartoon::before { content: ""; position: absolute; inset: 0; background: repeating-conic-gradient(from 4deg at 50% 42%, rgba(255,255,255,.13) 0 3deg, transparent 3deg 18deg); }
+    .s7-studio .s7-cartoon-shadow { fill: #7a205f; stroke: #231453; stroke-width: 10; paint-order: stroke fill; }
+    .s7-studio .s7-cartoon-main { fill: #ffea49; stroke: #231453; stroke-width: 5; paint-order: stroke fill; font: 1000 42px/1 "Arial Black", system-ui, sans-serif; letter-spacing: -3px; }
+    .s7-studio .s7-cartoon-sub { fill: #fff; stroke: #231453; stroke-width: 4; paint-order: stroke fill; font: 900 17px/1 "Arial Black", system-ui, sans-serif; letter-spacing: 2px; }
+    .s7-studio .s7-cartoon-zap { fill: #ff5d8f; stroke: #231453; stroke-width: 3; }
+
+    .s7-studio .s7-card { background: radial-gradient(circle at 25% 15%, #4355aa, #17133e 48%, #080719); }
+    .s7-studio .s7-card-shell { width: min(395px, 91%); padding: 9px; border: 2px solid #f6c75b; border-radius: 14px; background: linear-gradient(115deg, #6ae6e2, #8d63db 35%, #f37fb7 70%, #ffe98a); box-shadow: 0 12px 30px #05030d; transform: rotate(-1deg); }
+    .s7-studio .s7-card-inner { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 11px; min-height: 78px; padding: 9px 12px; border: 2px solid rgba(255,255,255,.65); border-radius: 9px; color: white; background: linear-gradient(120deg, #211b56, #391966); }
+    .s7-studio .s7-card-gem { width: 52px; height: 52px; display: grid; place-items: center; border: 2px solid #ffe990; border-radius: 50%; color: #fff6b8; background: radial-gradient(circle at 35% 28%, #fff, #53ddec 18%, #5347c7 60%, #231454); font: 950 25px/1 Georgia, serif; }
+    .s7-studio .s7-card-name { font: 900 clamp(20px, 4vw, 30px)/.95 Georgia, serif; letter-spacing: -.04em; }
+    .s7-studio .s7-card-dash { margin-top: 5px; color: #88f6ee; font: 800 9px/1 ui-monospace, monospace; letter-spacing: .24em; text-transform: uppercase; }
+    .s7-studio .s7-card-rank { color: #ffdd64; font: 900 10px/1 ui-monospace, monospace; writing-mode: vertical-rl; letter-spacing: .12em; }
+
+    .s7-studio .s7-vinyl { background: linear-gradient(145deg, #202020, #080808); }
+    .s7-studio .s7-vinyl-disc { position: absolute; width: 194px; height: 194px; left: 4%; border-radius: 50%; background: repeating-radial-gradient(circle, #151515 0 3px, #282828 4px, #111 6px); box-shadow: 0 0 0 1px #3b3b3b, 8px 18px 35px #000; }
+    .s7-studio .s7-vinyl-label { position: absolute; inset: 52px; display: grid; place-items: center; border-radius: 50%; color: #1c1633; background: #f7a9b8; font: 950 21px/1 Georgia, serif; }
+    .s7-studio .s7-vinyl-label::after { content: ""; position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #161616; }
+    .s7-studio .s7-vinyl-copy { position: relative; z-index: 1; margin-left: 36%; padding: 17px 22px 16px; border-left: 3px solid #f7a9b8; background: rgba(8,8,8,.8); }
+    .s7-studio .s7-vinyl-main { font: 800 clamp(24px, 4.4vw, 37px)/.9 Georgia, serif; font-style: italic; letter-spacing: -.05em; }
+    .s7-studio .s7-vinyl-sub { margin-top: 8px; color: #f7a9b8; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .3em; text-transform: uppercase; }
+
+    .s7-studio .s7-rpg { background-color: #1c2534; background-image: linear-gradient(45deg, #202c3c 25%, transparent 25% 75%, #202c3c 75%), linear-gradient(45deg, #202c3c 25%, transparent 25% 75%, #202c3c 75%); background-position: 0 0, 8px 8px; background-size: 16px 16px; }
+    .s7-studio .s7-rpg-panel { display: flex; align-items: center; width: min(398px, 94%); padding: 11px 14px; border: 4px solid #e8e0c1; outline: 4px solid #10151f; color: #f4edcf; background: #26344c; box-shadow: inset 0 0 0 3px #536580, 8px 8px 0 rgba(0,0,0,.3); image-rendering: pixelated; }
+    .s7-studio .s7-rpg-wing { position: relative; width: 49px; height: 44px; margin-right: 15px; background: #f2cd5e; clip-path: polygon(0 45%,35% 45%,35% 18%,52% 18%,52% 0,70% 0,70% 28%,100% 28%,100% 48%,70% 48%,70% 72%,52% 72%,52% 100%,35% 100%,35% 66%,0 66%); }
+    .s7-studio .s7-rpg-main { font: 900 clamp(19px, 4vw, 29px)/1 ui-monospace, monospace; text-shadow: 3px 3px #111827; }
+    .s7-studio .s7-rpg-sub { margin-top: 7px; color: #8af0cb; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .22em; text-transform: uppercase; }
+    .s7-studio .s7-rpg-count { margin-left: auto; color: #f2cd5e; font: 900 13px/1 ui-monospace, monospace; }
+
+    .s7-studio .s7-comic { background: #f4d64f; background-image: radial-gradient(#b92849 1.4px, transparent 1.4px); background-size: 9px 9px; color: #161b3c; }
+    .s7-studio .s7-comic::after, .s7-studio .s7-comic .tags { color: rgba(22,27,60,.58); }
+    .s7-studio .s7-comic .meta { color: #161b3c; }
+    .s7-studio .s7-burst { width: min(410px, 96%); padding: 24px 46px; text-align: center; background: #fffdf1; filter: drop-shadow(7px 8px 0 #b92849); clip-path: polygon(0 45%,11% 36%,3% 20%,22% 20%,25% 4%,41% 15%,52% 0,61% 15%,81% 4%,81% 23%,100% 29%,88% 44%,99% 59%,82% 65%,85% 86%,65% 78%,52% 100%,40% 82%,19% 93%,20% 71%,2% 68%,13% 55%); }
+    .s7-studio .s7-comic-main { font: 1000 clamp(22px, 4.5vw, 35px)/.85 "Arial Black", Impact, sans-serif; text-transform: uppercase; letter-spacing: -.07em; transform: rotate(-2deg); }
+    .s7-studio .s7-comic-sub { color: #2879b9; font: 950 14px/1 "Arial Black", Impact, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+
+    .s7-studio .s7-clay { background: #b8e3d6; color: #443044; }
+    .s7-studio .s7-clay::after, .s7-studio .s7-clay .tags { color: rgba(68,48,68,.55); }
+    .s7-studio .s7-clay .meta { color: #443044; }
+    .s7-studio .s7-clay-lockup { display: flex; align-items: center; gap: 15px; transform: rotate(-1deg); }
+    .s7-studio .s7-clay-mark { width: 63px; height: 57px; display: grid; place-items: center; border-radius: 46% 54% 41% 59% / 52% 39% 61% 48%; color: #fff9dc; background: #f16f79; box-shadow: inset -8px -8px 0 rgba(126,49,75,.16), 3px 6px 0 #7d5975; font: 950 30px/1 system-ui, sans-serif; }
+    .s7-studio .s7-clay-main { color: #fff7d6; font: 950 clamp(27px, 5vw, 40px)/.9 system-ui, sans-serif; letter-spacing: -.07em; text-shadow: 0 3px #7d5975, 3px 5px #7d5975; }
+    .s7-studio .s7-clay-sub { display: inline-block; margin-top: 8px; padding: 5px 10px; border-radius: 12px; color: #443044; background: #ffd269; box-shadow: 2px 3px #7d5975; font: 850 9px/1 ui-monospace, monospace; letter-spacing: .22em; text-transform: uppercase; }
+
+    .s7-studio .s7-kawaii { background: linear-gradient(160deg, #fff6fb, #e5f5ff); color: #5d4a71; }
+    .s7-studio .s7-kawaii::after, .s7-studio .s7-kawaii .tags { color: rgba(93,74,113,.5); }
+    .s7-studio .s7-kawaii .meta { color: #5d4a71; }
+    .s7-studio .s7-kawaii-note { position: relative; width: min(390px, 92%); padding: 19px 25px 17px 78px; border: 2px solid #f2b7d0; border-radius: 12px 18px 14px 20px; background: repeating-linear-gradient(#fff 0 23px, #dceef7 24px); box-shadow: 6px 7px 0 #c8b9ed; transform: rotate(1deg); }
+    .s7-studio .s7-kawaii-face { position: absolute; left: 17px; top: 17px; width: 48px; height: 48px; border-radius: 50% 50% 46% 54%; background: #ffd565; box-shadow: inset -5px -4px #f3b94e; }
+    .s7-studio .s7-kawaii-face::before { content: "•  •"; position: absolute; inset: 12px 0 0; text-align: center; color: #5d4a71; font: 900 16px/1 system-ui, sans-serif; }
+    .s7-studio .s7-kawaii-face::after { content: "⌣"; position: absolute; inset: 22px 0 0; text-align: center; color: #5d4a71; font: 900 16px/1 system-ui, sans-serif; }
+    .s7-studio .s7-kawaii-main { font: 900 clamp(22px, 4vw, 31px)/1 "Trebuchet MS", system-ui, sans-serif; letter-spacing: -.04em; }
+    .s7-studio .s7-kawaii-sub { margin-top: 7px; color: #d6639b; font: 800 10px/1 "Trebuchet MS", system-ui, sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+
+    .s7-studio .s7-skate { background: #28272c; }
+    .s7-studio .s7-skate::before { content: ""; position: absolute; inset: 0; opacity: .18; background: repeating-linear-gradient(107deg, transparent 0 18px, #fff 19px 20px); }
+    .s7-studio .s7-deck { width: min(414px, 96%); height: 86px; display: flex; align-items: center; justify-content: center; border: 4px solid #121214; border-radius: 43px 43px 39px 39px / 24px 24px 24px 24px; color: #fff; background: linear-gradient(112deg, #f0364f 0 29%, #ffca35 29% 37%, #1867a6 37% 68%, #8fc640 68%); box-shadow: inset 0 0 0 3px rgba(255,255,255,.14), 0 11px 0 #0b0b0d; transform: rotate(-3deg); }
+    .s7-studio .s7-skate-copy { text-align: center; transform: skew(-8deg); }
+    .s7-studio .s7-skate-main { font: 1000 clamp(24px, 4.7vw, 37px)/.88 "Arial Black", Impact, sans-serif; letter-spacing: -.08em; text-transform: uppercase; text-shadow: 3px 3px #131313; }
+    .s7-studio .s7-skate-sub { margin-top: 6px; font: 900 9px/1 ui-monospace, monospace; letter-spacing: .3em; text-transform: uppercase; text-shadow: 2px 2px #131313; }
+
+    .s7-studio .s7-boardgame { background: #df6245; color: #231d39; }
+    .s7-studio .s7-boardgame::after, .s7-studio .s7-boardgame .tags { color: rgba(35,29,57,.55); }
+    .s7-studio .s7-boardgame .meta { color: #231d39; }
+    .s7-studio .s7-game-box { position: relative; width: min(370px, 88%); padding: 15px 22px 13px 72px; border: 4px solid #231d39; border-radius: 7px; background: #f5dd7b; box-shadow: 8px 9px 0 #231d39; transform: rotate(-1deg); }
+    .s7-studio .s7-game-path { position: absolute; left: 14px; top: 13px; width: 43px; height: 43px; border: 5px solid #2f7b72; border-right-color: #df6245; border-radius: 50%; }
+    .s7-studio .s7-game-path::after { content: "H"; position: absolute; inset: 7px; display: grid; place-items: center; border-radius: 3px; color: #f5dd7b; background: #231d39; font: 900 13px/1 system-ui, sans-serif; }
+    .s7-studio .s7-game-main { font: 950 clamp(22px, 4.2vw, 32px)/.9 Georgia, serif; letter-spacing: -.05em; }
+    .s7-studio .s7-game-sub { margin-top: 7px; color: #b53639; font: 900 9px/1 ui-monospace, monospace; letter-spacing: .21em; text-transform: uppercase; }
+    .s7-studio .s7-game-seal { position: absolute; right: -18px; top: -19px; width: 46px; height: 46px; display: grid; place-items: center; border: 3px solid #231d39; border-radius: 50%; color: white; background: #2f7b72; font: 900 7px/1.1 ui-monospace, monospace; text-align: center; transform: rotate(9deg); }
+
+    .s7-studio .s7-diner { background: linear-gradient(#111d2b 0 50%, #182538 50%); }
+    .s7-studio .s7-diner::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 12px; background: repeating-linear-gradient(90deg, #e9ecdc 0 28px, #3f9ca0 28px 56px); opacity: .28; }
+    .s7-studio .s7-diner-sign { display: flex; align-items: center; gap: 13px; padding: 11px 25px 12px 18px; border: 4px solid #eee3c8; border-radius: 50% 9px 9px 50%; background: #e65045; box-shadow: 0 0 0 5px #3f9ca0, 0 8px 20px #05090f; transform: rotate(-1deg); }
+    .s7-studio .s7-diner-star { width: 46px; color: #fff3a4; font: 900 45px/.8 Georgia, serif; text-align: center; text-shadow: 2px 2px #7d3032; }
+    .s7-studio .s7-diner-main { color: #fff7dc; font: 800 clamp(24px, 4.6vw, 36px)/.9 "Brush Script MT", "Segoe Script", cursive; letter-spacing: -.04em; text-shadow: 2px 2px #7d3032; }
+    .s7-studio .s7-diner-sub { margin-top: 7px; color: #fff3a4; font: 900 8px/1 ui-monospace, monospace; letter-spacing: .28em; text-transform: uppercase; }
+
+    @media (max-width: 520px) {
+        .s7-studio .s7-heading { margin-bottom: 18px; }
+        .s7-studio .s7-vinyl-disc { left: -45px; }
+        .s7-studio .s7-vinyl-copy { margin-left: 22%; }
+        .s7-studio .s7-card-inner { grid-template-columns: 48px 1fr; }
+        .s7-studio .s7-card-rank { display: none; }
+        .s7-studio .s7-burst { padding-inline: 32px; }
+    }
+</style>
+
+<section class="s7-studio" aria-labelledby="s7-gallery-title">
+    <header class="s7-heading">
+        <div class="s7-kicker">Studio 07 / Play identities / 71-80</div>
+        <h2 class="s7-title" id="s7-gallery-title">Play it your way.</h2>
+        <p class="s7-intro">Ten compact Hermes Dashboard marks drawn from cartoons, collections, hobbies, and entertainment culture.</p>
+    </header>
+
+    <div class="grid" aria-label="Studio 7 Hermes Dashboard logo concepts">
+        <article class="concept s7-cartoon">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Skybolt Saturday, Hermes Dashboard logo">
+                    <path class="s7-cartoon-zap" d="M16 25 53 38 76 12 82 43 120 34 96 59 122 77 83 74 72 107 55 78 19 92 39 63z"/>
+                    <text class="s7-cartoon-shadow" x="102" y="61">HERMES</text>
+                    <text class="s7-cartoon-main" x="98" y="56">HERMES</text>
+                    <text class="s7-cartoon-sub" x="119" y="84">DASHBOARD!</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">71</div><div class="name">Skybolt Saturday</div></div><div class="tags">cartoon title<br>heroic / buoyant</div></div>
+        </article>
+
+        <article class="concept s7-card">
+            <div class="stage"><div class="s7-card-shell"><div class="s7-card-inner"><div class="s7-card-gem">H</div><div><div class="s7-card-name">Hermes</div><div class="s7-card-dash">Dashboard</div></div><div class="s7-card-rank">LEGENDARY</div></div></div></div>
+            <div class="meta"><div><div class="number">72</div><div class="name">Legendary Courier</div></div><div class="tags">trading card<br>rare / collectible</div></div>
+        </article>
+
+        <article class="concept s7-vinyl">
+            <div class="stage"><div class="s7-vinyl-disc" aria-hidden="true"><div class="s7-vinyl-label">H</div></div><div class="s7-vinyl-copy"><div class="s7-vinyl-main">Hermes</div><div class="s7-vinyl-sub">Dashboard · 33⅓</div></div></div>
+            <div class="meta"><div><div class="number">73</div><div class="name">Pink Label Pressing</div></div><div class="tags">vinyl center label<br>warm / rhythmic</div></div>
+        </article>
+
+        <article class="concept s7-rpg">
+            <div class="stage"><div class="s7-rpg-panel"><div class="s7-rpg-wing" aria-hidden="true"></div><div><div class="s7-rpg-main">Hermes</div><div class="s7-rpg-sub">Dashboard</div></div><div class="s7-rpg-count">×01</div></div></div>
+            <div class="meta"><div><div class="number">74</div><div class="name">Courier Item Slot</div></div><div class="tags">pixel RPG<br>inventory / quest</div></div>
+        </article>
+
+        <article class="concept s7-comic">
+            <div class="stage"><div class="s7-burst"><div class="s7-comic-main">Hermes</div><div class="s7-comic-sub">Dashboard!</div></div></div>
+            <div class="meta"><div><div class="number">75</div><div class="name">Great Hera!</div></div><div class="tags">1960s comics<br>halftone / impact</div></div>
+        </article>
+
+        <article class="concept s7-clay">
+            <div class="stage"><div class="s7-clay-lockup"><div class="s7-clay-mark" aria-hidden="true">H</div><div><div class="s7-clay-main">Hermes</div><div class="s7-clay-sub">Dashboard</div></div></div></div>
+            <div class="meta"><div><div class="number">76</div><div class="name">Soft-Serve Courier</div></div><div class="tags">claymation<br>tactile / friendly</div></div>
+        </article>
+
+        <article class="concept s7-kawaii">
+            <div class="stage"><div class="s7-kawaii-note"><div class="s7-kawaii-face" aria-hidden="true"></div><div class="s7-kawaii-main">Hermes</div><div class="s7-kawaii-sub">Dashboard ♡</div></div></div>
+            <div class="meta"><div><div class="number">77</div><div class="name">Happy Memo</div></div><div class="tags">kawaii stationery<br>sweet / useful</div></div>
+        </article>
+
+        <article class="concept s7-skate">
+            <div class="stage"><div class="s7-deck"><div class="s7-skate-copy"><div class="s7-skate-main">Hermes</div><div class="s7-skate-sub">Dashboard</div></div></div></div>
+            <div class="meta"><div><div class="number">78</div><div class="name">Curbside Messenger</div></div><div class="tags">skate deck<br>street / kinetic</div></div>
+        </article>
+
+        <article class="concept s7-boardgame">
+            <div class="stage"><div class="s7-game-box"><div class="s7-game-path" aria-hidden="true"></div><div class="s7-game-main">Hermes</div><div class="s7-game-sub">Dashboard</div><div class="s7-game-seal">1-∞<br>PLAYERS</div></div></div>
+            <div class="meta"><div><div class="number">79</div><div class="name">Route Master</div></div><div class="tags">board-game box<br>social / strategic</div></div>
+        </article>
+
+        <article class="concept s7-diner">
+            <div class="stage"><div class="s7-diner-sign"><div class="s7-diner-star" aria-hidden="true">✦</div><div><div class="s7-diner-main">Hermes</div><div class="s7-diner-sub">Dashboard · Open daily</div></div></div></div>
+            <div class="meta"><div><div class="number">80</div><div class="name">Olympus Diner</div></div><div class="tags">roadside neon<br>chrome / cherry pie</div></div>
+        </article>
+    </div>
+</section>

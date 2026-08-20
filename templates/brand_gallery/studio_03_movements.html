@@ -1,0 +1,221 @@
+<style>
+    .s3-gallery { margin-top: 52px; }
+    .s3-collection-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin: 0 0 22px; padding-top: 28px; border-top: 1px solid var(--line); }
+    .s3-kicker { color: #ff735c; font: 700 10px/1 ui-monospace, monospace; letter-spacing: .2em; text-transform: uppercase; }
+    .s3-title { margin: 8px 0 0; font-size: clamp(25px, 3vw, 39px); line-height: 1; letter-spacing: -.045em; }
+    .s3-note { max-width: 430px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; text-align: right; }
+    .s3-gallery .s3-light { color: #111; }
+    .s3-gallery .s3-light::after { color: rgba(0,0,0,.38); }
+    .s3-gallery .s3-light .meta { color: #111; }
+    .s3-gallery .s3-light .tags { color: rgba(0,0,0,.55); }
+
+    .s3-bauhaus { background: #eee7d5; }
+    .s3-bauhaus .s3-bh-red { fill: #e53424; }
+    .s3-bauhaus .s3-bh-blue { fill: #164f9c; }
+    .s3-bauhaus .s3-bh-yellow { fill: #f2bf22; }
+    .s3-bauhaus .s3-bh-ink { fill: #171512; }
+    .s3-bauhaus .s3-bh-main { fill: #171512; font: 900 35px/1 Arial, sans-serif; letter-spacing: -2.4px; }
+    .s3-bauhaus .s3-bh-sub { fill: #171512; font: 700 10px/1 Arial, sans-serif; letter-spacing: 3.8px; }
+
+    .s3-destijl { background: #f4f0df; }
+    .s3-destijl .s3-ds-line { fill: #121212; }
+    .s3-destijl .s3-ds-red { fill: #d9281d; }
+    .s3-destijl .s3-ds-blue { fill: #17498e; }
+    .s3-destijl .s3-ds-yellow { fill: #f0c522; }
+    .s3-destijl .s3-ds-main { fill: #111; font: 900 29px/1 Arial, sans-serif; letter-spacing: -.8px; }
+    .s3-destijl .s3-ds-sub { fill: #f4f0df; font: 700 9px/1 Arial, sans-serif; letter-spacing: 2.7px; }
+
+    .s3-swiss { background-color: #f5f5f2; background-image: linear-gradient(90deg, rgba(0,0,0,.055) 1px, transparent 1px); background-size: 44px 100%; }
+    .s3-swiss .s3-sw-main { fill: #111; font: 800 38px/1 Arial, sans-serif; letter-spacing: -2.6px; }
+    .s3-swiss .s3-sw-sub { fill: #111; font: 700 10px/1 Arial, sans-serif; letter-spacing: 3.15px; }
+    .s3-swiss .s3-sw-red { fill: #ed321d; }
+    .s3-swiss .s3-sw-index { fill: #ed321d; font: 700 8px/1 Arial, sans-serif; }
+
+    .s3-futurism { background: #17130f; }
+    .s3-futurism .s3-ft-wedge { fill: #ec3b21; }
+    .s3-futurism .s3-ft-ray { stroke: #e9d9b9; stroke-width: 2; }
+    .s3-futurism .s3-ft-main { fill: #f2e5cb; font: 900 italic 38px/1 Arial, sans-serif; letter-spacing: -3px; }
+    .s3-futurism .s3-ft-sub { fill: #ffb51b; font: 800 italic 10px/1 Arial, sans-serif; letter-spacing: 3px; }
+    .s3-futurism .s3-ft-arrow { animation: s3-thrust 2.4s ease-in-out infinite alternate; }
+
+    .s3-polish { background: #d9c8a5; }
+    .s3-polish .s3-pp-main { fill: #18130f; font: 700 34px/1 Georgia, serif; letter-spacing: -1.5px; }
+    .s3-polish .s3-pp-sub { fill: #a51d1c; font: 800 10px/1 Arial, sans-serif; letter-spacing: 3.4px; }
+    .s3-polish .s3-pp-red { fill: #ae201b; }
+    .s3-polish .s3-pp-paper { fill: #efe3c7; }
+    .s3-polish .s3-pp-ink { fill: #18130f; }
+
+    .s3-secession { background: #172822; }
+    .s3-secession .s3-vs-gold { fill: #d7b75b; }
+    .s3-secession .s3-vs-line { fill: none; stroke: #d7b75b; stroke-width: 1.4; }
+    .s3-secession .s3-vs-main { fill: #f1e8cb; font: 600 30px/1 Georgia, serif; letter-spacing: 3px; }
+    .s3-secession .s3-vs-sub { fill: #d7b75b; font: 700 8px/1 Arial, sans-serif; letter-spacing: 5.6px; }
+
+    .s3-memphis { background: #f5deca; }
+    .s3-memphis .s3-mm-main { fill: #151515; font: 900 33px/1 Arial, sans-serif; letter-spacing: -1.8px; }
+    .s3-memphis .s3-mm-sub { fill: #151515; font: 800 9px/1 Arial, sans-serif; letter-spacing: 3px; }
+    .s3-memphis .s3-mm-pink { fill: #f04e98; }
+    .s3-memphis .s3-mm-blue { fill: #29a5cc; }
+    .s3-memphis .s3-mm-yellow { fill: #f4c72d; }
+    .s3-memphis .s3-mm-line { fill: none; stroke: #151515; stroke-width: 3; }
+
+    .s3-rave { background: #090909; }
+    .s3-rave::before { content: ""; position: absolute; inset: 0; opacity: .18; background: repeating-linear-gradient(168deg, transparent 0 7px, #fff 8px, transparent 9px); }
+    .s3-rave .s3-rv-shadow { fill: #ff2db5; font: 950 italic 41px/1 Arial, sans-serif; letter-spacing: -3px; }
+    .s3-rave .s3-rv-main { fill: #e9ff28; font: 950 italic 41px/1 Arial, sans-serif; letter-spacing: -3px; }
+    .s3-rave .s3-rv-sub { fill: #fff; font: 700 9px/1 ui-monospace, monospace; letter-spacing: 2.3px; }
+    .s3-rave .s3-rv-ring { fill: none; stroke: #32e7ff; stroke-width: 2; stroke-dasharray: 3 3; animation: s3-spin 8s linear infinite; transform-origin: 61px 59px; }
+
+    .s3-y2k { background: linear-gradient(145deg, #132550, #070d1d 72%); }
+    .s3-y2k .s3-y2-frame { fill: url(#s3-y2k-panel); stroke: #80d8ff; stroke-width: 1; }
+    .s3-y2k .s3-y2-main { fill: url(#s3-y2k-metal); stroke: #e9fbff; stroke-width: .35; font: 900 34px/1 Arial, sans-serif; letter-spacing: -1.5px; }
+    .s3-y2k .s3-y2-sub { fill: #74f5ff; font: 700 8px/1 Arial, sans-serif; letter-spacing: 4.2px; }
+    .s3-y2k .s3-y2-pixel { fill: #ff66d5; }
+    .s3-y2k .s3-y2-rule { stroke: #55dfff; stroke-width: 1; }
+
+    .s3-korean { background: #f3f0e9; }
+    .s3-korean .stage { place-items: center; }
+    .s3-korean .s3-kr-main { fill: #151515; font: 500 33px/1 Georgia, serif; letter-spacing: -1.2px; }
+    .s3-korean .s3-kr-sub { fill: #151515; font: 600 9px/1 Arial, sans-serif; letter-spacing: 4px; }
+    .s3-korean .s3-kr-note { fill: #6f6f69; font: 500 7px/1 Arial, sans-serif; letter-spacing: 1px; }
+    .s3-korean .s3-kr-blue { fill: #275bd5; }
+    .s3-korean .s3-kr-line { stroke: #151515; stroke-width: .75; }
+
+    @keyframes s3-thrust { to { transform: translateX(9px); } }
+    @keyframes s3-spin { to { transform: rotate(360deg); } }
+    @media (max-width: 620px) {
+        .s3-collection-head { display: block; }
+        .s3-note { margin-top: 12px; text-align: left; }
+        .s3-gallery .brand { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .s3-gallery *, .s3-gallery *::before, .s3-gallery *::after { animation: none !important; }
+    }
+</style>
+
+<section class="s3-gallery" aria-labelledby="s3-collection-title">
+    <header class="s3-collection-head">
+        <div>
+            <div class="s3-kicker">Studio 03 / Graphic-design movements</div>
+            <h2 class="s3-title" id="s3-collection-title">Ten histories, moving forward.</h2>
+        </div>
+        <p class="s3-note">Movement principles reinterpreted as compact product identities, not period replicas.</p>
+    </header>
+
+    <div class="grid" aria-label="Studio 3 Hermes Dashboard logo concepts 31 through 40">
+        <article class="concept s3-concept s3-light s3-bauhaus">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-bauhaus-title">
+                    <title id="s3-bauhaus-title">Primary Motion, Hermes Dashboard</title>
+                    <circle class="s3-bh-red" cx="53" cy="58" r="33"/><rect class="s3-bh-blue" x="45" y="17" width="17" height="82"/><polygon class="s3-bh-yellow" points="18,89 83,89 83,104"/><circle class="s3-bh-ink" cx="53" cy="58" r="8"/>
+                    <text class="s3-bh-main" x="103" y="59">HERMES</text><rect class="s3-bh-ink" x="103" y="68" width="286" height="2"/><text class="s3-bh-sub" x="104" y="88">DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">31</div><div class="name">Primary Motion</div></div><div class="tags">Bauhaus geometry<br>form / function</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-light s3-destijl">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-destijl-title">
+                    <title id="s3-destijl-title">Modular Axis, Hermes Dashboard</title>
+                    <rect class="s3-ds-red" x="14" y="15" width="67" height="45"/><rect class="s3-ds-blue" x="14" y="68" width="29" height="35"/><rect class="s3-ds-yellow" x="51" y="68" width="30" height="35"/>
+                    <rect class="s3-ds-line" x="8" y="60" width="424" height="8"/><rect class="s3-ds-line" x="81" y="8" width="8" height="102"/><rect class="s3-ds-line" x="354" y="8" width="8" height="102"/>
+                    <text class="s3-ds-main" x="105" y="49">HERMES</text><rect class="s3-ds-blue" x="89" y="68" width="265" height="35"/><text class="s3-ds-sub" x="106" y="91">DASHBOARD</text><rect class="s3-ds-red" x="362" y="68" width="70" height="35"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">32</div><div class="name">Modular Axis</div></div><div class="tags">De Stijl<br>asymmetric order</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-light s3-swiss">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-swiss-title">
+                    <title id="s3-swiss-title">Grid Standard, Hermes Dashboard</title>
+                    <rect class="s3-sw-red" x="16" y="20" width="8" height="78"/><text class="s3-sw-index" x="35" y="29">HD / 03</text><text class="s3-sw-main" x="34" y="68">Hermes</text><text class="s3-sw-sub" x="37" y="91">DASHBOARD</text><rect class="s3-sw-red" x="367" y="20" width="57" height="8"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">33</div><div class="name">Grid Standard</div></div><div class="tags">Swiss International<br>clarity / measure</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-futurism">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-futurism-title">
+                    <title id="s3-futurism-title">Velocity Type, Hermes Dashboard</title>
+                    <g class="s3-ft-arrow"><polygon class="s3-ft-wedge" points="8,92 81,18 65,69 121,39 78,91"/><line class="s3-ft-ray" x1="3" y1="30" x2="70" y2="45"/><line class="s3-ft-ray" x1="1" y1="49" x2="62" y2="57"/><line class="s3-ft-ray" x1="4" y1="70" x2="57" y2="68"/></g>
+                    <text class="s3-ft-main" x="106" y="61" transform="skewX(-10)">HERMES!</text><text class="s3-ft-sub" x="131" y="86" transform="skewX(-10)">DASHBOARD VELOCITÀ</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">34</div><div class="name">Velocity Type</div></div><div class="tags">Italian Futurism<br>force / acceleration</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-light s3-polish">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-polish-title">
+                    <title id="s3-polish-title">Courier's Eye, Hermes Dashboard</title>
+                    <path class="s3-pp-red" d="M11 61C30 19 82 14 111 58 81 104 32 105 11 61Z"/><path class="s3-pp-paper" d="M25 60C43 35 76 34 96 59 76 83 44 85 25 60Z"/><circle class="s3-pp-ink" cx="60" cy="60" r="13"/><path class="s3-pp-paper" d="m54 51 26-32-10 35 27-13-24 24Z"/>
+                    <text class="s3-pp-main" x="126" y="61">Hermes</text><text class="s3-pp-sub" x="129" y="84">DASHBOARD</text><circle class="s3-pp-red" cx="390" cy="38" r="5"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">35</div><div class="name">Courier's Eye</div></div><div class="tags">Polish poster<br>symbol / surprise</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-secession">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-secession-title">
+                    <title id="s3-secession-title">Golden Dispatch, Hermes Dashboard</title>
+                    <rect class="s3-vs-line" x="11" y="14" width="418" height="89"/><path class="s3-vs-line" d="M20 31h42V20m-42 67h42v11m358-67h-42V20m42 67h-42v11"/>
+                    <g class="s3-vs-gold"><circle cx="79" cy="59" r="5"/><circle cx="65" cy="45" r="4"/><circle cx="65" cy="73" r="4"/><circle cx="93" cy="45" r="4"/><circle cx="93" cy="73" r="4"/><rect x="77" y="28" width="4" height="62"/><rect x="48" y="57" width="62" height="4"/></g>
+                    <text class="s3-vs-main" x="125" y="62">HERMES</text><text class="s3-vs-sub" x="128" y="84">DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">36</div><div class="name">Golden Dispatch</div></div><div class="tags">Vienna Secession<br>ornament / order</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-light s3-memphis">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-memphis-title">
+                    <title id="s3-memphis-title">Play Protocol, Hermes Dashboard</title>
+                    <polygon class="s3-mm-pink" points="12,31 73,18 61,77"/><circle class="s3-mm-blue" cx="77" cy="77" r="24"/><rect class="s3-mm-yellow" x="35" y="71" width="34" height="34" transform="rotate(-12 52 88)"/><path class="s3-mm-line" d="M12 97q9-16 18 0t18 0"/>
+                    <text class="s3-mm-main" x="120" y="59">HERMES</text><rect class="s3-mm-pink" x="119" y="68" width="206" height="18"/><text class="s3-mm-sub" x="128" y="81">DASHBOARD</text><circle class="s3-mm-yellow" cx="389" cy="37" r="15"/><path class="s3-mm-line" d="m368 77 13 13 13-13 13 13"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">37</div><div class="name">Play Protocol</div></div><div class="tags">1980s Memphis<br>pattern / optimism</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-rave">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-rave-title">
+                    <title id="s3-rave-title">All-Night System, Hermes Dashboard</title>
+                    <circle class="s3-rv-ring" cx="61" cy="59" r="43"/><circle class="s3-rv-ring" cx="61" cy="59" r="30" style="animation-direction:reverse"/><path fill="#fff" d="m49 29 25 23-13 5 13 31-12 4-12-31-12 7Z"/>
+                    <text class="s3-rv-shadow" x="111" y="63">HERMES</text><text class="s3-rv-main" x="107" y="59">HERMES</text><text class="s3-rv-sub" x="111" y="83">DASHBOARD // 03:33 AM</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">38</div><div class="name">All-Night System</div></div><div class="tags">1990s rave flyer<br>signal / overload</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-y2k">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-y2k-title">
+                    <title id="s3-y2k-title">Portal 2001, Hermes Dashboard</title>
+                    <defs>
+                        <linearGradient id="s3-y2k-panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#3870b8"/><stop offset=".46" stop-color="#0c1735"/><stop offset="1" stop-color="#183f78"/></linearGradient>
+                        <linearGradient id="s3-y2k-metal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".24" stop-color="#8deaff"/><stop offset=".5" stop-color="#334d89"/><stop offset=".72" stop-color="#f7fbff"/><stop offset="1" stop-color="#6e86bf"/></linearGradient>
+                    </defs>
+                    <path class="s3-y2-frame" d="M15 21h410l-12 76H28Z"/><path class="s3-y2-rule" d="M31 33h371M31 87h371"/><rect class="s3-y2-pixel" x="32" y="42" width="8" height="8"/><rect class="s3-y2-pixel" x="32" y="54" width="8" height="20"/>
+                    <text class="s3-y2-main" x="58" y="66">HERMES</text><text class="s3-y2-sub" x="61" y="82">DASHBOARD.NET</text><text x="370" y="49" fill="#74f5ff" font-size="7" font-family="monospace">ONLINE</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">39</div><div class="name">Portal 2001</div></div><div class="tags">Y2K chrome-web<br>bevel / interface</div></div>
+        </article>
+
+        <article class="concept s3-concept s3-light s3-korean">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-labelledby="s3-korean-title">
+                    <title id="s3-korean-title">Quiet Blue Index, Hermes Dashboard</title>
+                    <circle class="s3-kr-blue" cx="40" cy="35" r="15"/><text x="34" y="39" fill="#fff" font-size="10" font-weight="700" font-family="Arial, sans-serif">H</text><line class="s3-kr-line" x1="66" y1="19" x2="66" y2="99"/>
+                    <text class="s3-kr-main" x="89" y="59">Hermes</text><text class="s3-kr-sub" x="91" y="81">DASHBOARD</text><text class="s3-kr-note" x="335" y="33">SEOUL / 040</text><rect class="s3-kr-blue" x="335" y="42" width="72" height="3"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">40</div><div class="name">Quiet Blue Index</div></div><div class="tags">Korean editorial<br>space / precision</div></div>
+        </article>
+    </div>
+</section>

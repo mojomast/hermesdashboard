@@ -20,6 +20,7 @@ function initTheme() {
 
 function setTheme(theme) {
     document.documentElement.dataset.theme = theme;
+    window.hermesTerminalController?.applyTheme(theme);
     const icon = document.getElementById('theme-icon');
     if (icon) icon.innerHTML = theme === 'light' ? '&#9788;' : '&#9790;';
     // Swap highlight.js theme
@@ -37,6 +38,47 @@ function toggleTheme() {
     localStorage.setItem('hermes-theme', next);
     setTheme(next);
 }
+
+const DASHBOARD_BRAND_STORAGE_KEY = 'hermes_dashboard_brand_concept_v1';
+
+function getDashboardBrandSelection() {
+    try {
+        const value = Number.parseInt(localStorage.getItem(DASHBOARD_BRAND_STORAGE_KEY) || '', 10);
+        return Number.isInteger(value) && value >= 1 && value <= 110 ? value : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function applyDashboardBrandSelection() {
+    const frame = document.getElementById('dashboard-logo-preview');
+    const fallback = document.getElementById('dashboard-logo-default');
+    if (!frame || !fallback) return;
+    const selectedId = getDashboardBrandSelection();
+    if (!selectedId) {
+        frame.hidden = true;
+        frame.removeAttribute('src');
+        fallback.hidden = false;
+        return;
+    }
+    const nextSrc = `/brand-gallery?embed=${selectedId}`;
+    fallback.hidden = false;
+    frame.hidden = true;
+    frame.onload = () => {
+        if (getDashboardBrandSelection() !== selectedId) return;
+        fallback.hidden = true;
+        frame.hidden = false;
+    };
+    frame.onerror = () => {
+        fallback.hidden = false;
+        frame.hidden = true;
+    };
+    if (!frame.src.endsWith(nextSrc)) frame.src = nextSrc;
+}
+
+window.addEventListener('storage', event => {
+    if (event.key === DASHBOARD_BRAND_STORAGE_KEY) applyDashboardBrandSelection();
+});
 
 function getDefaultHiddenDashboardTabs() {
     return new Set(
@@ -234,6 +276,7 @@ function closeDashboardSettings() {
 
 // Initialize theme immediately to avoid flash
 initTheme();
+applyDashboardBrandSelection();
 
 // API cache with TTL
 const apiCache = {};
@@ -301,7 +344,7 @@ function formatTokenExact(value) {
 }
 
 function getCurrentTokenUsageSessionId() {
-    return (activeRun && activeRun.sessionId) || activeChatSessionId || '';
+    return getActiveRun()?.sessionId || activeChatSessionId || '';
 }
 
 function contextGaugeLevel(percent) {
@@ -317,11 +360,12 @@ function contextGaugeColor(percent) {
     return 'var(--accent, #4ade80)';
 }
 
-function renderContextGaugeHtml(percent, title) {
+function renderContextGaugeHtml(percent, title, variant = '') {
     const level = contextGaugeLevel(percent);
     const levelClass = level === 'crit' ? ' context-gauge-crit' : level === 'warn' ? ' context-gauge-warn' : '';
     const width = Math.max(0, Math.min(100, percent));
-    return `<div class="context-gauge${levelClass}" title="${escapeHtml(title)}" style="width:100%;height:5px;min-height:5px;border-radius:3px;overflow:hidden;background:var(--bg-secondary, rgba(128,128,128,0.25));margin-top:3px;"><div class="context-gauge-fill${levelClass}" style="width:${width.toFixed(1)}%;height:100%;background:${contextGaugeColor(percent)};border-radius:3px;"></div></div>`;
+    const variantClass = variant === 'chat' ? ' context-gauge-chat' : '';
+    return `<div class="context-gauge${levelClass}${variantClass}" role="progressbar" aria-label="Context usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${width.toFixed(1)}" aria-valuetext="${escapeHtml(title)}" title="${escapeHtml(title)}"><div class="context-gauge-fill${levelClass}" style="width:${width.toFixed(1)}%;background:${contextGaugeColor(percent)};"></div></div>`;
 }
 
 function normalizeContextInfo(context) {
@@ -350,6 +394,9 @@ let sessionContextCache = { sessionId: null, info: null };
 async function refreshSessionContextInfo(sessionId) {
     const targetId = sessionId || null;
     sessionContextCache = { sessionId: targetId, info: null };
+    if (targetId === getCurrentTokenUsageSessionId()) {
+        updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
+    }
     if (!targetId) return;
     try {
         const response = await fetch(`/api/sessions/${encodeURIComponent(targetId)}/context`, {
@@ -361,7 +408,7 @@ async function refreshSessionContextInfo(sessionId) {
         sessionContextCache.info = normalizeContextInfo(data);
         if (targetId === getCurrentTokenUsageSessionId()) {
             const lastAssistant = [...conversation].reverse().find(msg => msg.role === 'assistant');
-            if (lastAssistant) updateContextDisplay(normalizeAssistantMessage(lastAssistant));
+            updateContextDisplay(lastAssistant ? normalizeAssistantMessage(lastAssistant) : { usage: null, last_prompt_tokens: 0 });
         }
     } catch (error) {
         console.warn('Failed to load session context:', error);
@@ -509,6 +556,7 @@ function stopToolTimerUpdates() {
 
 const DEFAULT_VISIBLE_DASHBOARD_TABS = new Set([
     'chat',
+    'bots',
     'message-board',
     'parallel-arena',
     'config',
@@ -525,6 +573,7 @@ const EXPERIMENTAL_LOCAL_TOOLING_WARNING = "Experimental: built on the maintaine
 
 const DASHBOARD_TABS = [
     { id: 'chat', label: 'Chat', locked: true },
+    { id: 'bots', label: 'Bots' },
     { id: 'message-board', label: 'Message Board' },
     { id: 'dashboard-chat', label: 'Dashboard Chat', experimental: true, warning: 'Optional IRC bridge: connects to external IRC hosts only after it is explicitly enabled and connected.' },
     { id: 'parallel-arena', label: 'Parallel Arena', locked: true },
@@ -565,16 +614,24 @@ const chatImageInput = document.getElementById('chat-image-input');
 const chatImageBtn = document.getElementById('chat-image-btn');
 const chatAttachmentPreviewBar = document.getElementById('chat-attachment-preview-bar');
 const debugLog = document.getElementById('debug-log');
+const contextPanel = document.getElementById('chat-context-panel');
 const contextSummary = document.getElementById('chat-context-summary');
-const contextPills = document.getElementById('chat-context-pills');
-const contextBreakdown = document.getElementById('chat-context-breakdown');
 const chatRunStatus = document.getElementById('chat-run-status');
+const chatRunStatusDetails = document.getElementById('chat-run-status-details');
 const chatRunStatusTitle = document.getElementById('chat-run-status-title');
 const chatRunStatusText = document.getElementById('chat-run-status-text');
 const chatRunStatusMeta = document.getElementById('chat-run-status-meta');
 const chatRunStopBtn = document.getElementById('chat-run-stop-btn');
 const chatRunReattachBtn = document.getElementById('chat-run-reattach-btn');
 const chatRunResumeBtn = document.getElementById('chat-run-resume-btn');
+const chatRoomList = document.getElementById('chat-room-list');
+const chatRoomTitle = document.getElementById('chat-room-title');
+const chatRoomSubtitle = document.getElementById('chat-room-subtitle');
+const chatRoomEyebrow = document.getElementById('chat-room-eyebrow');
+const chatRoomProfile = document.getElementById('chat-room-profile');
+const chatRoomRail = document.getElementById('chat-room-rail');
+const chatRoomRailToggle = document.getElementById('chat-room-rail-toggle');
+let chatRoomAvatar = document.getElementById('chat-room-avatar');
 let conversation = [];
 let models = {};
 let currentConfig = {};
@@ -585,14 +642,22 @@ let currentSessionTraceContext = null;
 let pendingSessionExecutionTarget = null;
 let activeSessionDetailRequestId = 0;
 let activeSessionDetailId = null;
-let activeRun = null;
+let activeRuns = {};
+let recoveredLegacyRunRoomId = null;
 let activeChatSessionId = null;
-let streamResumeInFlight = false;
+let activeChatRoomId = 'main';
+let botRegistry = [];
+let chatRoomSwitchInFlight = false;
+let sharedRoomRequestInFlight = false;
+let chatResetInFlight = false;
+const streamResumeRooms = new Set();
+const connectedChatRunRooms = new Set();
 let tokenUsagePollTimer = null;
 let tokenUsagePollInFlight = false;
 let lastTokenUsagePayload = null;
 let pendingImageAttachments = [];
 let pendingImageAttachmentSeq = 0;
+let pendingImageAttachmentGeneration = 0;
 let approvalPollTimer = null;
 let approvalsInFlight = false;
 let lastApprovalIds = new Set();
@@ -609,8 +674,12 @@ const APPROVAL_POLL_MS = 2000;
 const STORAGE_KEY = 'hermes_dashboard_conversation_v2';
 const ACTIVE_RUN_KEY = 'hermes_dashboard_active_run_v1';
 const ACTIVE_CHAT_SESSION_KEY = 'hermes_dashboard_active_chat_session_v1';
+const ACTIVE_CHAT_ROOM_KEY = 'hermes_dashboard_active_chat_room_v1';
+const CHAT_ROOM_RAIL_EXPANDED_KEY = 'hermes_dashboard_chat_room_rail_expanded_v1';
 const DASHBOARD_STATE_ENDPOINT = '/api/dashboard-state';
 const dashboardStateSaveTimers = new Map();
+const dashboardStateWriteChains = new Map();
+const botRoomWriteChains = new Map();
 
 async function saveDashboardState(key, value, options = {}) {
     const immediate = Boolean(options.immediate);
@@ -619,25 +688,34 @@ async function saveDashboardState(key, value, options = {}) {
         clearTimeout(dashboardStateSaveTimers.get(key));
         dashboardStateSaveTimers.delete(key);
     }
-    const write = async () => {
-        try {
-            const response = await fetch(`${DASHBOARD_STATE_ENDPOINT}/${encodeURIComponent(key)}`, {
-                method: value === null || typeof value === 'undefined' ? 'DELETE' : 'PUT',
-                headers: value === null || typeof value === 'undefined' ? {} : { 'Content-Type': 'application/json' },
-                body: value === null || typeof value === 'undefined' ? undefined : JSON.stringify({ value }),
-            });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+    const write = () => {
+        const previous = dashboardStateWriteChains.get(key) || Promise.resolve();
+        const pending = previous.catch(() => {}).then(async () => {
+            try {
+                const response = await fetch(`${DASHBOARD_STATE_ENDPOINT}/${encodeURIComponent(key)}`, {
+                    method: value === null || typeof value === 'undefined' ? 'DELETE' : 'PUT',
+                    headers: value === null || typeof value === 'undefined' ? {} : { 'Content-Type': 'application/json' },
+                    body: value === null || typeof value === 'undefined' ? undefined : JSON.stringify({ value }),
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return true;
+            } catch (e) {
+                console.warn(`Failed to save dashboard state ${key}:`, e);
+                log('warn', `Failed to save dashboard state ${key}: ${e.message}`);
+                return false;
             }
-        } catch (e) {
-            console.warn(`Failed to save dashboard state ${key}:`, e);
-            log('warn', `Failed to save dashboard state ${key}: ${e.message}`);
-        }
+        });
+        dashboardStateWriteChains.set(key, pending);
+        void pending.finally(() => {
+            if (dashboardStateWriteChains.get(key) === pending) dashboardStateWriteChains.delete(key);
+        });
+        return pending;
     };
     if (immediate) {
-        await write();
+        return await write();
     } else {
         dashboardStateSaveTimers.set(key, setTimeout(write, delay));
+        return true;
     }
 }
 
@@ -680,7 +758,36 @@ function removeLegacyLocalStorageValue(storageKey) {
 }
 
 function saveConversation() {
-    void saveDashboardState('conversation', conversation);
+    if (activeChatRoomId === 'main') {
+        void saveDashboardState('conversation', conversation);
+    } else {
+        void saveBotRoom(activeChatRoomId, conversation, activeChatSessionId);
+    }
+}
+
+async function saveBotRoom(roomId, roomConversation, sessionId) {
+    if (!roomId || roomId === 'main') return false;
+    const previous = botRoomWriteChains.get(roomId) || Promise.resolve();
+    const pending = previous.catch(() => {}).then(async () => {
+        try {
+            const response = await fetch(`/api/bot-rooms/${encodeURIComponent(roomId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation: roomConversation || [], session_id: sessionId || null }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+            return true;
+        } catch (error) {
+            log('warn', `Failed to save room ${roomId}: ${error.message || error}`);
+            return false;
+        }
+    });
+    botRoomWriteChains.set(roomId, pending);
+    void pending.finally(() => {
+        if (botRoomWriteChains.get(roomId) === pending) botRoomWriteChains.delete(roomId);
+    });
+    return await pending;
 }
 
 async function loadConversation() {
@@ -700,38 +807,65 @@ async function loadConversation() {
     return false;
 }
 
-function saveActiveRun() {
-    void saveDashboardState('active_run', activeRun || null, { delay: 500 });
+function getActiveRun(roomId = activeChatRoomId) {
+    return activeRuns[roomId] || null;
 }
 
-async function loadActiveRun() {
+function saveActiveRuns() {
+    const value = Object.keys(activeRuns).length ? { version: 2, runs: activeRuns } : null;
+    void saveDashboardState('active_run', value, { delay: 500 });
+}
+
+async function loadActiveRuns() {
     const serverState = await loadDashboardState('active_run');
     if (serverState.found && serverState.value && typeof serverState.value === 'object') {
-        activeRun = serverState.value;
+        const stored = serverState.value;
+        if (stored.version === 2 && stored.runs && typeof stored.runs === 'object') {
+            activeRuns = stored.runs;
+        } else if (stored.runId) {
+            const roomId = stored.roomId || 'main';
+            activeRuns = { [roomId]: stored };
+            recoveredLegacyRunRoomId = roomId;
+            saveActiveRuns();
+        }
         removeLegacyLocalStorageValue(ACTIVE_RUN_KEY);
-        return true;
+        return Object.keys(activeRuns).length > 0;
     }
     const legacyActiveRun = loadLegacyLocalStorageValue(ACTIVE_RUN_KEY);
-    if (legacyActiveRun && typeof legacyActiveRun === 'object') {
-        activeRun = legacyActiveRun;
-        void saveDashboardState('active_run', activeRun, { immediate: true });
+    if (legacyActiveRun && typeof legacyActiveRun === 'object' && legacyActiveRun.runId) {
+        const roomId = legacyActiveRun.roomId || 'main';
+        activeRuns = { [roomId]: legacyActiveRun };
+        recoveredLegacyRunRoomId = roomId;
+        void saveDashboardState('active_run', { version: 2, runs: activeRuns }, { immediate: true });
         removeLegacyLocalStorageValue(ACTIVE_RUN_KEY);
         return true;
     }
-    activeRun = null;
+    activeRuns = {};
     return false;
 }
 
-function clearActiveRun() {
-    activeRun = null;
-    void saveDashboardState('active_run', null, { immediate: true });
+function clearActiveRun(roomId = activeChatRoomId, expectedRunId = null) {
+    const run = getActiveRun(roomId);
+    if (!run || (expectedRunId && run.runId !== expectedRunId)) return;
+    delete activeRuns[roomId];
+    const value = Object.keys(activeRuns).length ? { version: 2, runs: activeRuns } : null;
+    void saveDashboardState('active_run', value, { immediate: true });
     updateActiveRunBanner();
+    renderChatRoomRail();
 }
 
 function saveActiveChatSession() {
+    if (activeChatRoomId !== 'main') {
+        void saveBotRoom(activeChatRoomId, conversation, activeChatSessionId);
+        return;
+    }
+    saveMainChatSession(activeChatSessionId);
+}
+
+function saveMainChatSession(sessionId) {
     try {
-        if (activeChatSessionId) {
-            localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, activeChatSessionId);
+        if (sessionId) {
+            localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, sessionId);
         } else {
             localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
         }
@@ -750,6 +884,14 @@ function loadActiveChatSession() {
     void refreshSessionContextInfo(activeChatSessionId);
 }
 
+function saveActiveChatRoom() {
+    try {
+        localStorage.setItem(ACTIVE_CHAT_ROOM_KEY, activeChatRoomId);
+    } catch (error) {
+        log('warn', 'Failed to save active chat room: ' + error.message);
+    }
+}
+
 function updateActiveChatBanner() {
     const banner = document.getElementById('current-personality');
     if (!banner) return;
@@ -766,7 +908,7 @@ function attachChatToSession(sessionId) {
 }
 
 function summarizeActiveRunPreview() {
-    const state = activeRun?.assistantState || null;
+    const state = getActiveRun()?.assistantState || null;
     if (!state) return '';
     const tools = Array.isArray(state.tools) ? state.tools : [];
     const latestTool = [...tools].reverse().find(Boolean);
@@ -784,24 +926,42 @@ function summarizeActiveRunPreview() {
 
 function updateActiveRunBanner() {
     if (!chatRunStatus) return;
+    const activeRun = getActiveRun();
+    const streamResumeInFlight = streamResumeRooms.has(activeChatRoomId);
+    const streamConnected = connectedChatRunRooms.has(activeChatRoomId);
     const hasActive = Boolean(activeRun && activeRun.runId);
     chatRunStatus.classList.toggle('visible', hasActive);
-    if (!hasActive) return;
+    chatRunStatus.classList.toggle('is-live', hasActive && streamConnected);
+    if (!hasActive) {
+        if (chatRunStatusDetails) chatRunStatusDetails.open = false;
+        return;
+    }
     const preview = summarizeActiveRunPreview();
     const sessionLabel = activeRun.sessionId ? `session ${String(activeRun.sessionId).slice(0, 8)}` : 'no session attached yet';
     const ageSeconds = activeRun.startedAt ? Math.max(0, Math.floor((Date.now() - activeRun.startedAt) / 1000)) : null;
     chatRunStatusTitle.textContent = streamResumeInFlight
         ? 'Hermes is reconnecting to the live run'
-        : (activeRun.assistantState ? 'Hermes is currently working' : 'Hermes has a resumable run');
+        : (streamConnected ? 'Hermes is currently working' : 'Hermes has a run to follow');
     chatRunStatusText.textContent = preview || 'A previous chat run is still in progress or waiting to resume.';
     chatRunStatusMeta.textContent = [
         sessionLabel,
         ageSeconds !== null ? `started ${ageSeconds}s ago` : '',
         activeRun.eventOffset ? `${activeRun.eventOffset} events cached` : '',
     ].filter(Boolean).join(' • ');
-    if (chatRunStopBtn) chatRunStopBtn.disabled = streamResumeInFlight;
-    if (chatRunReattachBtn) chatRunReattachBtn.disabled = !activeRun.sessionId;
-    if (chatRunResumeBtn) chatRunResumeBtn.disabled = streamResumeInFlight;
+    if (chatRunStopBtn) {
+        chatRunStopBtn.hidden = false;
+        const stopQueued = liveRunInterruptState.queued && liveRunInterruptState.roomId === activeChatRoomId;
+        chatRunStopBtn.disabled = stopQueued;
+        chatRunStopBtn.textContent = stopQueued ? 'Stopping...' : 'Stop main agent';
+    }
+    if (chatRunReattachBtn) {
+        chatRunReattachBtn.hidden = !activeRun.sessionId;
+        chatRunReattachBtn.disabled = streamResumeInFlight;
+    }
+    if (chatRunResumeBtn) {
+        chatRunResumeBtn.hidden = streamConnected;
+        chatRunResumeBtn.disabled = streamResumeInFlight;
+    }
 }
 
 function dismissActiveRunBanner() {
@@ -810,6 +970,7 @@ function dismissActiveRunBanner() {
 }
 
 function reattachActiveRunSession() {
+    const activeRun = getActiveRun();
     if (!activeRun?.sessionId) {
         showToast('No active run session to reattach', true);
         return;
@@ -821,13 +982,16 @@ function reattachActiveRunSession() {
 }
 
 function resumeActiveRunFromBanner() {
+    const activeRun = getActiveRun();
+    const roomId = activeChatRoomId;
+    const streamResumeInFlight = streamResumeRooms.has(roomId);
     if (!activeRun?.runId || streamResumeInFlight) {
         showToast('No resumable run found', true);
         return;
     }
     navigateTo('chat');
-    streamResumeInFlight = true;
-    sendBtn.disabled = true;
+    streamResumeRooms.add(roomId);
+    syncChatInputState();
     updateActiveRunBanner();
     streamChatRun({
         runId: activeRun.runId,
@@ -836,19 +1000,21 @@ function resumeActiveRunFromBanner() {
         eventOffset: activeRun.eventOffset || 0,
         sessionId: activeRun.sessionId || null,
         assistantSeed: activeRun.assistantState || null,
+        roomId,
+        profile: activeRun.profile || 'default',
     }).catch((error) => {
         log('err', `Resume failed: ${error.message}`, true);
-        clearActiveRun();
-        sendBtn.disabled = false;
+        clearActiveRun(roomId, activeRun.runId);
     }).finally(() => {
-        streamResumeInFlight = false;
-        sendBtn.disabled = false;
+        streamResumeRooms.delete(roomId);
+        syncChatInputState();
         updateActiveRunBanner();
     });
 }
 
 function activeApprovalSessionId() {
-    return activeRun?.sessionId || activeChatSessionId || '';
+    const activeRun = getActiveRun();
+    return activeRun?.approvalSessionId || activeRun?.sessionId || activeChatSessionId || '';
 }
 
 function updateAutoApprovalSettings(resetDeadline = true) {
@@ -947,31 +1113,51 @@ function hydrateApprovalPassphrase() {
     updateApprovalPassphraseStatus();
 }
 
-function jsString(value) {
-    return JSON.stringify(String(value || ''));
-}
-
 function removeApprovalChatBubble() {
     const existing = document.getElementById('approval-chat-bubble');
     if (existing) existing.remove();
 }
 
 function renderApprovalChatBubble(approvals) {
+    if (!chat || !approvals.length) {
+        removeApprovalChatBubble();
+        return;
+    }
+    const signature = JSON.stringify(approvals.map((approval) => [
+        approval.id || '',
+        approval.request_id || '',
+        approval.session_key || approval.session_id || '',
+        approval.command || '',
+        approval.description || approval.pattern_key || '',
+        Boolean(approval.allow_session),
+        Boolean(approval.allow_permanent),
+        JSON.stringify(approval.always_patterns || {}),
+        JSON.stringify(approval.choices || []),
+    ]));
+    const existing = document.getElementById('approval-chat-bubble');
+    if (existing?.dataset.approvalSignature === signature) return;
     removeApprovalChatBubble();
-    if (!chat || !approvals.length) return;
     const stick = shouldStickToBottom(chat);
     const div = document.createElement('div');
     div.id = 'approval-chat-bubble';
     div.className = 'message assistant approval-chat-bubble';
+    div.dataset.approvalSignature = signature;
     const count = approvals.length;
     div.innerHTML = `
         <div class="message-header approval-chat-header">
             <div class="message-title">Tool approval needed</div>
             <div class="message-meta">${count} pending</div>
         </div>
-        ${approvals.map((approval) => {
+        ${approvals.map((approval, index) => {
             const session = approval.session_key || approval.session_id || '';
             const command = approval.command || '';
+            const alwaysPatterns = approval.always_patterns && typeof approval.always_patterns === 'object'
+                ? approval.always_patterns
+                : {};
+            const choices = new Set(Array.isArray(approval.choices) ? approval.choices.map(choice => String(choice).toLowerCase()) : []);
+            const allowSession = approval.allow_session === true || choices.has('session') || choices.has('approve-session') || choices.has('allow-session');
+            const allowPermanent = approval.allow_permanent === true || choices.has('always') || choices.has('permanent') || choices.has('approve-always');
+            const hasScopedAlways = Boolean(alwaysPatterns.exact || alwaysPatterns.prefix);
             const desc = approval.description || approval.pattern_key || 'Tool approval required';
             const id = approval.id || `${session}:${approval.index || 0}`;
             return `<div class="approval-inline-card">
@@ -980,9 +1166,14 @@ function renderApprovalChatBubble(approvals) {
                     <span>session ${escapeHtml(String(session).slice(0, 12))} · ${escapeHtml(id)}</span>
                 </div>
                 <div class="approval-inline-actions">
-                    <button class="btn primary" type="button" onclick="respondToApproval(${jsString(session)}, 'once')">Approve</button>
-                    <button class="btn danger" type="button" onclick="respondToApproval(${jsString(session)}, 'deny')">Deny</button>
+                    <button class="btn primary" type="button" data-approval-index="${index}" data-approval-decision="once">Approve Once</button>
+                    ${allowSession ? `<button class="btn" type="button" data-approval-index="${index}" data-approval-decision="session" title="Approve matching requests for this Hermes session">Approve Session</button>` : ''}
+                    ${alwaysPatterns.exact ? `<button class="btn" type="button" data-approval-index="${index}" data-approval-decision="always" data-approval-scope="exact">Always Exact</button>` : ''}
+                    ${alwaysPatterns.prefix ? `<button class="btn" type="button" data-approval-index="${index}" data-approval-decision="always" data-approval-scope="prefix">Always Prefix</button>` : ''}
+                    ${allowPermanent && !hasScopedAlways ? `<button class="btn" type="button" data-approval-index="${index}" data-approval-decision="always" title="Permanently approve this safety-rule class">Always This Type</button>` : ''}
+                    <button class="btn danger" type="button" data-approval-index="${index}" data-approval-decision="deny">Deny</button>
                 </div>
+                ${alwaysPatterns.prefix ? `<div class="approval-inline-prefix">Prefix: <code>${escapeHtml(alwaysPatterns.prefix)}</code></div>` : ''}
                 <details class="approval-inline-details">
                     <summary>Command preview</summary>
                     <pre>${escapeHtml(command)}</pre>
@@ -991,6 +1182,19 @@ function renderApprovalChatBubble(approvals) {
         }).join('')}
         <div class="approval-inline-foot">Auto-approve controls live in the gear/options menu.</div>
     `;
+    div.querySelectorAll('[data-approval-index]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const approval = approvals[Number(button.dataset.approvalIndex)];
+            const session = approval?.session_key || approval?.session_id || '';
+            const cardButtons = button.closest('.approval-inline-card')?.querySelectorAll('button') || [];
+            cardButtons.forEach((item) => { item.disabled = true; });
+            const resolved = await respondToApproval(session, button.dataset.approvalDecision || 'once', {
+                requestId: approval?.request_id || '',
+                alwaysScope: button.dataset.approvalScope || '',
+            });
+            if (!resolved) cardButtons.forEach((item) => { item.disabled = false; });
+        });
+    });
     chat.appendChild(div);
     scrollChatToBottom(false, stick);
 }
@@ -1004,7 +1208,7 @@ function renderApprovals(approvals) {
 async function respondToApproval(sessionId, decision = 'once', options = {}) {
     if (!sessionId) {
         showToast('No approval session id found', true);
-        return;
+        return false;
     }
     try {
         const passphrase = currentApprovalPassphrase();
@@ -1012,12 +1216,19 @@ async function respondToApproval(sessionId, decision = 'once', options = {}) {
             showToast('Approval passphrase required', true);
             const input = approvalPassphraseInput();
             if (input) input.focus();
-            return;
+            return false;
         }
         const response = await fetch('/api/approvals/respond', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId, decision, all: Boolean(options.all), passphrase }),
+            body: JSON.stringify({
+                session_id: sessionId,
+                request_id: options.requestId || undefined,
+                decision,
+                always_scope: options.alwaysScope || undefined,
+                all: Boolean(options.all),
+                passphrase,
+            }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.ok) {
@@ -1031,8 +1242,10 @@ async function respondToApproval(sessionId, decision = 'once', options = {}) {
         if (passphrase) cacheApprovalPassphrase(false);
         showToast(data.resolved ? `Approval ${decision}: ${data.resolved} command(s)` : 'No pending approval found');
         await refreshApprovals(true);
+        return Boolean(data.resolved);
     } catch (error) {
         showToast(`Approval failed: ${error.message || error}`, true);
+        return false;
     }
 }
 
@@ -1080,7 +1293,112 @@ function startApprovalPolling() {
     setInterval(updateAutoApprovalStatus, 1000);
 }
 
+function safeBotColor(value, fallback = '#60a5fa') {
+    return /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : fallback;
+}
+
+function firstVisibleInitial(value, fallback = '?') {
+    const character = Array.from(String(value || '').trim()).find(char => !/\s/u.test(char));
+    return (character || fallback).toLocaleUpperCase();
+}
+
+function safeAvatarUrl(value, version) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+        const url = new URL(raw, window.location.origin);
+        if (!['http:', 'https:'].includes(url.protocol)) return '';
+        if (version !== null && typeof version !== 'undefined' && String(version)) {
+            url.searchParams.set('v', String(version));
+        }
+        return url.href;
+    } catch (_error) {
+        return '';
+    }
+}
+
+function botTooltip(identity = {}) {
+    const name = identity.display_name || identity.name || 'Hermes';
+    const handle = identity.name && identity.name !== 'all-bots' ? `@${identity.name}` : '';
+    const description = String(identity.description || '').trim();
+    const model = [identity.provider, identity.model].filter(Boolean).join(' / ');
+    const skills = Number.isFinite(Number(identity.skill_count)) ? `${Number(identity.skill_count)} skills` : '';
+    return [handle ? `${name} (${handle})` : name, description, model ? `Model: ${model}` : '', skills]
+        .filter(Boolean)
+        .join(' | ');
+}
+
+function avatarHtml(identity = {}, options = {}) {
+    const label = identity.display_name || identity.name || options.fallbackLabel || 'Hermes';
+    const color = safeBotColor(identity.color, options.fallbackColor || '#60a5fa');
+    const url = safeAvatarUrl(identity.avatar_url, identity.avatar_version);
+    const classes = ['bot-avatar', options.className || ''].filter(Boolean).join(' ');
+    const tooltip = options.tooltip || botTooltip(identity);
+    return `<span class="${classes}" style="--bot-color:${color}" title="${escapeHtml(tooltip)}"${options.decorative ? ' aria-hidden="true"' : ` role="img" aria-label="${escapeHtml(label)} avatar"`}>
+        <span class="bot-avatar-initial">${escapeHtml(firstVisibleInitial(label))}</span>
+        ${url ? `<img src="${escapeHtml(url)}" alt="" decoding="async">` : ''}
+    </span>`;
+}
+
+function bindAvatarFallbacks(root = document) {
+    root.querySelectorAll?.('.bot-avatar img:not([data-avatar-bound])').forEach((image) => {
+        image.dataset.avatarBound = 'true';
+        image.addEventListener('load', () => image.classList.add('is-loaded'), { once: true });
+        image.addEventListener('error', () => {
+            image.remove();
+        }, { once: true });
+        if (image.complete && image.naturalWidth > 0) image.classList.add('is-loaded');
+    });
+}
+
+function defaultBotIdentity() {
+    return botRegistry.find(bot => bot.is_default || bot.name === 'default') || {
+        name: 'default', display_name: 'Hermes', color: '#ffd700',
+    };
+}
+
+function identityForRoom(roomId = activeChatRoomId) {
+    if (roomId === 'shared') return { name: 'all-bots', display_name: 'All Bots', color: '#a78bfa', description: 'A bounded shared room where profiles can answer and ask one another questions.' };
+    if (roomId === 'main') return defaultBotIdentity();
+    return botForRoom(roomId) || { name: profileForRoom(roomId), display_name: profileForRoom(roomId), color: '#60a5fa' };
+}
+
+function botForRoom(roomId = activeChatRoomId) {
+    if (!String(roomId).startsWith('bot:')) return null;
+    const name = String(roomId).slice(4);
+    return botRegistry.find(bot => bot.name === name) || null;
+}
+
+function profileForRoom(roomId = activeChatRoomId) {
+    return String(roomId).startsWith('bot:') ? String(roomId).slice(4) : 'default';
+}
+
+function sharedMessageHtml(entry) {
+    const role = entry?.role === 'user' ? 'user' : 'assistant';
+    const profile = entry?.bot || entry?.profile || entry?.name || entry?.speaker || (role === 'user' ? 'You' : 'default');
+    const bot = botRegistry.find(item => item.name === profile || item.display_name === profile);
+    const identity = role === 'user'
+        ? { name: 'you', display_name: 'You', color: '#ffd700' }
+        : { ...(bot || {}), name: bot?.name || profile, display_name: entry?.display_name || entry?.speaker || bot?.display_name || profile || 'Hermes', color: entry?.color || bot?.color };
+    const color = safeBotColor(identity.color, role === 'user' ? '#ffd700' : '#60a5fa');
+    const content = typeof entry?.content === 'string' ? entry.content : '';
+    return `<div class="message ${role} shared-message" style="--speaker-color:${color}">
+        <div class="shared-message-speaker">${avatarHtml(identity, { className: 'bot-avatar-message', decorative: true })}<span class="shared-speaker-name">${escapeHtml(identity.display_name)}</span>${role === 'assistant' && profile ? `<small>@${escapeHtml(profile)}</small>` : ''}</div>
+        <div class="shared-message-content">${formatMessageContent(content)}</div>
+    </div>`;
+}
+
+function renderSharedConversation() {
+    chat.innerHTML = conversation.map(sharedMessageHtml).join('');
+    bindAvatarFallbacks(chat);
+    scrollChatToBottom(true);
+}
+
 function renderConversation() {
+    if (activeChatRoomId === 'shared') {
+        renderSharedConversation();
+        return;
+    }
     const rows = conversation.filter((msg) => {
         const hasRenderableAssistantState = msg.role === 'assistant' && (
             (typeof msg.content === 'string' && msg.content.length > 0)
@@ -1098,13 +1416,29 @@ function renderConversation() {
         assistant: (body, segment) => {
             const source = segment.message || segment.updates?.[0]?.message || {};
             const normalized = segment.normalized || segment.updates?.[0]?.normalized || normalizeAssistantMessage(source);
-            return `<div class="message assistant">${renderAssistantMessageShell({ ...source, traceNode: null }, normalized, body)}</div>`;
+            const roomBot = botForRoom();
+            const fallbackBot = roomBot || (activeChatRoomId === 'main' ? defaultBotIdentity() : null);
+            const identifiedSource = fallbackBot && !source.bot ? { ...source, bot: fallbackBot.name } : source;
+            return `<div class="message assistant">${renderAssistantMessageShell({ ...identifiedSource, traceNode: null }, normalized, body)}</div>`;
         },
         boundary: (row) => `<div class="message ${escapeHtml(row?.role || 'user')}">${renderUserMessageContent(row?.content || '')}</div>`,
     });
+    bindAvatarFallbacks(chat);
     bindToolCardInteractions(chat);
     highlightToolCode(chat);
+    renderActiveRunProjection();
     log('inf', `Restored ${conversation.length} messages from cache`);
+}
+
+function renderActiveRunProjection() {
+    const activeRun = getActiveRun();
+    if (!activeRun?.assistantState) return null;
+    const existing = Array.from(chat.querySelectorAll('[data-chat-run-id]'))
+        .find(node => node.dataset.chatRunId === activeRun.runId);
+    if (existing) return existing;
+    const div = addMessage('assistant', activeRun.assistantState, false);
+    div.dataset.chatRunId = activeRun.runId;
+    return div;
 }
 
 function makeExecutionNodeId(kind, sessionId, value, fallbackIndex = 0) {
@@ -2369,6 +2703,10 @@ function renderFloatingSessionTranscript(traceContext) {
 }
 
 async function hydrateChatFromSession(sessionId, options = {}) {
+    if (!options.preserveActiveRun && activeChatRoomId !== 'main') {
+        const switched = await switchChatRoom('main');
+        if (!switched) return;
+    }
     log('req', `GET /api/sessions/${sessionId} for chat hydration`);
     const data = await fetchJsonOrThrow(`/api/sessions/${sessionId}`);
     activeChatSessionId = sessionId;
@@ -2899,10 +3237,145 @@ const DRAWER_SIGNATURE_WINDOW_MS = 1500;
 const openDrawerSet = new Set();
 const childDrawerRegistry = new Map();
 const childWindowState = new Map();
+const childFlightEventSources = new Map();
+const restoredChildFlightSessions = new Set();
 let childWindowZIndex = 1200;
 let childMobileWindowSequence = 0;
 const MOBILE_WINDOW_MAX_SLOTS = 6;
 const MOBILE_WINDOW_SLOT_STEP_PX = 42;
+const ACTIVE_CHILD_DRAWER_STATUSES = new Set(['LIVE', 'RECONNECTING', 'OFFLINE', 'PAUSED', 'STOPPING']);
+
+function getInFlightSubagents() {
+    return Array.from(childDrawerRegistry.values())
+        .filter(entry => ACTIVE_CHILD_DRAWER_STATUSES.has(childDrawerStatusMap.get(entry.childSessionId) || ''))
+        .sort((a, b) => (normalizeTaskIndex(a.taskIndex) ?? Number.MAX_SAFE_INTEGER) - (normalizeTaskIndex(b.taskIndex) ?? Number.MAX_SAFE_INTEGER));
+}
+
+function rememberRunChildSession(runState, entry, status = 'LIVE') {
+    if (!runState || !entry?.childSessionId) return;
+    const children = Array.isArray(runState.childSessions) ? runState.childSessions : [];
+    const existing = children.find(child => child.childSessionId === entry.childSessionId);
+    if (existing) Object.assign(existing, entry, { status });
+    else children.push({ ...entry, status });
+    runState.childSessions = children;
+}
+
+function restoreActiveRunChildSessions() {
+    Object.values(activeRuns).forEach(runState => {
+        (Array.isArray(runState?.childSessions) ? runState.childSessions : []).forEach(entry => {
+            if (!entry?.childSessionId || !ACTIVE_CHILD_DRAWER_STATUSES.has(entry.status || 'LIVE')) return;
+            rememberChildDrawer(entry.childSessionId, entry);
+            childDrawerStatusMap.set(entry.childSessionId, entry.status || 'LIVE');
+            restoredChildFlightSessions.add(entry.childSessionId);
+            watchSubagentFlightStatus(entry.childSessionId);
+            const delegateEntries = liveChildSessionMap.get(entry.delegateCallId || '') || [];
+            if (!delegateEntries.some(child => child.childSessionId === entry.childSessionId)) delegateEntries.push(entry);
+            liveChildSessionMap.set(entry.delegateCallId || '', delegateEntries);
+        });
+    });
+}
+
+function renderSubagentFlightRailItem() {
+    const children = getInFlightSubagents();
+    if (!children.length) return '';
+    const count = children.length;
+    return `<button class="subagent-flight-toggle" type="button" aria-haspopup="dialog" aria-expanded="false" title="${count} delegated subagent${count === 1 ? '' : 's'} working" aria-label="Watch ${count} delegated subagent${count === 1 ? '' : 's'} working">
+        <span class="subagent-flight-glyph" aria-hidden="true"><span class="subagent-flight-antenna"></span><span class="subagent-flight-eye left"></span><span class="subagent-flight-eye right"></span></span>
+        <span class="subagent-flight-count" aria-hidden="true">${count}</span>
+        <span class="chat-room-tab-copy"><strong>Subagents working</strong><small>${count} delegated task${count === 1 ? '' : 's'} in flight</small></span>
+    </button>`;
+}
+
+function ensureSubagentFlightPopover() {
+    let popover = document.getElementById('subagent-flight-popover');
+    if (popover) return popover;
+    popover = document.createElement('section');
+    popover.id = 'subagent-flight-popover';
+    popover.className = 'subagent-flight-popover';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', 'In-flight delegated subagents');
+    popover.hidden = true;
+    document.body.appendChild(popover);
+    return popover;
+}
+
+function closeSubagentFlightPopover() {
+    const popover = document.getElementById('subagent-flight-popover');
+    if (popover) popover.hidden = true;
+    document.querySelectorAll('.subagent-flight-toggle').forEach(button => button.setAttribute('aria-expanded', 'false'));
+}
+
+function renderSubagentFlightPopover(anchorEl = document.querySelector('.subagent-flight-toggle')) {
+    const children = getInFlightSubagents();
+    const popover = ensureSubagentFlightPopover();
+    if (!children.length) {
+        closeSubagentFlightPopover();
+        return;
+    }
+    const focused = document.activeElement?.closest?.('.live-view-btn, .subagent-stop-btn');
+    const focusedChildId = focused?.dataset?.childSessionId || '';
+    const focusedAction = focused?.classList.contains('subagent-stop-btn') ? 'stop' : (focused ? 'watch' : '');
+    const closeWasFocused = document.activeElement?.classList?.contains('subagent-flight-close');
+    popover.innerHTML = `<header><div><span class="subagent-flight-kicker">DELEGATED WORK</span><h3>${children.length} subagent${children.length === 1 ? '' : 's'} in flight</h3></div><button type="button" class="subagent-flight-close" aria-label="Close subagent monitor">&times;</button></header>
+        <div class="subagent-flight-list">${children.map((entry, index) => {
+            const taskIndex = normalizeTaskIndex(entry.taskIndex);
+            const title = entry.label || (Number.isInteger(taskIndex) ? `Task ${taskIndex + 1}` : `Subagent ${index + 1}`);
+            const status = childDrawerStatusMap.get(entry.childSessionId) || 'LIVE';
+            return `<article class="subagent-flight-row">
+                <span class="subagent-flight-row-pulse" aria-hidden="true"></span>
+                <div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(entry.childSessionId.slice(0, 12))} &middot; ${escapeHtml(status.toLowerCase())}</small></div>
+                <button class="btn live-view-btn" type="button" data-child-session-id="${escapeHtml(entry.childSessionId)}" data-delegate-call-id="${escapeHtml(entry.delegateCallId || '')}" data-label="${escapeHtml(title)}">Watch live</button>
+                <button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(entry.childSessionId)}">Emergency stop</button>
+            </article>`;
+        }).join('')}</div>`;
+    if (anchorEl) {
+        const rect = anchorEl.getBoundingClientRect();
+        const width = Math.min(480, Math.max(320, window.innerWidth - 24));
+        popover.style.width = `${width}px`;
+        popover.style.left = `${Math.max(12, Math.min(rect.right + 10, window.innerWidth - width - 12))}px`;
+        popover.style.top = `${Math.min(Math.max(12, rect.top), Math.max(12, window.innerHeight - 420))}px`;
+    }
+    if (focusedChildId) {
+        const selector = focusedAction === 'stop' ? '.subagent-stop-btn' : '.live-view-btn';
+        const restoredFocus = popover.querySelector(`${selector}[data-child-session-id="${CSS.escape(focusedChildId)}"]`);
+        (restoredFocus || popover.querySelector('.live-view-btn, .subagent-flight-close'))?.focus();
+    } else if (closeWasFocused) {
+        popover.querySelector('.subagent-flight-close')?.focus();
+    }
+}
+
+function toggleSubagentFlightPopover(anchorEl) {
+    const popover = ensureSubagentFlightPopover();
+    if (!popover.hidden) {
+        closeSubagentFlightPopover();
+        return;
+    }
+    renderSubagentFlightPopover(anchorEl);
+    if (!getInFlightSubagents().length) return;
+    popover.hidden = false;
+    anchorEl?.setAttribute('aria-expanded', 'true');
+    popover.querySelector('.live-view-btn, .subagent-flight-close')?.focus();
+}
+
+function syncSubagentFlightUi() {
+    const children = getInFlightSubagents();
+    const button = document.querySelector('.subagent-flight-toggle');
+    if (!button || !children.length) {
+        renderChatRoomRail();
+    } else {
+        const count = children.length;
+        button.querySelector('.subagent-flight-count').textContent = String(count);
+        button.querySelector('strong').textContent = 'Subagents working';
+        button.querySelector('small').textContent = `${count} delegated task${count === 1 ? '' : 's'} in flight`;
+        button.title = `${count} delegated subagent${count === 1 ? '' : 's'} working`;
+        button.setAttribute('aria-label', `Watch ${count} delegated subagent${count === 1 ? '' : 's'} working`);
+    }
+    const popover = document.getElementById('subagent-flight-popover');
+    if (popover && !popover.hidden) {
+        renderSubagentFlightPopover();
+        document.querySelector('.subagent-flight-toggle')?.setAttribute('aria-expanded', 'true');
+    }
+}
 
 function rememberChildDrawer(childSessionId, data = {}) {
     if (!childSessionId) return;
@@ -3319,7 +3792,11 @@ async function requestStopSubagent(childSessionId) {
         const res = await fetch(`/api/sessions/${encodeURIComponent(childSessionId)}/interrupt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop', mode: 'hard' }) });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.status || `HTTP ${res.status}`);
-        updateDrawerBadge(childSessionId, 'DONE');
+        const currentStatus = childDrawerStatusMap.get(childSessionId);
+        if (!currentStatus || ACTIVE_CHILD_DRAWER_STATUSES.has(currentStatus)) {
+            watchSubagentFlightStatus(childSessionId);
+            updateDrawerBadge(childSessionId, 'STOPPING');
+        }
         showToast(data.status || 'Stop requested');
     } catch (err) { showToast(`Could not stop subagent: ${err.message}`, true); }
 }
@@ -3356,7 +3833,46 @@ function closeChildSessionDrawer(childSessionId) {
     refreshMobileWindowSlots();
 }
 
+function watchSubagentFlightStatus(childSessionId) {
+    if (!childSessionId || childFlightEventSources.has(childSessionId)) return;
+    const currentStatus = childDrawerStatusMap.get(childSessionId);
+    if (currentStatus && !ACTIVE_CHILD_DRAWER_STATUSES.has(currentStatus)) return;
+    const source = new EventSource(`/api/sessions/${encodeURIComponent(childSessionId)}/stream`);
+    childFlightEventSources.set(childSessionId, source);
+    source.onmessage = event => {
+        if (event.data === '[DONE]') {
+            updateDrawerBadge(childSessionId, 'DONE');
+            return;
+        }
+        try {
+            const parsed = JSON.parse(event.data || '{}');
+            if (parsed.type !== 'run_state') return;
+            if (parsed.status === 'complete') updateDrawerBadge(childSessionId, 'DONE');
+            else if (parsed.status === 'error') updateDrawerBadge(childSessionId, 'ERROR');
+            else if (parsed.status === 'paused') updateDrawerBadge(childSessionId, 'PAUSED');
+            else if (parsed.status === 'running' || parsed.status === 'resumed') updateDrawerBadge(childSessionId, 'LIVE');
+        } catch (error) { /* status watcher ignores non-JSON keepalive data */ }
+    };
+    source.onopen = () => {
+        restoredChildFlightSessions.delete(childSessionId);
+        const status = childDrawerStatusMap.get(childSessionId);
+        if (status !== 'PAUSED' && status !== 'STOPPING') updateDrawerBadge(childSessionId, 'LIVE');
+    };
+    source.onerror = () => {
+        const status = childDrawerStatusMap.get(childSessionId);
+        if (!ACTIVE_CHILD_DRAWER_STATUSES.has(status || '')) return;
+        if (restoredChildFlightSessions.has(childSessionId) && source.readyState === EventSource.CLOSED) {
+            restoredChildFlightSessions.delete(childSessionId);
+            updateDrawerBadge(childSessionId, 'DONE');
+            return;
+        }
+        updateDrawerBadge(childSessionId, source.readyState === EventSource.CLOSED ? 'OFFLINE' : 'RECONNECTING');
+    };
+}
+
 function updateDrawerBadge(childSessionId, status) {
+    const previousStatus = childSessionId ? childDrawerStatusMap.get(childSessionId) : null;
+    if (previousStatus === 'STOPPING' && ACTIVE_CHILD_DRAWER_STATUSES.has(status) && status !== 'STOPPING') status = 'STOPPING';
     if (childSessionId && status) childDrawerStatusMap.set(childSessionId, status);
     document.querySelectorAll(`.live-badge[data-badge="${CSS.escape(childSessionId)}"]`).forEach(badge => {
         const isLive = status === 'LIVE';
@@ -3365,6 +3881,24 @@ function updateDrawerBadge(childSessionId, status) {
         const color = status === 'ERROR' ? 'var(--error)' : (isDisconnected ? 'var(--warning, #d6a84b)' : 'var(--success)');
         badge.innerHTML = `<span class="live-dot" style="${isLive ? '' : `animation:none;background:${color};`}"></span>${escapeHtml(status)}`;
     });
+    if (childSessionId && status && previousStatus !== status) {
+        let runChanged = false;
+        Object.values(activeRuns).forEach(runState => {
+            const child = (Array.isArray(runState?.childSessions) ? runState.childSessions : []).find(entry => entry.childSessionId === childSessionId);
+            if (child && child.status !== status) {
+                child.status = status;
+                runChanged = true;
+            }
+        });
+        if (runChanged) saveActiveRuns();
+        if (!ACTIVE_CHILD_DRAWER_STATUSES.has(status)) {
+            const source = childFlightEventSources.get(childSessionId);
+            source?.close();
+            childFlightEventSources.delete(childSessionId);
+            restoredChildFlightSessions.delete(childSessionId);
+        }
+        syncSubagentFlightUi();
+    }
 }
 
 function openDrawerEventSource(childSessionId, transcriptEl) {
@@ -4436,10 +4970,17 @@ function renderAssistantMessageShell(message, normalized, bodyHtml) {
         renderMetaPill('Total', usage.total_tokens),
         renderMetaPill('Context window', normalized.last_prompt_tokens),
     ].filter(Boolean).join('');
+    const registry = typeof botRegistry !== 'undefined' && Array.isArray(botRegistry) ? botRegistry : [];
+    const bot = message?.bot ? registry.find(item => item.name === message.bot) : null;
+    const identity = bot || (message?.bot ? { name: message.bot, display_name: message.display_name || message.bot, color: message.color } : null);
+    const assistantLabel = identity?.display_name || 'Hermes';
+    const assistantAvatar = identity && typeof avatarHtml === 'function'
+        ? avatarHtml(identity, { className: 'bot-avatar-message', decorative: true })
+        : '';
     return `
         <div class="${wrapperClass.trim()}"${wrapperId}>
             <div class="message-header">
-                <div class="message-title">Hermes</div>
+                <div class="message-title">${assistantAvatar}<span>${escapeHtml(assistantLabel)}</span></div>
             </div>
             <div class="assistant-tools">${bodyHtml}</div>
             ${metaHtml ? `<div class="message-meta">${metaHtml}</div>` : ''}
@@ -4709,6 +5250,7 @@ function addMessage(role, message, save = true) {
     if (role === 'assistant') {
         div.innerHTML = renderAssistantMessage(message);
         bindToolCardInteractions(div);
+        bindAvatarFallbacks(div);
     } else {
         const content = typeof message === 'string' ? message : message.content;
         div.innerHTML = renderUserMessageContent(content);
@@ -4807,6 +5349,428 @@ function copyToClipboard(text) {
     });
 }
 
+let botRoomRegistry = [];
+let botEditorName = null;
+let createAvatarPreviewUrl = null;
+let editAvatarPreviewUrl = null;
+
+function setChatRoomRailExpanded(expanded, persist = true) {
+    const isExpanded = Boolean(expanded);
+    chatRoomRail?.classList.toggle('expanded', isExpanded);
+    if (chatRoomRailToggle) {
+        chatRoomRailToggle.setAttribute('aria-expanded', String(isExpanded));
+        const action = isExpanded ? 'Collapse' : 'Expand';
+        chatRoomRailToggle.setAttribute('aria-label', `${action} chat room rail`);
+        chatRoomRailToggle.title = `${action} chat room rail`;
+    }
+    if (!persist) return;
+    try {
+        if (isExpanded) localStorage.setItem(CHAT_ROOM_RAIL_EXPANDED_KEY, 'true');
+        else localStorage.removeItem(CHAT_ROOM_RAIL_EXPANDED_KEY);
+    } catch (error) {
+        log('warn', `Failed to save room rail preference: ${error.message}`);
+    }
+}
+
+function initializeChatRoomRail() {
+    let expanded = false;
+    try {
+        expanded = localStorage.getItem(CHAT_ROOM_RAIL_EXPANDED_KEY) === 'true';
+    } catch (error) {
+        log('warn', `Failed to restore room rail preference: ${error.message}`);
+    }
+    setChatRoomRailExpanded(expanded, false);
+    chatRoomRailToggle?.addEventListener('click', () => {
+        setChatRoomRailExpanded(chatRoomRailToggle.getAttribute('aria-expanded') !== 'true');
+    });
+}
+
+function renderBotRoster() {
+    const roster = document.getElementById('bots-roster');
+    if (!roster) return;
+    if (!botRegistry.length) {
+        roster.innerHTML = '<div class="bots-empty"><strong>No profiles yet.</strong><span>Create a focused Hermes identity for a role you want to keep isolated.</span></div>';
+        return;
+    }
+    roster.innerHTML = botRegistry.map((bot, index) => {
+        const color = safeBotColor(bot.color);
+        const providerModel = [bot.provider, bot.model].filter(Boolean).join(' / ') || 'Model follows profile config';
+        return `<article class="bot-roster-row ${bot.hidden ? 'is-hidden' : ''}" style="--bot-color:${color}">
+            <div class="bot-roster-index">${String(index + 1).padStart(2, '0')}</div>
+            <div class="bot-identity">
+                ${avatarHtml(bot)}
+                <div><h3>${escapeHtml(bot.display_name || bot.name)}</h3><code>@${escapeHtml(bot.name || '')}</code></div>
+            </div>
+            <div class="bot-role"><strong>${escapeHtml(bot.title || 'Hermes profile')}</strong><p>${escapeHtml(bot.description || 'No role description yet.')}</p></div>
+            <div class="bot-runtime"><span>${escapeHtml(providerModel)}</span><small>${Number(bot.skill_count) || 0} skills${bot.is_default ? ' / default' : ''}${bot.hidden ? ' / hidden' : ''}</small></div>
+            <div class="bot-roster-actions">
+                <button class="btn primary" type="button" data-bot-open="${escapeHtml(bot.name || '')}" ${bot.hidden ? 'disabled' : ''}>Open Chat</button>
+                <button class="btn" type="button" data-bot-settings="${escapeHtml(bot.name || '')}" aria-label="Edit settings for ${escapeHtml(bot.display_name || bot.name || 'bot')}">Settings</button>
+                <button class="btn" type="button" data-bot-visibility="${escapeHtml(bot.name || '')}" data-bot-hidden="${bot.hidden ? 'true' : 'false'}">${bot.hidden ? 'Unhide' : 'Hide'}</button>
+            </div>
+        </article>`;
+    }).join('');
+    roster.querySelectorAll('[data-bot-open]').forEach(button => {
+        button.addEventListener('click', () => openBotChat(button.dataset.botOpen));
+    });
+    roster.querySelectorAll('[data-bot-settings]').forEach(button => {
+        button.addEventListener('click', () => openBotEditor(button.dataset.botSettings));
+    });
+    roster.querySelectorAll('[data-bot-visibility]').forEach(button => {
+        button.addEventListener('click', () => setBotHidden(button.dataset.botVisibility, button.dataset.botHidden !== 'true'));
+    });
+    bindAvatarFallbacks(roster);
+}
+
+function renderChatRoomRail() {
+    if (!chatRoomList) return;
+    const roomAvatar = (roomId, identity) => `<span class="chat-room-avatar-wrap${getActiveRun(roomId) ? ' running' : ''}">${avatarHtml(identity, { className: 'bot-avatar-rail', decorative: true })}</span>`;
+    const mainIdentity = defaultBotIdentity();
+    const sharedIdentity = identityForRoom('shared');
+    const fixedRooms = `
+        <button class="chat-room-tab" type="button" data-room-id="main" title="${escapeHtml(botTooltip(mainIdentity))}" aria-label="Main: ${escapeHtml(mainIdentity.display_name || 'Hermes')}">${roomAvatar('main', mainIdentity)}<span class="chat-room-tab-copy"><strong>Main</strong><small>Default ${escapeHtml(mainIdentity.display_name || 'Hermes')} profile</small></span></button>
+        <button class="chat-room-tab" type="button" data-room-id="shared" title="${escapeHtml(botTooltip(sharedIdentity))}" aria-label="All Bots Room">${roomAvatar('shared', sharedIdentity)}<span class="chat-room-tab-copy"><strong>All Bots Room</strong><small>Shared profile roundtable</small></span></button>
+        ${renderSubagentFlightRailItem()}`;
+    const botRooms = botRegistry.filter(bot => !bot.hidden).map(bot => `
+        <button class="chat-room-tab" type="button" data-room-id="bot:${escapeHtml(bot.name || '')}" title="${escapeHtml(botTooltip(bot))}" aria-label="Chat with ${escapeHtml(bot.display_name || bot.name)}">
+            ${roomAvatar(`bot:${bot.name || ''}`, bot)}<span class="chat-room-tab-copy"><strong>${escapeHtml(bot.display_name || bot.name)}</strong><small>@${escapeHtml(bot.name || '')}</small></span>
+        </button>`).join('');
+    chatRoomList.innerHTML = fixedRooms + botRooms;
+    chatRoomList.querySelectorAll('[data-room-id]').forEach(button => {
+        button.classList.toggle('active', button.dataset.roomId === activeChatRoomId);
+        if (button.dataset.roomId === activeChatRoomId) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
+        button.addEventListener('click', () => switchChatRoom(button.dataset.roomId));
+    });
+    bindAvatarFallbacks(chatRoomList);
+}
+
+function updateChatRoomChrome() {
+    const bot = botForRoom();
+    const room = botRoomRegistry.find(item => (item.room_id || item.id) === activeChatRoomId);
+    let title = 'Hermes';
+    let subtitle = 'Your default dashboard conversation and session.';
+    let eyebrow = 'MAIN PROFILE';
+    let profile = 'default';
+    let placeholder = 'Message Hermes...';
+    if (activeChatRoomId === 'shared') {
+        title = room?.title || 'All Bots Room';
+        subtitle = 'One prompt, multiple profile perspectives.';
+        eyebrow = 'SHARED ROUNDTABLE';
+        profile = 'all profiles';
+        placeholder = 'Ask the roster...';
+    } else if (bot) {
+        title = room?.title || bot.display_name || bot.name;
+        subtitle = bot.description || 'Isolated Hermes profile conversation.';
+        eyebrow = 'BOT DIRECT MESSAGE';
+        profile = `@${bot.name}`;
+        placeholder = `Message ${bot.display_name || bot.name}...`;
+    }
+    if (chatRoomTitle) chatRoomTitle.textContent = title;
+    if (chatRoomSubtitle) chatRoomSubtitle.textContent = subtitle;
+    if (chatRoomEyebrow) chatRoomEyebrow.textContent = eyebrow;
+    if (chatRoomProfile) chatRoomProfile.textContent = profile;
+    if (chatRoomAvatar) {
+        chatRoomAvatar.outerHTML = avatarHtml(identityForRoom(), { className: 'bot-avatar-heading', decorative: true }).replace('<span class="bot-avatar bot-avatar-heading"', '<span id="chat-room-avatar" class="bot-avatar bot-avatar-heading"');
+        chatRoomAvatar = document.getElementById('chat-room-avatar');
+        bindAvatarFallbacks(chatRoomAvatar);
+    }
+    if (userInput) userInput.placeholder = placeholder;
+    if (chatImageBtn) chatImageBtn.disabled = activeChatRoomId === 'shared';
+    renderChatRoomRail();
+}
+
+async function loadBots() {
+    try {
+        const [botsData, roomsData] = await Promise.all([
+            fetchJsonOrThrow('/api/bots'),
+            fetchJsonOrThrow('/api/bot-rooms'),
+        ]);
+        botRegistry = Array.isArray(botsData?.bots) ? botsData.bots : [];
+        botRoomRegistry = Array.isArray(roomsData?.rooms) ? roomsData.rooms : [];
+        renderBotRoster();
+        updateChatRoomChrome();
+    } catch (error) {
+        const roster = document.getElementById('bots-roster');
+        if (roster) roster.innerHTML = `<div class="bots-empty error">Could not load profiles: ${escapeHtml(error.message || error)}</div>`;
+        showToast(`Failed to load bots: ${error.message || error}`, true);
+    }
+}
+
+function toggleCreateBotForm(force) {
+    const form = document.getElementById('bot-create-form');
+    if (!form) return;
+    form.classList.toggle('visible', typeof force === 'boolean' ? force : !form.classList.contains('visible'));
+    if (form.classList.contains('visible')) document.getElementById('bot-name')?.focus();
+}
+
+function validateAvatarFile(file) {
+    if (!file) return null;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+        throw new Error('Avatar must be a PNG, JPEG, or WebP image');
+    }
+    if (file.size > 2 * 1024 * 1024) throw new Error('Avatar must be 2 MiB or smaller');
+    return file;
+}
+
+function revokeAvatarPreview(kind) {
+    const url = kind === 'create' ? createAvatarPreviewUrl : editAvatarPreviewUrl;
+    if (url) URL.revokeObjectURL(url);
+    if (kind === 'create') createAvatarPreviewUrl = null;
+    else editAvatarPreviewUrl = null;
+}
+
+function renderAvatarPreview(element, identity, file = null, kind = 'edit') {
+    if (!element) return;
+    revokeAvatarPreview(kind);
+    element.outerHTML = avatarHtml(identity, { className: 'bot-avatar-preview', decorative: true }).replace(
+        '<span class="bot-avatar bot-avatar-preview"',
+        `<span id="${escapeHtml(element.id)}" class="bot-avatar bot-avatar-preview"`,
+    );
+    const replacement = document.getElementById(element.id);
+    if (file && replacement) {
+        const url = URL.createObjectURL(file);
+        if (kind === 'create') createAvatarPreviewUrl = url;
+        else editAvatarPreviewUrl = url;
+        const image = document.createElement('img');
+        image.src = url;
+        image.alt = '';
+        replacement.appendChild(image);
+    }
+    bindAvatarFallbacks(replacement);
+}
+
+async function uploadBotAvatar(name, file) {
+    validateAvatarFile(file);
+    const response = await fetch(`/api/bots/${encodeURIComponent(name)}/avatar`, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) throw new Error(data.error || `Avatar upload failed (HTTP ${response.status})`);
+    return data;
+}
+
+async function openBotEditor(name) {
+    const form = document.getElementById('bot-edit-form');
+    const status = document.getElementById('bot-edit-status');
+    if (!form || !name) return;
+    closeBotEditor();
+    form.classList.add('visible');
+    form.setAttribute('aria-busy', 'true');
+    botEditorName = name;
+    if (status) status.textContent = `Loading @${name} settings...`;
+    try {
+        const data = await fetchJsonOrThrow(`/api/bots/${encodeURIComponent(name)}`);
+        const bot = data?.bot || data;
+        form.elements.name.value = bot.name || name;
+        form.elements.display_name.value = bot.display_name || '';
+        form.elements.description.value = bot.description || '';
+        form.elements.soul.value = bot.soul || '';
+        form.elements.color.value = safeBotColor(bot.color);
+        form.elements.hidden.checked = Boolean(bot.hidden);
+        renderAvatarPreview(document.getElementById('bot-edit-avatar-preview'), bot, null, 'edit');
+        const remove = document.getElementById('bot-avatar-remove');
+        if (remove) remove.disabled = !bot.avatar_url;
+        if (status) status.textContent = `Editing @${name}`;
+        form.elements.display_name.focus();
+    } catch (error) {
+        if (status) status.textContent = `Could not load settings: ${error.message || error}`;
+        showToast(`Failed to load @${name}: ${error.message || error}`, true);
+    } finally {
+        form.setAttribute('aria-busy', 'false');
+    }
+}
+
+function closeBotEditor() {
+    const form = document.getElementById('bot-edit-form');
+    revokeAvatarPreview('edit');
+    form?.classList.remove('visible');
+    form?.reset();
+    botEditorName = null;
+}
+
+async function saveBotEditor(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = document.getElementById('bot-edit-submit');
+    const status = document.getElementById('bot-edit-status');
+    const name = botEditorName || form.elements.name.value;
+    let file = null;
+    const body = {
+        display_name: form.elements.display_name.value.trim(),
+        description: form.elements.description.value.trim(),
+        soul: form.elements.soul.value.trim(),
+        color: form.elements.color.value,
+        hidden: form.elements.hidden.checked,
+    };
+    if (submit) submit.disabled = true;
+    form.setAttribute('aria-busy', 'true');
+    if (status) status.textContent = `Saving @${name}...`;
+    try {
+        file = validateAvatarFile(form.elements.avatar.files?.[0] || null);
+        await fetchJsonOrThrow(`/api/bots/${encodeURIComponent(name)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (file) await uploadBotAvatar(name, file);
+        if (body.hidden && activeChatRoomId === `bot:${name}`) await switchChatRoom('main');
+        await loadBots();
+        closeBotEditor();
+        showToast(`Saved @${name}`);
+    } catch (error) {
+        if (status) status.textContent = `Save failed: ${error.message || error}`;
+        showToast(`Failed to save @${name}: ${error.message || error}`, true);
+    } finally {
+        if (submit) submit.disabled = false;
+        form.setAttribute('aria-busy', 'false');
+    }
+}
+
+async function removeBotAvatar() {
+    if (!botEditorName) return;
+    const button = document.getElementById('bot-avatar-remove');
+    const status = document.getElementById('bot-edit-status');
+    if (button) button.disabled = true;
+    if (status) status.textContent = `Removing @${botEditorName} avatar...`;
+    try {
+        await fetchJsonOrThrow(`/api/bots/${encodeURIComponent(botEditorName)}/avatar`, { method: 'DELETE' });
+        const bot = botRegistry.find(item => item.name === botEditorName) || { name: botEditorName };
+        renderAvatarPreview(document.getElementById('bot-edit-avatar-preview'), { ...bot, avatar_url: '' }, null, 'edit');
+        await loadBots();
+        if (status) status.textContent = 'Avatar removed. Other unsaved field changes are still in the form.';
+        showToast(`Removed @${botEditorName} avatar`);
+    } catch (error) {
+        if (button) button.disabled = false;
+        if (status) status.textContent = `Avatar removal failed: ${error.message || error}`;
+    }
+}
+
+async function createBot(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = document.getElementById('bot-create-submit');
+    const body = {
+        name: form.elements.name.value.trim(),
+        display_name: form.elements.display_name.value.trim(),
+        description: form.elements.description.value.trim(),
+        soul: form.elements.soul.value.trim(),
+        color: form.elements.color.value,
+    };
+    let avatar = null;
+    const status = document.getElementById('bot-create-status');
+    if (submit) submit.disabled = true;
+    if (status) status.textContent = `Creating @${body.name}...`;
+    try {
+        avatar = validateAvatarFile(form.elements.avatar.files?.[0] || null);
+        const data = await fetchJsonOrThrow('/api/bots', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (data?.ok === false) throw new Error(data.error || 'Profile creation failed');
+        if (avatar) await uploadBotAvatar(body.name, avatar);
+        revokeAvatarPreview('create');
+        form.reset();
+        form.elements.color.value = '#60a5fa';
+        renderAvatarPreview(document.getElementById('bot-create-avatar-preview'), { display_name: '?', color: '#60a5fa' }, null, 'create');
+        toggleCreateBotForm(false);
+        await loadBots();
+        showToast(`Created @${body.name}`);
+    } catch (error) {
+        if (status) status.textContent = `Creation failed: ${error.message || error}`;
+        showToast(`Failed to create bot: ${error.message || error}`, true);
+    } finally {
+        if (submit) submit.disabled = false;
+    }
+}
+
+async function setBotHidden(name, hidden) {
+    try {
+        const options = hidden
+            ? { method: 'DELETE' }
+            : { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden: false }) };
+        const data = await fetchJsonOrThrow(`/api/bots/${encodeURIComponent(name)}`, options);
+        if (data?.ok === false) throw new Error(data.error || 'Profile update failed');
+        if (hidden && activeChatRoomId === `bot:${name}`) await switchChatRoom('main');
+        await loadBots();
+        showToast(`${hidden ? 'Hidden' : 'Restored'} @${name}`);
+    } catch (error) {
+        showToast(`Failed to update @${name}: ${error.message || error}`, true);
+    }
+}
+
+async function saveCurrentChatRoom() {
+    if (activeChatRoomId === 'main') {
+        await saveDashboardState('conversation', conversation, { immediate: true });
+        saveActiveChatSession();
+    } else {
+        await saveBotRoom(activeChatRoomId, conversation, activeChatSessionId);
+    }
+}
+
+async function loadChatRoom(roomId) {
+    if (roomId === 'main') {
+        conversation = [];
+        await loadConversation();
+        loadActiveChatSession();
+        return;
+    }
+    const data = await fetchJsonOrThrow(`/api/bot-rooms/${encodeURIComponent(roomId)}`);
+    const room = data?.room || data;
+    conversation = Array.isArray(room?.conversation) ? room.conversation : [];
+    activeChatSessionId = room?.session_id || null;
+}
+
+async function switchChatRoom(roomId, options = {}) {
+    if (!roomId || roomId === activeChatRoomId || chatRoomSwitchInFlight) return roomId === activeChatRoomId;
+    if (!options.allowActiveRun && sharedRoomRequestInFlight) {
+        showToast('Wait for the shared room response before switching rooms', true);
+        return false;
+    }
+    const previous = { roomId: activeChatRoomId, conversation, sessionId: activeChatSessionId };
+    chatRoomSwitchInFlight = true;
+    if (chatRoomList) chatRoomList.classList.add('is-switching');
+    try {
+        await saveCurrentChatRoom();
+        await loadChatRoom(roomId);
+        activeChatRoomId = roomId;
+        saveActiveChatRoom();
+        clearPendingImageAttachments();
+        renderConversation();
+        updateChatRoomChrome();
+        const lastAssistant = [...conversation].reverse().find(msg => msg.role === 'assistant');
+        updateContextDisplay(activeChatRoomId === 'shared' || !lastAssistant ? { usage: null, last_prompt_tokens: 0 } : normalizeAssistantMessage(lastAssistant));
+        void refreshSessionContextInfo(activeChatSessionId);
+        updateActiveChatBanner();
+        updateActiveRunBanner();
+        const roomRun = getActiveRun();
+        if (roomRun?.sessionId) showInterruptButton(roomRun.sessionId);
+        else hideInterruptButton(false);
+        syncChatInputState();
+        userInput?.focus();
+        return true;
+    } catch (error) {
+        activeChatRoomId = previous.roomId;
+        conversation = previous.conversation;
+        activeChatSessionId = previous.sessionId;
+        renderConversation();
+        updateChatRoomChrome();
+        showToast(`Failed to open room: ${error.message || error}`, true);
+        return false;
+    } finally {
+        chatRoomSwitchInFlight = false;
+        if (chatRoomList) chatRoomList.classList.remove('is-switching');
+    }
+}
+
+async function openBotChat(name) {
+    navigateTo('chat');
+    await switchChatRoom(`bot:${name}`);
+}
+
 // Navigation & hash routing
 function navigateTo(hash) {
     const requestedPanel = String(hash || '').split('/')[0];
@@ -4843,6 +5807,7 @@ function switchToPanel(panel) {
         tabLoaded[panel] = true;
         log('inf', 'Lazy-loading panel: ' + panel);
         switch(panel) {
+            case 'bots': loadBots(); break;
             case 'message-board': loadMessageBoardPosts(); break;
             case 'dashboard-chat': loadDashboardChat(); break;
             case 'parallel-arena': loadParallelArena(); break;
@@ -4867,6 +5832,8 @@ function switchToPanel(panel) {
         loadSessions();
     } else if (panel === 'agent-observability') {
         loadAgentObservability();
+    } else if (panel === 'bots') {
+        loadBots();
     } else if (panel === 'message-board') {
         loadMessageBoardPosts();
     } else if (panel === 'dashboard-chat') {
@@ -4913,7 +5880,7 @@ function handleHashChange() {
     const parts = hash.split('/');
     const panel = parts[0];
 
-    const validPanels = ['chat','message-board','dashboard-chat','parallel-arena','config','secrets','sessions','agent-observability','memory','skills','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','nexussy','scrolls','cron','schedule','graph'];
+    const validPanels = ['chat','bots','message-board','dashboard-chat','parallel-arena','config','secrets','sessions','agent-observability','memory','skills','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','nexussy','scrolls','cron','schedule','graph'];
     if (!validPanels.includes(panel) || !isDashboardTabVisible(panel)) {
         switchToPanel('chat');
         return;
@@ -4934,7 +5901,7 @@ function updateBreadcrumbs(panel, detail) {
     const bc = document.getElementById('breadcrumbs');
     if (!bc) return;
 
-    const names = { chat:'Chat', 'message-board':'Message Board', 'dashboard-chat':'Dashboard Chat', 'parallel-arena':'Parallel Arena', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', nexussy:'Nexussy', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
+    const names = { chat:'Chat', bots:'Bots', 'message-board':'Message Board', 'dashboard-chat':'Dashboard Chat', 'parallel-arena':'Parallel Arena', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', nexussy:'Nexussy', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
 
     if (detail) {
         bc.className = 'breadcrumbs visible';
@@ -6542,10 +7509,11 @@ async function loadSessionFiles(id) {
     renderSessionFiles();
 }
 
-function persistActiveAssistantState(assistantState) {
-    if (!assistantState || !activeRun) return;
-    activeRun.assistantState = {
+function persistActiveAssistantState(assistantState, roomId = activeChatRoomId, runState = getActiveRun(roomId)) {
+    if (!assistantState || !runState || getActiveRun(roomId)?.runId !== runState.runId) return;
+    runState.assistantState = {
         role: 'assistant',
+        bot: assistantState.bot || runState.profile || 'default',
         content: assistantState.content || '',
         tools: Array.isArray(assistantState.tools) ? assistantState.tools : [],
         events: Array.isArray(assistantState.events) ? assistantState.events : [],
@@ -6554,19 +7522,21 @@ function persistActiveAssistantState(assistantState) {
         prompt_breakdown: Array.isArray(assistantState.prompt_breakdown) ? assistantState.prompt_breakdown : [],
         trace: assistantState.trace || null,
     };
-    saveActiveRun();
-    updateActiveRunBanner();
+    saveActiveRuns();
+    if (roomId === activeChatRoomId) updateActiveRunBanner();
+    renderChatRoomRail();
 }
 
-function finalizeActiveRun(assistantState) {
+async function finalizeActiveRun(assistantState, roomId, roomConversation, runState) {
     if (!assistantState) {
-        clearActiveRun();
+        clearActiveRun(roomId, runState.runId);
         return;
     }
-    persistActiveAssistantState(assistantState);
-    if (!conversation.length || conversation[conversation.length - 1] !== assistantState) {
-        conversation.push({
+    persistActiveAssistantState(assistantState, roomId, runState);
+    if (!roomConversation.length || roomConversation[roomConversation.length - 1] !== assistantState) {
+        const finalMessage = {
             role: 'assistant',
+            bot: assistantState.bot || runState.profile || 'default',
             content: assistantState.content,
             tools: assistantState.tools,
             events: assistantState.events,
@@ -6574,11 +7544,23 @@ function finalizeActiveRun(assistantState) {
             last_prompt_tokens: assistantState.last_prompt_tokens || (assistantState.usage && assistantState.usage.prompt_tokens) || 0,
             prompt_breakdown: assistantState.prompt_breakdown,
             trace: assistantState.trace || null,
-        });
-        saveConversation();
+        };
+        roomConversation.push(finalMessage);
+        if (roomId === 'main') {
+            await saveDashboardState('conversation', roomConversation, { immediate: true });
+        } else {
+            await saveBotRoom(roomId, roomConversation, runState.sessionId);
+        }
+        if (roomId === activeChatRoomId && conversation !== roomConversation) {
+            conversation.push(finalMessage);
+        }
     }
-    clearActiveRun();
-    void refreshSessionContextInfo(activeChatSessionId);
+    clearActiveRun(roomId, runState.runId);
+    if (roomId === activeChatRoomId) {
+        renderConversation();
+        updateContextDisplay(assistantState);
+        void refreshSessionContextInfo(activeChatSessionId);
+    }
 }
 
 function buildChatRequestMessages(messages) {
@@ -6596,48 +7578,41 @@ function buildChatRequestMessages(messages) {
 }
 
 // === TRACK D: Interrupt ===
-const liveRunInterruptState = { sessionId: null, queued: false };
+const liveRunInterruptState = { sessionId: null, roomId: null, queued: false };
 
 function showInterruptButton(sessionId) {
     if (!sessionId) return;
+    if (liveRunInterruptState.sessionId !== sessionId || liveRunInterruptState.roomId !== activeChatRoomId) {
+        liveRunInterruptState.queued = false;
+    }
     liveRunInterruptState.sessionId = sessionId;
-    liveRunInterruptState.queued = false;
-    const container = document.querySelector('.chat-run-status-actions');
-    if (!container) return;
-    let wrapper = document.getElementById('interrupt-btn-wrapper');
-    if (!wrapper) {
-        wrapper = document.createElement('span');
-        wrapper.id = 'interrupt-btn-wrapper';
-        wrapper.style.display = 'inline-flex';
-        wrapper.style.flexDirection = 'column';
-        wrapper.style.alignItems = 'flex-end';
-        wrapper.style.gap = '0.25rem';
-        container.appendChild(wrapper);
+    liveRunInterruptState.roomId = activeChatRoomId;
+    if (chatRunStopBtn) {
+        chatRunStopBtn.hidden = false;
+        chatRunStopBtn.disabled = liveRunInterruptState.queued;
+        chatRunStopBtn.textContent = liveRunInterruptState.queued ? 'Stopping...' : 'Stop main agent';
+        chatRunStopBtn.classList.toggle('queued', liveRunInterruptState.queued);
     }
-    wrapper.innerHTML = '<button class="btn interrupt-btn emergency-stop-btn" type="button">Stop main agent</button><span class="interrupt-status-msg" id="interrupt-status-msg" style="display:none;"></span>';
-    const btn = wrapper.querySelector('.interrupt-btn');
-    if (btn) {
-        btn.onclick = function() { requestInterrupt(sessionId, activeRun?.runId || null); };
-    }
-    wrapper.style.display = 'inline-flex';
 }
 
-function hideInterruptButton() {
+function hideInterruptButton(disableStop = true) {
     liveRunInterruptState.sessionId = null;
+    liveRunInterruptState.roomId = null;
     liveRunInterruptState.queued = false;
-    const wrapper = document.getElementById('interrupt-btn-wrapper');
-    if (wrapper) {
-        wrapper.style.display = 'none';
-    }
-    if (chatRunStopBtn) {
+    if (chatRunStopBtn && disableStop) {
         chatRunStopBtn.disabled = true;
     }
+    const message = document.getElementById('interrupt-status-msg');
+    if (message) message.hidden = true;
 }
 
 function requestInterrupt(sessionId, runId = null) {
     if (!sessionId && !runId) return;
     if (!window.confirm('Emergency stop the running main agent?')) return;
-    const path = sessionId
+    const requestRoomId = activeChatRoomId;
+    const targetRun = Object.values(activeRuns).find(run => run.runId === runId);
+    const useRunStop = Boolean(runId && targetRun?.profile && targetRun.profile !== 'default');
+    const path = sessionId && !useRunStop
         ? '/api/sessions/' + encodeURIComponent(sessionId) + '/interrupt'
         : '/api/runs/' + encodeURIComponent(runId) + '/stop';
     fetch(path, {
@@ -6648,11 +7623,16 @@ function requestInterrupt(sessionId, runId = null) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
         if (data.status === 'interrupt_queued' || data.status === 'stop_queued') {
+            if (activeChatRoomId !== requestRoomId) {
+                showToast('Emergency stop queued');
+                return;
+            }
             liveRunInterruptState.queued = true;
-            const btn = document.querySelector('.interrupt-btn');
+            liveRunInterruptState.roomId = requestRoomId;
+            const btn = chatRunStopBtn;
             if (btn) {
                 btn.classList.add('queued');
-                btn.textContent = 'Stopping…';
+                btn.textContent = 'Stopping...';
                 btn.disabled = true;
             }
             if (chatRunStopBtn) {
@@ -6661,12 +7641,12 @@ function requestInterrupt(sessionId, runId = null) {
             const msg = document.getElementById('interrupt-status-msg');
             if (msg) {
                 msg.textContent = 'Emergency stop queued.';
-                msg.style.display = 'block';
+                msg.hidden = false;
             }
             showToast('Emergency stop queued');
         } else if (data.status === 'not_running') {
             showToast('Session is not running', true);
-            hideInterruptButton();
+            if (activeChatRoomId === requestRoomId) hideInterruptButton();
         }
     })
     .catch(function(err) {
@@ -6676,38 +7656,56 @@ function requestInterrupt(sessionId, runId = null) {
 }
 // === END TRACK D ===
 
-async function streamChatRun({ runId, messagesPayload, resume = false, eventOffset = 0, sessionId = null, assistantSeed = null }) {
-    const response = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            run_id: runId,
-            resume,
-            event_offset: eventOffset,
-            session_id: sessionId,
-            messages: buildChatRequestMessages(messagesPayload),
-        })
-    });
+async function streamChatRun({ runId, messagesPayload, resume = false, eventOffset = 0, sessionId = null, assistantSeed = null, roomId = 'main', profile = 'default' }) {
+    const runState = getActiveRun(roomId);
+    if (!runState || runState.runId !== runId) throw new Error('Active run state is unavailable');
+    const roomConversation = messagesPayload;
+    connectedChatRunRooms.add(roomId);
+    if (roomId === activeChatRoomId) updateActiveRunBanner();
+    let response;
+    try {
+        response = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                run_id: runId,
+                resume,
+                event_offset: eventOffset,
+                session_id: sessionId,
+                room_id: roomId,
+                profile,
+                messages: buildChatRequestMessages(messagesPayload),
+            })
+        });
+    } catch (error) {
+        connectedChatRunRooms.delete(roomId);
+        if (roomId === activeChatRoomId) updateActiveRunBanner();
+        throw error;
+    }
 
     if (!response.ok) {
+        connectedChatRunRooms.delete(roomId);
+        if (roomId === activeChatRoomId) updateActiveRunBanner();
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
     const reader = response.body.getReader();
     // TRACK D: show/hide interrupt button
-    showInterruptButton(sessionId);
+    if (roomId === activeChatRoomId) showInterruptButton(sessionId);
     // TRACK D: end
     const decoder = new TextDecoder();
     const assistantState = assistantSeed
         ? normalizeAssistantMessage(assistantSeed)
         : createAssistantTraceState({ sessionId });
+    assistantState.bot = assistantSeed?.bot || profile || 'default';
     let assistantDiv = null;
     let chunkCount = 0;
     let streamBuffer = '';
     let sawDone = false;
 
-    if (assistantState.content || assistantState.tools.length || assistantState.events.length) {
-        assistantDiv = addMessage('assistant', assistantState, false);
+    if (roomId === activeChatRoomId && (assistantState.content || assistantState.tools.length || assistantState.events.length)) {
+        assistantDiv = renderActiveRunProjection() || addMessage('assistant', assistantState, false);
+        assistantDiv.dataset.chatRunId = runId;
         bindToolCardInteractions(assistantDiv);
     }
 
@@ -6719,25 +7717,31 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
     function scheduleRender() {
         if (!renderDirty) return;
         renderDirty = false;
+        const now = Date.now();
+        if (now - lastPersistTime > 1000) {
+            lastPersistTime = now;
+            persistActiveAssistantState(assistantState, roomId, runState);
+            persistDirty = false;
+        } else {
+            persistDirty = true;
+        }
+        if (roomId !== activeChatRoomId) {
+            return;
+        }
         const stickToBottom = shouldStickToBottom(chat);
+        if (assistantDiv && !assistantDiv.isConnected) assistantDiv = null;
         if (!assistantDiv) {
-            assistantDiv = addMessage('assistant', assistantState, false);
+            assistantDiv = renderActiveRunProjection() || addMessage('assistant', assistantState, false);
+            assistantDiv.dataset.chatRunId = runId;
             bindToolCardInteractions(assistantDiv);
         } else {
             const openToolState = captureOpenToolState(assistantDiv);
             assistantDiv.innerHTML = renderAssistantMessage(assistantState);
+            bindAvatarFallbacks(assistantDiv);
             restoreOpenToolState(assistantDiv, openToolState);
         }
         scrollChatToBottom(false, stickToBottom);
 
-        // Throttle localStorage writes to once per second
-        const now = Date.now();
-        if (now - lastPersistTime > 1000) {
-            lastPersistTime = now;
-            persistActiveAssistantState(assistantState);
-        } else {
-            persistDirty = true;
-        }
     }
 
     // Render loop at ~30fps
@@ -6770,25 +7774,55 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
             try {
                 const parsed = JSON.parse(data);
                 if (parsed.type === 'run_state') {
-                    if (parsed.session_id && activeRun.sessionId !== parsed.session_id) {
-                        activeRun.sessionId = parsed.session_id;
-                        activeChatSessionId = parsed.session_id;
-                        void refreshSessionContextInfo(parsed.session_id);
-                        saveActiveChatSession();
-                        updateActiveChatBanner();
-                        saveActiveRun();
+                    const stateMetadata = getEventMetadata(parsed);
+                    const childStateId = stateMetadata.child_session_id || stateMetadata.subagent_id
+                        || (stateMetadata.delegate_call_id ? stateMetadata.session_id : '');
+                    if (childStateId) {
+                        const childStatus = parsed.status === 'error' ? 'ERROR'
+                            : (parsed.status === 'complete' ? 'DONE' : (parsed.status === 'paused' ? 'PAUSED' : 'LIVE'));
+                        rememberChildDrawer(childStateId, {
+                            label: stateMetadata.label || '',
+                            taskIndex: stateMetadata.task_index ?? null,
+                            parentSessionId: stateMetadata.parent_session_id || runState.sessionId || '',
+                            delegateCallId: stateMetadata.delegate_call_id || '',
+                        });
+                        rememberRunChildSession(runState, childDrawerRegistry.get(childStateId), childStatus);
+                        appendLiveDrawerEventIfOpen(parsed);
+                        updateDrawerBadge(childStateId, childStatus);
+                        if (ACTIVE_CHILD_DRAWER_STATUSES.has(childStatus)) watchSubagentFlightStatus(childStateId);
+                        saveActiveRuns();
+                        continue;
+                    }
+                    if (parsed.approval_session_id && runState.approvalSessionId !== parsed.approval_session_id) {
+                        runState.approvalSessionId = parsed.approval_session_id;
+                        saveActiveRuns();
+                        void refreshApprovals(false);
+                        log('inf', 'Run state: approval_session_id=' + parsed.approval_session_id);
+                    }
+                    if (parsed.session_id && runState.sessionId !== parsed.session_id) {
+                        runState.sessionId = parsed.session_id;
+                        if (roomId === activeChatRoomId) {
+                            activeChatSessionId = parsed.session_id;
+                            void refreshSessionContextInfo(parsed.session_id);
+                            updateActiveChatBanner();
+                            showInterruptButton(parsed.session_id);
+                        }
+                        if (roomId === 'main') {
+                            saveMainChatSession(parsed.session_id);
+                        } else {
+                            void saveBotRoom(roomId, roomConversation, parsed.session_id);
+                        }
+                        saveActiveRuns();
                         log('inf', 'Run state: session_id=' + parsed.session_id);
                     }
                     // TRACK D: show/hide interrupt button
-                    if (parsed.status === 'complete' || parsed.status === 'error') {
+                    if (roomId === activeChatRoomId && (parsed.status === 'complete' || parsed.status === 'error')) {
                         hideInterruptButton();
                     }
                     // TRACK D: end
                     continue;
                 }
-                if (activeRun) {
-                    activeRun.eventOffset = (activeRun.eventOffset || 0) + 1;
-                }
+                runState.eventOffset = (runState.eventOffset || 0) + 1;
                 if (parsed.type === 'content' && parsed.content) {
                     appendContentEvent(assistantState, parsed.content);
                     chunkCount++;
@@ -6804,15 +7838,19 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                     const childSessionId = parsed.child_session_id || args.child_session_id || parsed.session_id || args.session_id || parsed.subagent_id || args.subagent_id || '';
                     if (childSessionId) {
                         const entry = liveChildSessionMap.get(delegateCallId) || [];
+                        const childEntry = { childSessionId, label: parsed.label || args.label || 'delegate_task', taskIndex: parsed.task_index ?? args.task_index ?? null, parentSessionId: parsed.parent_session_id || args.parent_session_id || runState.sessionId || '', delegateCallId };
                         if (!entry.some(item => item.childSessionId === childSessionId)) {
-                            entry.push({ childSessionId, label: parsed.label || args.label || 'delegate_task', taskIndex: parsed.task_index ?? args.task_index ?? null, parentSessionId: parsed.parent_session_id || args.parent_session_id || activeRun.sessionId || '', delegateCallId });
+                            entry.push(childEntry);
                         }
                         liveChildSessionMap.set(delegateCallId, entry);
-                        rememberChildDrawer(childSessionId, { label: parsed.label || args.label || 'delegate_task', taskIndex: parsed.task_index ?? args.task_index ?? null, parentSessionId: parsed.parent_session_id || args.parent_session_id || activeRun.sessionId || '', delegateCallId });
+                        rememberChildDrawer(childSessionId, childEntry);
+                        rememberRunChildSession(runState, childEntry, 'LIVE');
+                        updateDrawerBadge(childSessionId, 'LIVE');
+                        watchSubagentFlightStatus(childSessionId);
                         appendLiveDrawerEventIfOpen(parsed);
                         renderDirty = true;
                         log('tool', `[child_session_started] ${childSessionId.slice(0, 8)}...`, false, { result: parsed });
-                        saveActiveRun();
+                        saveActiveRuns();
                     }
                     continue;
                 } else if (parsed.type === 'tool_call') {
@@ -6822,7 +7860,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                         startToolTimer(parsed.call_id || parsed.name, true);
                         renderDirty = true;
                         log('tool', `[subagent] ${parsed.name || 'tool'} started`, false, { args: parsed.arguments?.child_args || parsed.arguments });
-                        saveActiveRun();
+                        saveActiveRuns();
                         continue;
                     }
                     const tool = upsertToolEvent(assistantState, parsed);
@@ -6841,7 +7879,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                         stopToolTimer(parsed.call_id || parsed.name, true);
                         renderDirty = true;
                         log('tool', `[subagent] ${parsed.name || 'tool'} completed`, false, { result: parsed.output });
-                        saveActiveRun();
+                        saveActiveRuns();
                         continue;
                     }
                     const tool = upsertToolEvent(assistantState, parsed);
@@ -6853,7 +7891,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                     if ((parsed.arguments?.delegate_call_id || parsed.arguments?.call_id) && appendDelegateChildEvent(assistantState, parsed)) {
                         renderDirty = true;
                         log('tool', `[subagent] ${parsed.name || 'progress'}: ${summarizeValue(parsed.progress || parsed.arguments || '', 100)}`, false, { result: parsed.progress || parsed.arguments || '' });
-                        saveActiveRun();
+                        saveActiveRuns();
                         continue;
                     }
                     const tool = appendToolProgress(assistantState, parsed);
@@ -6862,10 +7900,10 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                 } else if (parsed.type === 'meta') {
                     reduceAssistantTraceEvent(assistantState, parsed);
                     renderDirty = true;
-                    updateContextDisplay(assistantState);
+                    if (roomId === activeChatRoomId) updateContextDisplay(assistantState);
                     log('inf', 'Meta: ' + (parsed.usage ? parsed.usage.total_tokens + ' tokens' : 'prompt update'), false, { result: parsed });
                 }
-                saveActiveRun();
+                saveActiveRuns();
             } catch (e) {
                 if (data && data !== '[DONE]') log('warn', 'Failed to parse SSE event: ' + e.message, false, { error: data });
             }
@@ -6879,17 +7917,26 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
 
         if (sawDone) {
             log('res', `Stream complete (${chunkCount} chunks, ${assistantState.content.length} chars)`);
+            await finalizeActiveRun(assistantState, roomId, roomConversation, runState);
+        } else {
+            log('warn', `Stream ended before completion; run ${runId} remains available to follow`);
+            persistActiveAssistantState(assistantState, roomId, runState);
+            if (roomId === activeChatRoomId) updateActiveRunBanner();
         }
-        finalizeActiveRun(assistantState);
     } finally {
+        connectedChatRunRooms.delete(roomId);
+        if (roomId === activeChatRoomId) updateActiveRunBanner();
         clearInterval(renderLoop);
         log('inf', 'Render loop stopped');
         if (renderDirty) scheduleRender();
         if (assistantDiv) highlightToolCode(assistantDiv);
-        if (persistDirty) persistActiveAssistantState(assistantState);
-        toolCallTimers.clear();
-        stopToolTimerUpdates();
-        hideInterruptButton();
+        if (persistDirty) persistActiveAssistantState(assistantState, roomId, runState);
+        const hasOtherRun = Object.values(activeRuns).some(run => run.runId !== runId);
+        if (!hasOtherRun) {
+            toolCallTimers.clear();
+            stopToolTimerUpdates();
+        }
+        if (roomId === activeChatRoomId) hideInterruptButton(false);
     }
 }
 
@@ -10166,32 +11213,17 @@ function parseImagesFromContent(content) {
 function updateContextDisplay(assistantMessage) {
     const usage = assistantMessage.usage || {};
     const lastPromptTokens = assistantMessage.last_prompt_tokens || usage.prompt_tokens || 0;
-    const total = usage.total_tokens || 0;
-    const breakdown = Array.isArray(assistantMessage.prompt_breakdown) ? assistantMessage.prompt_breakdown : [];
-    if (!total && !lastPromptTokens) {
-        contextSummary.textContent = 'Waiting for token and context stats...';
-        contextPills.innerHTML = '';
-        contextBreakdown.innerHTML = '';
+    const cachedInfo = sessionContextCache.info;
+    if (!contextPanel || !contextSummary || activeChatRoomId === 'shared' || !cachedInfo?.max) {
+        if (contextPanel) contextPanel.hidden = true;
+        if (contextSummary) contextSummary.innerHTML = '';
         return;
     }
-    contextSummary.textContent = lastPromptTokens
-        ? `Current estimated prompt context: ${lastPromptTokens.toLocaleString()} tokens`
-        : `Last response used ${total.toLocaleString()} total tokens`;
-    if (lastPromptTokens && sessionContextCache.info && sessionContextCache.info.max) {
-        const max = sessionContextCache.info.max;
-        const percent = (lastPromptTokens / max) * 100;
-        const liveInfo = { used: lastPromptTokens, max, percent, stale: sessionContextCache.info.stale };
-        contextSummary.innerHTML = `${renderContextGaugeHtml(percent, contextGaugeTooltip(liveInfo))}<span>Current estimated prompt context: ${escapeHtml(formatTokenCount(lastPromptTokens))} / ${escapeHtml(formatTokenCount(max))} (${Math.round(percent)}%)</span>`;
-    }
-    contextPills.innerHTML = [
-        renderMetaPill('Prompt', usage.prompt_tokens),
-        renderMetaPill('Completion', usage.completion_tokens),
-        renderMetaPill('Total', usage.total_tokens),
-        renderMetaPill('Context window', lastPromptTokens),
-    ].filter(Boolean).join('');
-    contextBreakdown.innerHTML = breakdown.length
-        ? `<div style="margin-bottom:0.45rem;color:var(--text);">Prompt Breakdown</div>${renderPromptBreakdownRows(breakdown)}`
-        : '';
+    const used = lastPromptTokens || cachedInfo.used;
+    const percent = lastPromptTokens ? (lastPromptTokens / cachedInfo.max) * 100 : cachedInfo.percent;
+    const info = { used, max: cachedInfo.max, percent, stale: cachedInfo.stale };
+    contextPanel.hidden = false;
+    contextSummary.innerHTML = renderContextGaugeHtml(percent, contextGaugeTooltip(info), 'chat');
 }
 
 function isSafeImageDataUrl(url) {
@@ -10215,6 +11247,7 @@ function removePendingImageAttachment(id) {
 }
 
 function clearPendingImageAttachments() {
+    pendingImageAttachmentGeneration += 1;
     pendingImageAttachments = [];
     renderPendingImageAttachments();
 }
@@ -10231,8 +11264,10 @@ function readImageFile(file) {
 async function attachImageFiles(files, sourceLabel = 'selected') {
     const imageFiles = Array.from(files || []).filter(file => /^image\//i.test(file.type || ''));
     if (!imageFiles.length) return;
+    const generation = pendingImageAttachmentGeneration;
     try {
         const dataUrls = await Promise.all(imageFiles.map(readImageFile));
+        if (generation !== pendingImageAttachmentGeneration) return;
         const validUrls = dataUrls.filter(isSafeImageDataUrl);
         if (!validUrls.length) {
             showToast(`${sourceLabel} image format is not supported`, true);
@@ -10266,10 +11301,135 @@ async function handleChatImageInputChange(event) {
     if (event.target) event.target.value = '';
 }
 
+function syncChatInputState() {
+    if (!sendBtn) return;
+    sendBtn.disabled = Boolean(getActiveRun() || streamResumeRooms.has(activeChatRoomId) || sharedRoomRequestInFlight || chatResetInFlight);
+}
+
+async function consumeSharedRoomNdjson(response, onEvent) {
+    if (!response.body?.getReader) throw Object.assign(new Error('Streaming response is unavailable'), { streamUnavailable: true });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const consumeLine = (line) => {
+        const text = line.trim();
+        if (!text) return;
+        let event;
+        try {
+            event = JSON.parse(text);
+        } catch (_error) {
+            throw new Error('Shared room returned invalid streaming data');
+        }
+        onEvent(event);
+    };
+    while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        lines.forEach(consumeLine);
+        if (done) break;
+    }
+    if (buffer.trim()) consumeLine(buffer);
+}
+
+async function sendSharedRoomMessageFallback(message) {
+    const data = await fetchJsonOrThrow('/api/bot-rooms/shared/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+    });
+    if (data?.ok === false) throw new Error(data.error || 'Shared room request failed');
+    return data;
+}
+
+async function sendSharedRoomMessage(message) {
+    if (sharedRoomRequestInFlight) return;
+    sharedRoomRequestInFlight = true;
+    userInput.value = '';
+    userInput.style.height = 'auto';
+    syncChatInputState();
+    conversation.push({ role: 'user', content: message });
+    renderSharedConversation();
+    const indicator = document.createElement('div');
+    indicator.className = 'message assistant shared-working-indicator';
+    indicator.innerHTML = '<span></span><span></span><span></span><strong>Profiles are conferring</strong>';
+    chat.appendChild(indicator);
+    scrollChatToBottom(true);
+    try {
+        let completeEvent = null;
+        try {
+            const response = await fetch('/api/bot-rooms/shared/messages/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/x-ndjson' },
+                body: JSON.stringify({ message }),
+            });
+            if ([404, 405, 501].includes(response.status)) {
+                throw Object.assign(new Error('Shared room streaming endpoint is unavailable'), { streamUnavailable: true });
+            }
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error || `Shared room stream failed (HTTP ${response.status})`);
+            }
+            await consumeSharedRoomNdjson(response, (event) => {
+                if (event?.type === 'message' && event.message) {
+                    const streamedMessage = { ...event.message, role: 'assistant', bot: event.message.bot || event.message.profile };
+                    conversation.push(streamedMessage);
+                    indicator.insertAdjacentHTML('beforebegin', sharedMessageHtml(streamedMessage));
+                    bindAvatarFallbacks(chat);
+                    scrollChatToBottom(true);
+                } else if (event?.type === 'complete') {
+                    completeEvent = event;
+                } else if (event?.type === 'error') {
+                    throw new Error(event.error || event.message || 'Shared room stream failed');
+                }
+            });
+            if (!completeEvent) throw new Error('Shared room stream ended before completion');
+        } catch (error) {
+            if (!error.streamUnavailable) throw error;
+            completeEvent = await sendSharedRoomMessageFallback(message);
+        }
+        const room = completeEvent?.room;
+        if (Array.isArray(room?.conversation)) conversation = room.conversation;
+        activeChatSessionId = room?.session_id || null;
+        indicator.remove();
+        renderSharedConversation();
+        if (Array.isArray(completeEvent?.errors) && completeEvent.errors.length) {
+            const details = completeEvent.errors
+                .map(item => `@${item.bot || 'bot'}: ${item.error || 'response failed'}`)
+                .join(' | ');
+            showToast(details, true);
+        }
+    } catch (error) {
+        indicator.remove();
+        showToast(`Shared room failed: ${error.message || error}`, true);
+    } finally {
+        sharedRoomRequestInFlight = false;
+        syncChatInputState();
+        userInput.focus();
+    }
+}
+
 async function sendMessage() {
     const message = userInput.value.trim();
     const imageAttachments = pendingImageAttachments.slice();
     if (!message && !imageAttachments.length) return;
+    if (!imageAttachments.length && /^\/(?:new|mew)$/i.test(message)) {
+        if (await resetCurrentChatRoom({ freshSession: true })) {
+            userInput.value = '';
+            userInput.style.height = 'auto';
+        }
+        return;
+    }
+    if (getActiveRun() || streamResumeRooms.has(activeChatRoomId) || sharedRoomRequestInFlight || chatResetInFlight) return;
+    if (activeChatRoomId === 'shared') {
+        if (imageAttachments.length) {
+            showToast('The shared room accepts text prompts only', true);
+            return;
+        }
+        await sendSharedRoomMessage(message);
+        return;
+    }
     const userContent = imageAttachments.length
         ? [
             ...(message ? [{ type: 'text', text: message }] : []),
@@ -10280,7 +11440,8 @@ async function sendMessage() {
     userInput.value = '';
     userInput.style.height = 'auto';
     clearPendingImageAttachments();
-    sendBtn.disabled = true;
+    const roomId = activeChatRoomId;
+    const roomConversation = conversation;
 
     addMessage('user', { content: userContent });
     conversation.push({ role: 'user', content: userContent });
@@ -10289,49 +11450,103 @@ async function sendMessage() {
     log('req', `POST /chat (streaming)`);
     const logMessage = message || `[${imageAttachments.length} pasted image${imageAttachments.length === 1 ? '' : 's'}]`;
     log('inf', `User: ${logMessage.substring(0, 100)}${logMessage.length > 100 ? '...' : ''}`);
-    activeRun = {
+    const runState = {
         runId: `run_${Date.now()}_${Math.random().toString(16).slice(2)}`,
         eventOffset: 0,
         startedAt: Date.now(),
         sessionId: activeChatSessionId,
+        approvalSessionId: null,
+        roomId,
+        profile: profileForRoom(roomId),
         assistantState: null,
     };
-    saveActiveRun();
+    activeRuns[roomId] = runState;
+    saveActiveRuns();
     updateActiveRunBanner();
+    renderChatRoomRail();
+    syncChatInputState();
 
     try {
         await streamChatRun({
-            runId: activeRun.runId,
-            messagesPayload: conversation,
+            runId: runState.runId,
+            messagesPayload: roomConversation,
             resume: false,
             eventOffset: 0,
-            sessionId: activeRun.sessionId,
+            sessionId: runState.sessionId,
+            roomId,
+            profile: runState.profile,
         });
 
     } catch (error) {
         log('err', `Error: ${error.message}`, true);
-        addMessage('assistant', { content: `Error: ${error.message}` });
-        clearActiveRun();
+        const errorMessage = { role: 'assistant', bot: runState.profile || 'default', content: `Error: ${error.message}` };
+        roomConversation.push(errorMessage);
+        if (roomId === 'main') {
+            await saveDashboardState('conversation', roomConversation, { immediate: true });
+        } else {
+            await saveBotRoom(roomId, roomConversation, runState.sessionId);
+        }
+        if (roomId === activeChatRoomId) {
+            if (conversation !== roomConversation) conversation.push(errorMessage);
+            renderConversation();
+        }
+        clearActiveRun(roomId, runState.runId);
     }
 
-    sendBtn.disabled = false;
-    userInput.focus();
+    syncChatInputState();
+    if (roomId === activeChatRoomId) userInput.focus();
 }
 
-function clearChat() {
-    chat.innerHTML = '';
-    conversation = [];
-    void saveDashboardState('conversation', null, { immediate: true });
-    removeLegacyLocalStorageValue(STORAGE_KEY);
-    clearActiveRun();
-    clearPendingImageAttachments();
-    activeChatSessionId = null;
-    saveActiveChatSession();
-    refreshTokenUsageSoon();
-    void refreshSessionContextInfo(null);
-    updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
-    updateActiveChatBanner();
-    log('inf', 'Chat cleared');
+async function resetCurrentChatRoom(options = {}) {
+    const roomId = activeChatRoomId;
+    if (chatResetInFlight) return false;
+    if (options.freshSession && roomId === 'shared') {
+        showToast('Start a direct bot chat to create a fresh bot session', true);
+        return false;
+    }
+    if (getActiveRun(roomId) || streamResumeRooms.has(roomId) || sharedRoomRequestInFlight) {
+        showToast('Stop or finish the active run before starting a new session', true);
+        return false;
+    }
+
+    chatResetInFlight = true;
+    syncChatInputState();
+    try {
+        const persisted = roomId === 'main'
+            ? await saveDashboardState('conversation', null, { immediate: true })
+            : await saveBotRoom(roomId, [], null);
+        if (!persisted) {
+            showToast('Could not persist the new session reset', true);
+            return false;
+        }
+
+        conversation = [];
+        clearPendingImageAttachments();
+        activeChatSessionId = null;
+        chat.innerHTML = '';
+        userInput.value = '';
+        userInput.style.height = 'auto';
+        if (roomId === 'main') {
+            removeLegacyLocalStorageValue(STORAGE_KEY);
+            saveMainChatSession(null);
+        }
+        refreshTokenUsageSoon();
+        await refreshSessionContextInfo(null);
+        updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
+        updateActiveChatBanner();
+        updateActiveRunBanner();
+        userInput?.focus();
+        showToast(roomId === 'shared' ? 'Shared room cleared; bot sessions retained' : 'New session ready');
+        log('inf', `Chat room ${roomId} reset for a new session`);
+        return true;
+    } finally {
+        chatResetInFlight = false;
+        syncChatInputState();
+    }
+}
+
+async function clearChat() {
+    return resetCurrentChatRoom();
 }
 
 function debounce(fn, ms) {
@@ -10678,6 +11893,10 @@ function initGraphSettingsControls() {
   if (!document.body.dataset.liveViewDelegated) {
     document.body.dataset.liveViewDelegated = 'true';
     document.addEventListener('click', (e) => {
+      const flightToggle = e.target.closest('.subagent-flight-toggle');
+      if (flightToggle) { e.preventDefault(); e.stopPropagation(); toggleSubagentFlightPopover(flightToggle); return; }
+      const flightClose = e.target.closest('.subagent-flight-close');
+      if (flightClose) { e.preventDefault(); e.stopPropagation(); closeSubagentFlightPopover(); return; }
       const stopBtn = e.target.closest('.subagent-stop-btn');
       if (stopBtn) { e.preventDefault(); e.stopPropagation(); requestStopSubagent(stopBtn.dataset.childSessionId || ''); return; }
       const pauseBtn = e.target.closest('.subagent-pause-btn');
@@ -10685,7 +11904,11 @@ function initGraphSettingsControls() {
       const steerBtn = e.target.closest('.subagent-steer-btn');
       if (steerBtn) { e.preventDefault(); e.stopPropagation(); requestSteerSubagent(steerBtn.dataset.childSessionId || '', steerBtn.dataset.controlMode || 'soft'); return; }
       const btn = e.target.closest('.live-view-btn');
-      if (!btn) return;
+      if (!btn) {
+        const flightPopover = document.getElementById('subagent-flight-popover');
+        if (flightPopover && !flightPopover.hidden && !flightPopover.contains(e.target)) closeSubagentFlightPopover();
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       const childSessionId = btn.dataset.childSessionId;
@@ -10694,9 +11917,16 @@ function initGraphSettingsControls() {
       if (btn.dataset.anchorSelector) anchorEl = document.querySelector(btn.dataset.anchorSelector) || btn;
       else if (btn.dataset.toolKey) anchorEl = document.querySelector(`[data-tool-id="${CSS.escape(btn.dataset.toolKey)}"]`) || btn;
       else if (btn.dataset.useParent) anchorEl = btn.closest('details') || btn;
+      closeSubagentFlightPopover();
       openChildSessionDrawer(childSessionId, anchorEl, label);
     });
     document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !document.getElementById('subagent-flight-popover')?.hidden) {
+        e.preventDefault();
+        closeSubagentFlightPopover();
+        document.querySelector('.subagent-flight-toggle')?.focus();
+        return;
+      }
       const btn = e.target.closest?.('.live-view-btn[role="button"]');
       if (!btn || (e.key !== 'Enter' && e.key !== ' ')) return;
       e.preventDefault();
@@ -12401,40 +13631,1152 @@ window.addEventListener('resize', debounce(() => {
 
 initGraphSettingsControls();
 applyGraphSettingsToUi();
+initializeChatRoomRail();
+
+document.getElementById('bot-avatar-file')?.addEventListener('change', (event) => {
+    const input = event.currentTarget;
+    try {
+        const file = validateAvatarFile(input.files?.[0] || null);
+        renderAvatarPreview(document.getElementById('bot-create-avatar-preview'), {
+            display_name: document.getElementById('bot-display-name')?.value || document.getElementById('bot-name')?.value,
+            color: document.getElementById('bot-color')?.value,
+        }, file, 'create');
+        document.getElementById('bot-create-status').textContent = file ? `${file.name} ready to upload` : '';
+    } catch (error) {
+        input.value = '';
+        renderAvatarPreview(document.getElementById('bot-create-avatar-preview'), {
+            display_name: document.getElementById('bot-display-name')?.value || document.getElementById('bot-name')?.value || '?',
+            color: document.getElementById('bot-color')?.value,
+        }, null, 'create');
+        document.getElementById('bot-create-status').textContent = error.message;
+    }
+});
+
+document.getElementById('bot-edit-avatar-file')?.addEventListener('change', (event) => {
+    const input = event.currentTarget;
+    try {
+        const file = validateAvatarFile(input.files?.[0] || null);
+        const current = botRegistry.find(bot => bot.name === botEditorName) || {};
+        renderAvatarPreview(document.getElementById('bot-edit-avatar-preview'), {
+            ...current,
+            display_name: document.getElementById('bot-edit-display-name')?.value || current.display_name,
+            color: document.getElementById('bot-edit-color')?.value || current.color,
+        }, file, 'edit');
+        document.getElementById('bot-edit-status').textContent = file ? `${file.name} ready to upload` : '';
+    } catch (error) {
+        input.value = '';
+        const current = botRegistry.find(bot => bot.name === botEditorName) || { name: botEditorName };
+        renderAvatarPreview(document.getElementById('bot-edit-avatar-preview'), current, null, 'edit');
+        document.getElementById('bot-edit-status').textContent = error.message;
+    }
+});
+
+window.addEventListener('beforeunload', () => {
+    revokeAvatarPreview('create');
+    revokeAvatarPreview('edit');
+});
 
 // Initialize (lazy: only load essentials for chat)
 log('inf', 'Dashboard initialized');
 applyDebugVisibility();
-loadActiveChatSession();
 startTokenUsagePolling();
 startApprovalPolling();
 loadStatus();
 loadModels();
 
 async function initializeDashboardChatState() {
-    const hadActiveRun = await loadActiveRun();
+    const hadActiveRun = await loadActiveRuns();
+    restoreActiveRunChildSessions();
+    await loadBots();
+    let storedRoomId = 'main';
+    try {
+        storedRoomId = localStorage.getItem(ACTIVE_CHAT_ROOM_KEY) || 'main';
+    } catch (error) {
+        log('warn', 'Failed to restore active chat room: ' + error.message);
+    }
+    const desiredRoomId = recoveredLegacyRunRoomId || storedRoomId;
 
-    // Restore conversation from server-side dashboard state, migrating legacy localStorage if present.
-    if (await loadConversation() && conversation.length > 0) {
+    if (desiredRoomId === 'main') {
+        loadActiveChatSession();
+        await loadConversation();
+    } else {
+        try {
+            await loadChatRoom(desiredRoomId);
+            activeChatRoomId = desiredRoomId;
+        } catch (error) {
+            activeChatRoomId = 'main';
+            loadActiveChatSession();
+            await loadConversation();
+            showToast(`Could not restore ${desiredRoomId}; opened Main instead`, true);
+        }
+    }
+
+    if (conversation.length > 0) {
         renderConversation();
         const lastAssistant = [...conversation].reverse().find(msg => msg.role === 'assistant');
-        if (lastAssistant) {
+        if (lastAssistant && activeChatRoomId !== 'shared') {
             updateContextDisplay(normalizeAssistantMessage(lastAssistant));
         }
     } else {
         updateContextDisplay({ usage: null, last_prompt_tokens: 0 });
     }
 
-    if (hadActiveRun && activeRun && activeRun.runId) {
-        log('inf', 'Recovered in-flight chat after refresh; waiting for manual resume or reattach');
+    if (hadActiveRun) {
+        log('inf', `Recovered ${Object.keys(activeRuns).length} in-flight chat run(s); waiting for manual resume or reattach`);
         updateActiveRunBanner();
     }
 
     updateActiveChatBanner();
     updateActiveRunBanner();
+    updateChatRoomChrome();
+    const roomRun = getActiveRun();
+    if (roomRun?.sessionId) showInterruptButton(roomRun.sessionId);
+    else hideInterruptButton(false);
+    syncChatInputState();
 }
 
 void initializeDashboardChatState();
+
+// Independent, lazily loaded browser terminal windows with shared auth and assets.
+(function initializeBrowserTerminal() {
+    const STORAGE_KEY = 'hermes_terminal_windows_v2';
+    const LEGACY_STORAGE_KEY = 'hermes_terminal_window_v1';
+    const SESSION_STORAGE_KEY = 'hermes_terminal_sessions_v1';
+    const XTERM_VERSION = '5.3.0';
+    const FIT_VERSION = '0.8.0';
+    const MIN_WIDTH = 300;
+    const MIN_HEIGHT = 210;
+    const MARGIN = 8;
+    const PERSIST_REFRESH_MS = 30000;
+
+    function terminalTheme(theme = document.documentElement.dataset.theme || 'dark') {
+        return theme === 'light'
+            ? { background: '#f7f7f4', foreground: '#202124', cursor: '#8a6508', selectionBackground: '#d8c47a66', black: '#202124', brightBlack: '#6b7280' }
+            : { background: '#0f111a', foreground: '#d8dee9', cursor: '#ffd700', selectionBackground: '#ffd70044', black: '#0f111a', brightBlack: '#687080' };
+    }
+
+    class BrowserTerminalManager {
+        constructor() {
+            this.hostEl = document.getElementById('terminal-window-host');
+            this.templateEl = document.getElementById('terminal-window-template');
+            this.launcherEl = document.getElementById('terminal-launcher');
+            this.launcherCountEl = document.getElementById('terminal-launcher-count');
+            this.launcherStatusEl = document.getElementById('terminal-launcher-status');
+            this.dockEl = document.getElementById('terminal-dock');
+            this.workspaceEl = document.getElementById('dashboard-workspace');
+            this.columnEl = document.getElementById('terminal-column');
+            this.columnStackEl = document.getElementById('terminal-column-stack');
+            this.columnResizerEl = document.getElementById('terminal-column-resizer');
+            this.disabledMessageEl = document.getElementById('terminal-disabled-message');
+            this.authEl = document.getElementById('terminal-auth');
+            this.authInputEl = document.getElementById('terminal-access-token');
+            this.authSubmitEl = document.getElementById('terminal-auth-submit');
+            this.authErrorEl = document.getElementById('terminal-auth-error');
+            this.controllers = new Map();
+            this.usedSlots = new Set();
+            this.maxSessions = 4;
+            this.detachTtlSeconds = 60;
+            this.enabled = false;
+            this.authRequired = false;
+            this.assetsPromise = null;
+            this.authPromise = null;
+            this.authResolve = null;
+            this.statusPromise = null;
+            this.restoreAttempted = false;
+            this.serial = 0;
+            this.zIndex = 20000;
+            this.geometrySlots = this.readGeometrySlots();
+            this.columnWidth = this.readColumnWidth();
+            this.dockSerial = this.geometrySlots.reduce((maximum, geometry) => Math.max(maximum, Number(geometry?.dockOrder) || 0), 0);
+            this.columnResizeState = null;
+            this.handleViewportResize = this.handleViewportResize.bind(this);
+        }
+
+        initialize() {
+            if (!this.hostEl || !this.templateEl || !this.launcherEl) return false;
+            this.authSubmitEl?.addEventListener('click', () => void this.authorize());
+            this.authInputEl?.addEventListener('keydown', event => {
+                event.stopPropagation();
+                if (event.key === 'Enter') void this.authorize();
+            });
+            this.authEl?.addEventListener('keydown', event => event.stopPropagation());
+            this.authEl?.addEventListener('keyup', event => event.stopPropagation());
+            this.dockEl?.addEventListener('click', event => {
+                const item = event.target.closest?.('[data-terminal-key]');
+                if (item) this.activateDock(item.dataset.terminalKey);
+            });
+            this.columnResizerEl?.addEventListener('pointerdown', event => this.startColumnResize(event));
+            this.columnResizerEl?.addEventListener('keydown', event => this.handleColumnResizeKey(event));
+            window.addEventListener('pointermove', event => this.resizeColumn(event));
+            window.addEventListener('pointerup', event => this.endColumnResize(event));
+            window.addEventListener('pointercancel', event => this.endColumnResize(event));
+            window.addEventListener('resize', this.handleViewportResize);
+            window.addEventListener('pagehide', () => this.refreshPersistedSessions());
+            window.setInterval?.(() => this.refreshPersistedSessions(), PERSIST_REFRESH_MS);
+            this.updateLauncher();
+            this.renderDock();
+            this.applyColumnWidth(this.columnWidth);
+            this.syncTerminalColumn();
+            void this.loadStatus();
+            return true;
+        }
+
+        clampGeometry(value = {}) {
+            const maxWidth = Math.max(1, window.innerWidth - (MARGIN * 2));
+            const maxHeight = Math.max(1, window.innerHeight - (MARGIN * 2));
+            const width = Math.min(maxWidth, Math.max(Math.min(MIN_WIDTH, maxWidth), Number(value.width) || Math.min(680, maxWidth)));
+            const height = Math.min(maxHeight, Math.max(Math.min(MIN_HEIGHT, maxHeight), Number(value.height) || Math.min(400, maxHeight)));
+            return {
+                x: Math.min(window.innerWidth - width - MARGIN, Math.max(MARGIN, Number.isFinite(Number(value.x)) ? Number(value.x) : window.innerWidth - width - 20)),
+                y: Math.min(window.innerHeight - height - MARGIN, Math.max(MARGIN, Number.isFinite(Number(value.y)) ? Number(value.y) : window.innerHeight - height - 20)),
+                width,
+                height,
+                minimized: Boolean(value.minimized),
+                docked: Boolean(value.docked),
+                dockOrder: Number.isFinite(Number(value.dockOrder)) && Number(value.dockOrder) > 0 ? Number(value.dockOrder) : null,
+            };
+        }
+
+        readGeometrySlots() {
+            let slots = [];
+            try {
+                const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                if (Array.isArray(stored.slots)) slots = stored.slots;
+                if (!slots.length) {
+                    const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+                    if (legacyRaw) {
+                        const legacy = JSON.parse(legacyRaw);
+                        if (legacy && typeof legacy === 'object') slots = [legacy];
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify({ slots }));
+                        localStorage.removeItem(LEGACY_STORAGE_KEY);
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to read terminal geometry:', error);
+            }
+            return slots.slice(0, 32).map(value => value && typeof value === 'object' ? this.clampGeometry(value) : null);
+        }
+
+        readColumnWidth() {
+            try {
+                const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                return this.normalizeColumnWidth(stored.columnWidth);
+            } catch (error) {
+                return 480;
+            }
+        }
+
+        persistLayout() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                    slots: this.geometrySlots,
+                    columnWidth: this.columnWidth,
+                }));
+            } catch (error) {
+                console.warn('Failed to persist terminal layout:', error);
+            }
+        }
+
+        persistGeometry(slot, geometry) {
+            if (slot < 0 || slot >= this.maxSessions) return;
+            this.geometrySlots[slot] = this.clampGeometry(geometry);
+            this.geometrySlots = this.geometrySlots.slice(0, this.maxSessions);
+            this.persistLayout();
+        }
+
+        clampColumnWidth(value) {
+            const maximum = Math.max(320, Math.min(720, window.innerWidth - 600));
+            return Math.min(maximum, this.normalizeColumnWidth(value));
+        }
+
+        normalizeColumnWidth(value) {
+            return Math.min(720, Math.max(320, Number(value) || 480));
+        }
+
+        applyColumnWidth(value, persist = false) {
+            this.columnWidth = this.normalizeColumnWidth(value);
+            const renderedWidth = this.clampColumnWidth(this.columnWidth);
+            if (this.columnEl) {
+                this.columnEl.style.width = `${renderedWidth}px`;
+                this.columnEl.style.flexBasis = `${renderedWidth}px`;
+            }
+            if (this.columnResizerEl) {
+                this.columnResizerEl.setAttribute('aria-valuenow', String(renderedWidth));
+                this.columnResizerEl.setAttribute('aria-valuemax', String(Math.max(320, Math.min(720, window.innerWidth - 600))));
+            }
+            if (persist) this.persistLayout();
+        }
+
+        startColumnResize(event) {
+            if (event.button !== 0) return;
+            this.columnResizeState = { pointerId: event.pointerId, startX: event.clientX, width: this.clampColumnWidth(this.columnWidth) };
+            this.columnEl?.classList.add('is-resizing');
+            this.columnResizerEl?.setPointerCapture?.(event.pointerId);
+            event.preventDefault?.();
+        }
+
+        resizeColumn(event) {
+            if (!this.columnResizeState || this.columnResizeState.pointerId !== event.pointerId) return;
+            this.applyColumnWidth(this.columnResizeState.width + this.columnResizeState.startX - event.clientX);
+            this.controllers.forEach(controller => { if (controller.docked) controller.fit(); });
+        }
+
+        endColumnResize(event) {
+            if (!this.columnResizeState || this.columnResizeState.pointerId !== event.pointerId) return;
+            this.columnResizeState = null;
+            this.columnEl?.classList.remove('is-resizing');
+            if (this.columnResizerEl?.hasPointerCapture?.(event.pointerId)) this.columnResizerEl.releasePointerCapture(event.pointerId);
+            this.persistLayout();
+        }
+
+        handleColumnResizeKey(event) {
+            let width = this.columnWidth;
+            if (event.key === 'ArrowLeft') width += 20;
+            else if (event.key === 'ArrowRight') width -= 20;
+            else if (event.key === 'Home') width = 320;
+            else if (event.key === 'End') width = 720;
+            else return;
+            event.preventDefault();
+            this.applyColumnWidth(width, true);
+            this.controllers.forEach(controller => { if (controller.docked) controller.fit(); });
+        }
+
+        syncTerminalColumn() {
+            const docked = [...this.controllers.values()].filter(controller => controller.docked);
+            if (this.columnEl) this.columnEl.hidden = docked.length === 0;
+            this.workspaceEl?.classList.toggle('has-terminal-column', docked.length > 0);
+            if (docked.length) {
+                this.applyColumnWidth(this.columnWidth);
+                requestAnimationFrame(() => docked.forEach(controller => controller.fit()));
+            }
+        }
+
+        claimGeometrySlot(preferredSlot = null) {
+            let slot = Number.isInteger(preferredSlot) && preferredSlot >= 0 && preferredSlot < this.maxSessions && !this.usedSlots.has(preferredSlot)
+                ? preferredSlot
+                : 0;
+            while (this.usedSlots.has(slot) && slot < this.maxSessions) slot += 1;
+            this.usedSlots.add(slot);
+            const offset = 28 * slot;
+            const saved = this.geometrySlots[slot];
+            return {
+                slot,
+                geometry: this.clampGeometry(saved || {
+                    width: 680,
+                    height: 400,
+                    x: window.innerWidth - 700 - offset,
+                    y: window.innerHeight - 420 - offset,
+                }),
+            };
+        }
+
+        releaseGeometrySlot(slot) {
+            this.usedSlots.delete(slot);
+        }
+
+        readSessionRecords() {
+            try {
+                const stored = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || '{}');
+                if (!Array.isArray(stored.sessions)) return [];
+                const cutoff = Date.now() - (this.detachTtlSeconds * 1000) - (PERSIST_REFRESH_MS * 2);
+                const seen = new Set();
+                return stored.sessions.filter(record => {
+                    if (!record || typeof record !== 'object') return false;
+                    if (typeof record.terminalId !== 'string' || !record.terminalId || record.terminalId.length > 256) return false;
+                    if (typeof record.resumeToken !== 'string' || !record.resumeToken || record.resumeToken.length > 512) return false;
+                    if (!Number.isInteger(record.slot) || record.slot < 0 || record.slot >= 32) return false;
+                    if (!Number.isInteger(record.number) || record.number < 1 || record.number > 9999) return false;
+                    if (!Number.isFinite(record.updatedAt) || record.updatedAt < cutoff || seen.has(record.terminalId)) return false;
+                    seen.add(record.terminalId);
+                    return true;
+                }).slice(0, Math.min(32, this.maxSessions));
+            } catch (error) {
+                console.warn('Failed to read saved terminal sessions:', error);
+                return [];
+            }
+        }
+
+        writeSessionRecords(records) {
+            try {
+                localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ sessions: records.slice(0, Math.min(32, this.maxSessions)) }));
+            } catch (error) {
+                console.warn('Failed to persist terminal sessions:', error);
+            }
+        }
+
+        persistSession(controller) {
+            if (!controller.terminalId || !controller.resumeToken || controller.disposed || controller.waitingElsewhere) return;
+            const records = this.readSessionRecords().filter(record => record.terminalId !== controller.terminalId);
+            records.unshift({
+                terminalId: controller.terminalId,
+                resumeToken: controller.resumeToken,
+                slot: controller.slot,
+                number: controller.number,
+                updatedAt: Date.now(),
+            });
+            this.writeSessionRecords(records);
+        }
+
+        forgetSession(terminalId) {
+            if (!terminalId) return;
+            this.writeSessionRecords(this.readSessionRecords().filter(record => record.terminalId !== terminalId));
+        }
+
+        refreshPersistedSessions() {
+            this.controllers.forEach(controller => this.persistSession(controller));
+        }
+
+        restoreSessions() {
+            if (this.restoreAttempted || !this.enabled) return;
+            this.restoreAttempted = true;
+            const records = this.readSessionRecords().sort((left, right) => {
+                const leftOrder = this.geometrySlots[left.slot]?.docked ? this.geometrySlots[left.slot].dockOrder || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+                const rightOrder = this.geometrySlots[right.slot]?.docked ? this.geometrySlots[right.slot].dockOrder || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+                return leftOrder - rightOrder;
+            });
+            this.writeSessionRecords(records);
+            records.forEach(record => this.open(record));
+        }
+
+        topmostVisibleController() {
+            return [...this.controllers.values()]
+                .filter(controller => !controller.docked && !controller.windowEl.classList.contains('is-minimized'))
+                .sort((left, right) => right.zIndex - left.zIndex)[0] || null;
+        }
+
+        renderDock() {
+            if (!this.dockEl) return;
+            const active = this.topmostVisibleController();
+            this.dockEl.hidden = this.controllers.size === 0;
+            this.dockEl.innerHTML = [...this.controllers.values()].map(controller => {
+                const minimized = controller.windowEl.classList.contains('is-minimized');
+                const docked = controller.docked;
+                const activeClass = active === controller ? ' is-active' : '';
+                const minimizedClass = minimized ? ' is-minimized' : '';
+                const dockedClass = docked ? ' is-docked' : '';
+                const state = ['connected', 'connecting', 'error'].includes(controller.connectionState) ? controller.connectionState : '';
+                const action = docked ? 'focus docked terminal' : minimized ? 'restore' : active === controller ? 'minimize' : 'bring forward';
+                const statusLabel = docked ? 'Docked right' : minimized ? 'Minimized' : state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting' : state === 'error' ? 'Needs attention' : 'Disconnected';
+                return `<button class="terminal-dock-item${activeClass}${minimizedClass}${dockedClass}${state ? ` is-${state}` : ''}" type="button" data-terminal-key="${controller.key}" title="Terminal ${controller.number}: ${action}" aria-label="Terminal ${controller.number}, ${state || 'disconnected'}, ${action}"><span class="terminal-dock-glyph" aria-hidden="true">&gt;_${controller.number}<span class="terminal-dock-status"></span></span><span class="terminal-dock-copy"><strong>Terminal ${controller.number}</strong><small>${statusLabel}</small></span></button>`;
+            }).join('');
+        }
+
+        activateDock(key) {
+            const controller = this.controllers.get(key);
+            if (!controller) return;
+            if (controller.docked) {
+                if (controller.waitingElsewhere) {
+                    controller.waitingElsewhere = false;
+                    controller.connect();
+                }
+                this.syncTerminalColumn();
+                controller.windowEl.scrollIntoView?.({ block: 'nearest' });
+                controller.fit();
+                controller.terminal?.focus();
+                return;
+            }
+            if (controller.waitingElsewhere) {
+                controller.waitingElsewhere = false;
+                controller.connect();
+                if (controller.windowEl.classList.contains('is-minimized')) controller.toggleMinimize();
+                controller.raise();
+                return;
+            }
+            if (controller.windowEl.classList.contains('is-minimized')) {
+                controller.toggleMinimize();
+                controller.raise();
+                return;
+            }
+            if (this.topmostVisibleController() === controller) {
+                controller.toggleMinimize();
+                return;
+            }
+            controller.raise();
+            controller.terminal?.focus();
+        }
+
+        updateLauncher(announcement = '') {
+            const count = this.controllers.size;
+            this.launcherEl?.classList.toggle('active', count > 0);
+            if (this.launcherCountEl) this.launcherCountEl.textContent = String(count);
+            if (this.launcherEl) {
+                const suffix = this.enabled ? `${count} open, maximum ${this.maxSessions}` : 'unavailable';
+                this.launcherEl.setAttribute('aria-label', `New terminal, ${suffix}`);
+                this.launcherEl.title = count >= this.maxSessions ? `Terminal limit reached (${this.maxSessions})` : `New terminal (${count}/${this.maxSessions} open)`;
+            }
+            if (announcement && this.launcherStatusEl) this.launcherStatusEl.textContent = announcement;
+        }
+
+        announceLimit() {
+            const topmost = this.topmostVisibleController() || this.controllers.values().next().value;
+            topmost?.raise();
+            topmost?.setStatus(`Limit reached (${this.maxSessions} terminals)`, 'error');
+            const message = `Terminal limit reached. ${this.controllers.size} of ${this.maxSessions} terminals are open.`;
+            this.updateLauncher(message);
+            this.launcherEl.classList.remove('at-limit');
+            requestAnimationFrame(() => this.launcherEl.classList.add('at-limit'));
+            window.setTimeout(() => this.launcherEl?.classList.remove('at-limit'), 900);
+        }
+
+        open(savedSession = null) {
+            if (!this.enabled) return null;
+            if (this.controllers.size >= this.maxSessions) {
+                this.announceLimit();
+                return null;
+            }
+            let number = Number.isInteger(savedSession?.number) ? savedSession.number : this.serial + 1;
+            while (this.controllers.has(`terminal-${number}`)) number += 1;
+            this.serial = Math.max(this.serial, number);
+            const { slot, geometry } = this.claimGeometrySlot(savedSession?.slot);
+            const controller = new TerminalWindowController(this, number, slot, geometry, savedSession);
+            this.controllers.set(controller.key, controller);
+            this.hostEl.appendChild(controller.windowEl);
+            if (geometry.docked) controller.setDocked(true, false);
+            else controller.raise();
+            this.updateLauncher(`Terminal ${number} opened. ${this.controllers.size} open.`);
+            this.renderDock();
+            void controller.start();
+            return controller;
+        }
+
+        remove(controller) {
+            if (!this.controllers.delete(controller.key)) return;
+            this.releaseGeometrySlot(controller.slot);
+            this.updateLauncher(`Terminal ${controller.number} closed. ${this.controllers.size} open.`);
+            this.renderDock();
+            this.syncTerminalColumn();
+        }
+
+        raise(controller) {
+            if (controller.docked) {
+                this.renderDock();
+                return;
+            }
+            controller.zIndex = ++this.zIndex;
+            controller.windowEl.style.zIndex = String(controller.zIndex);
+            this.renderDock();
+        }
+
+        handleViewportResize() {
+            this.applyColumnWidth(this.columnWidth);
+            this.controllers.forEach(controller => controller.handleViewportResize());
+        }
+
+        applyTheme(theme) {
+            this.controllers.forEach(controller => controller.applyTheme(theme));
+        }
+
+        loadScript(id, src) {
+            const existing = document.getElementById(id);
+            if (existing) {
+                if (existing.dataset.loaded === 'true') return Promise.resolve();
+                return new Promise((resolve, reject) => {
+                    existing.addEventListener('load', resolve, { once: true });
+                    existing.addEventListener('error', reject, { once: true });
+                });
+            }
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.id = id;
+                script.src = src;
+                script.onload = () => { script.dataset.loaded = 'true'; resolve(); };
+                script.onerror = () => {
+                    script.remove();
+                    reject(new Error(`Could not load ${src}`));
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+        loadAssets() {
+            if (window.Terminal && window.FitAddon?.FitAddon) return Promise.resolve();
+            if (this.assetsPromise) return this.assetsPromise;
+            if (!document.getElementById('xterm-css')) {
+                const link = document.createElement('link');
+                link.id = 'xterm-css';
+                link.rel = 'stylesheet';
+                link.href = `/static/vendor/xterm/xterm.css?v=${XTERM_VERSION}`;
+                document.head.appendChild(link);
+            }
+            this.assetsPromise = this.loadScript('xterm-js', `/static/vendor/xterm/xterm.js?v=${XTERM_VERSION}`)
+                .then(() => this.loadScript('xterm-fit-js', `/static/vendor/xterm/xterm-addon-fit.js?v=${FIT_VERSION}`))
+                .catch(error => { this.assetsPromise = null; throw error; });
+            return this.assetsPromise;
+        }
+
+        requestAuthorization(controller) {
+            if (!this.authRequired) return Promise.resolve();
+            controller?.setStatus('Authorization required', 'connecting');
+            if (this.authPromise) return this.authPromise;
+            this.authErrorEl.textContent = '';
+            this.authEl.hidden = false;
+            this.authPromise = new Promise(resolve => { this.authResolve = resolve; });
+            requestAnimationFrame(() => this.authInputEl?.focus());
+            return this.authPromise;
+        }
+
+        async authorize() {
+            const token = this.authInputEl.value;
+            if (!token) {
+                this.authErrorEl.textContent = 'Access token required.';
+                this.authInputEl.focus();
+                return;
+            }
+            this.authSubmitEl.disabled = true;
+            this.authErrorEl.textContent = '';
+            try {
+                const response = await fetch('/api/terminal/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token }),
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || data.ok === false) throw new Error(data.error || data.message || 'Terminal authorization failed');
+                this.authRequired = false;
+                this.authEl.hidden = true;
+                const resolve = this.authResolve;
+                this.authPromise = null;
+                this.authResolve = null;
+                resolve?.();
+            } catch (error) {
+                this.authErrorEl.textContent = error.message || 'Authorization failed';
+                this.authInputEl.focus();
+            } finally {
+                this.authInputEl.value = '';
+                this.authSubmitEl.disabled = false;
+            }
+        }
+
+        async handleAuthRequired(controller) {
+            controller.setStatus('Checking authorization...', 'connecting');
+            await this.loadStatus(true);
+            if (controller.disposed || !this.enabled) return;
+            if (!this.authRequired) {
+                controller.setStatus('Terminal access denied', 'error');
+                return;
+            }
+            await this.requestAuthorization(controller);
+            if (!controller.disposed) controller.connect();
+        }
+
+        loadStatus(silent = false) {
+            if (this.statusPromise) return this.statusPromise;
+            this.statusPromise = (async () => {
+                try {
+                    const response = await fetch('/api/terminal/status', { headers: { Accept: 'application/json' } });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(data.error || data.message || `Terminal status unavailable (${response.status})`);
+                    this.enabled = data.enabled !== false && data.available !== false && data.access_allowed !== false;
+                    this.authRequired = Boolean(data.remote_auth_required ?? data.auth_required ?? data.requires_auth);
+                    this.maxSessions = Math.max(1, Math.min(32, Number(data.max_sessions) || 4));
+                    this.detachTtlSeconds = Math.max(1, Math.min(86400, Number(data.detach_ttl_seconds) || 60));
+                    this.geometrySlots = this.geometrySlots.slice(0, this.maxSessions);
+                    this.launcherEl.hidden = !this.enabled;
+                    this.disabledMessageEl.hidden = this.enabled || !data.running_in_docker;
+                    if (!this.enabled) {
+                        this.disabledMessageEl.textContent = data.access_reason || data.explanation || data.reason || data.message || 'Terminal unavailable';
+                    }
+                    this.updateLauncher();
+                    this.restoreSessions();
+                    return data;
+                } catch (error) {
+                    this.enabled = false;
+                    this.launcherEl.hidden = true;
+                    this.disabledMessageEl.hidden = false;
+                    this.disabledMessageEl.textContent = silent ? 'Terminal authorization unavailable' : 'Terminal unavailable';
+                    this.updateLauncher();
+                    return null;
+                } finally {
+                    this.statusPromise = null;
+                }
+            })();
+            return this.statusPromise;
+        }
+    }
+
+    class TerminalWindowController {
+        constructor(manager, number, slot, geometry, savedSession = null) {
+            this.manager = manager;
+            this.number = number;
+            this.key = `terminal-${number}`;
+            this.slot = slot;
+            this.geometry = geometry;
+            this.windowEl = manager.templateEl.content.firstElementChild.cloneNode(true);
+            this.headerEl = this.role('header');
+            this.bodyEl = this.role('body');
+            this.screenEl = this.role('screen');
+            this.titleEl = this.role('title');
+            this.statusEl = this.role('status');
+            this.dockButtonEl = this.role('dock');
+            this.minimizeEl = this.role('minimize');
+            this.maximizeEl = this.role('maximize');
+            this.closeEl = this.role('close');
+            this.terminal = null;
+            this.fitAddon = null;
+            this.socket = null;
+            this.terminalId = savedSession?.terminalId || null;
+            this.resumeToken = savedSession?.resumeToken || null;
+            this.reconnectTimer = null;
+            this.reconnectAttempt = 0;
+            this.retryFreshAfterMissing = false;
+            this.restoring = Boolean(this.terminalId && this.resumeToken);
+            this.waitingElsewhere = false;
+            this.suppressReconnect = false;
+            this.docked = false;
+            this.maximized = false;
+            this.restoreGeometry = null;
+            this.lastResize = '';
+            this.dragState = null;
+            this.disposed = false;
+            this.zIndex = 0;
+            this.connectionState = 'connecting';
+            this.configureAccessibility();
+            this.applyGeometry(geometry);
+            this.bindEvents();
+            this.resizeObserver = new ResizeObserver(() => {
+                if (!this.docked && !this.maximized && !this.disposed) this.persistGeometry();
+                this.fit();
+            });
+            this.resizeObserver.observe(this.windowEl);
+        }
+
+        role(name) {
+            return this.windowEl.querySelector(`[data-terminal-role="${name}"]`);
+        }
+
+        configureAccessibility() {
+            const windowId = `terminal-window-${this.number}`;
+            const titleId = `${windowId}-title`;
+            const statusId = `${windowId}-status`;
+            const screenId = `${windowId}-screen`;
+            this.windowEl.id = windowId;
+            this.titleEl.id = titleId;
+            this.statusEl.id = statusId;
+            this.screenEl.id = screenId;
+            this.titleEl.textContent = `Terminal ${this.number}`;
+            this.windowEl.setAttribute('aria-labelledby', titleId);
+            this.windowEl.setAttribute('aria-describedby', statusId);
+            this.screenEl.setAttribute('aria-label', `Interactive terminal ${this.number}`);
+            this.updateDockButton();
+            this.minimizeEl.setAttribute('aria-label', `Minimize terminal ${this.number}`);
+            this.maximizeEl.setAttribute('aria-label', `Maximize terminal ${this.number}`);
+            this.closeEl.setAttribute('aria-label', `Terminate terminal ${this.number}`);
+        }
+
+        bindEvents() {
+            this.windowEl.addEventListener('pointerdown', () => this.raise());
+            for (const eventName of ['keydown', 'keyup', 'keypress']) {
+                this.windowEl.addEventListener(eventName, event => event.stopPropagation());
+            }
+            this.dockButtonEl.addEventListener('click', () => this.toggleDocked());
+            this.minimizeEl.addEventListener('click', () => this.toggleMinimize());
+            this.maximizeEl.addEventListener('click', () => this.toggleMaximize());
+            this.closeEl.addEventListener('click', () => this.close());
+            this.headerEl.addEventListener('pointerdown', event => this.startDrag(event));
+            this.headerEl.addEventListener('pointermove', event => this.drag(event));
+            this.headerEl.addEventListener('pointerup', event => this.endDrag(event));
+            this.headerEl.addEventListener('pointercancel', event => this.endDrag(event));
+        }
+
+        setStatus(message, state = '') {
+            this.statusEl.textContent = message;
+            this.statusEl.className = `terminal-connection-status ${state}`.trim();
+            this.connectionState = state;
+            this.manager.renderDock();
+        }
+
+        async start() {
+            try {
+                if (this.manager.authRequired) await this.manager.requestAuthorization(this);
+                if (this.disposed) return;
+                this.setStatus('Loading terminal...', 'connecting');
+                await this.manager.loadAssets();
+                if (this.disposed) return;
+                this.terminal = new window.Terminal({
+                    allowProposedApi: false,
+                    convertEol: false,
+                    cursorBlink: true,
+                    fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', monospace",
+                    fontSize: 13,
+                    scrollback: 5000,
+                    theme: terminalTheme(),
+                });
+                this.fitAddon = new window.FitAddon.FitAddon();
+                this.terminal.loadAddon(this.fitAddon);
+                this.terminal.open(this.screenEl);
+                this.terminal.onData(data => this.sendControl({ type: 'input', data }));
+                this.connect();
+                requestAnimationFrame(() => { this.fit(); this.terminal?.focus(); });
+            } catch (error) {
+                if (!this.disposed) this.setStatus(error.message || 'Terminal failed to load', 'error');
+            }
+        }
+
+        applyTheme(theme) {
+            if (this.terminal) this.terminal.options.theme = terminalTheme(theme);
+        }
+
+        websocketUrl() {
+            const url = new URL('/api/terminal/ws', window.location.href);
+            url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            if (this.terminalId) url.searchParams.set('terminal_id', this.terminalId);
+            if (this.resumeToken) url.searchParams.set('resume_token', this.resumeToken);
+            return url.toString();
+        }
+
+        connect() {
+            if (this.disposed || (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING))) return;
+            this.suppressReconnect = false;
+            this.setStatus(this.terminalId && this.resumeToken ? 'Resuming...' : 'Connecting...', 'connecting');
+            try {
+                const candidate = new WebSocket(this.websocketUrl());
+                this.socket = candidate;
+                candidate.binaryType = 'arraybuffer';
+                candidate.addEventListener('open', () => {
+                    if (this.socket !== candidate || this.disposed) return;
+                    this.reconnectAttempt = 0;
+                    this.setStatus('Connected', 'connected');
+                    this.lastResize = '';
+                    this.fit();
+                });
+                candidate.addEventListener('message', event => {
+                    if (this.socket === candidate && !this.disposed) this.writeServerMessage(event.data);
+                });
+                candidate.addEventListener('error', () => {
+                    if (this.socket === candidate && !this.disposed) this.setStatus('Connection error', 'error');
+                });
+                candidate.addEventListener('close', event => this.handleSocketClose(candidate, event));
+            } catch (error) {
+                this.setStatus(error.message || 'Connection failed', 'error');
+                this.scheduleReconnect();
+            }
+        }
+
+        handleSocketClose(candidate, event) {
+            if (this.socket !== candidate || this.disposed) return;
+            this.socket = null;
+            if (this.suppressReconnect) return;
+            if (event.code === 4429) {
+                this.setStatus(event.reason || `Server limit reached (${this.manager.maxSessions})`, 'error');
+                this.manager.updateLauncher('The server terminal session limit was reached.');
+                return;
+            }
+            if (event.code === 4404) {
+                this.expireSavedSession(event.reason || 'Terminal expired or dashboard restarted');
+                return;
+            }
+            if (event.code === 4403) {
+                if (/resume token/i.test(event.reason || '')) {
+                    this.expireSavedSession(event.reason || 'Saved terminal recovery capability is invalid');
+                    return;
+                }
+                this.setStatus(event.reason || 'Authorization required', 'error');
+                void this.manager.handleAuthRequired(this);
+                return;
+            }
+            if (event.code === 4409) {
+                this.waitingElsewhere = true;
+                this.setStatus('Open in another dashboard window; click dock to retry', 'error');
+                return;
+            }
+            this.scheduleReconnect();
+        }
+
+        expireSavedSession(errorMessage) {
+            this.manager.forgetSession(this.terminalId);
+            this.terminalId = null;
+            this.resumeToken = null;
+            this.restoring = false;
+            this.suppressReconnect = true;
+            this.setStatus(errorMessage, 'error');
+        }
+
+        scheduleReconnect() {
+            if (this.disposed || this.suppressReconnect || this.reconnectTimer) return;
+            const delay = Math.min(10000, 500 * (2 ** this.reconnectAttempt));
+            this.reconnectAttempt += 1;
+            this.setStatus(`Reconnecting in ${Math.ceil(delay / 1000)}s`, 'connecting');
+            this.reconnectTimer = window.setTimeout(() => {
+                this.reconnectTimer = null;
+                this.connect();
+            }, delay);
+        }
+
+        rememberServerCredentials(data) {
+            this.terminalId = data.terminal_id || data.terminalId || data.id || this.terminalId;
+            this.resumeToken = data.resume_token || data.resumeToken || data.token || this.resumeToken;
+        }
+
+        writeServerMessage(data) {
+            if (!this.terminal) return;
+            if (data instanceof ArrayBuffer) {
+                this.terminal.write(new Uint8Array(data));
+                return;
+            }
+            if (typeof Blob !== 'undefined' && data instanceof Blob) {
+                const owner = this.terminal;
+                data.arrayBuffer().then(buffer => {
+                    if (!this.disposed && this.terminal === owner) owner.write(new Uint8Array(buffer));
+                });
+                return;
+            }
+            let message;
+            try {
+                message = JSON.parse(data);
+            } catch (error) {
+                this.terminal.write(String(data));
+                return;
+            }
+            this.rememberServerCredentials(message);
+            if (message.type === 'ready' || message.type === 'connected' || message.type === 'session') {
+                this.reconnectAttempt = 0;
+                this.retryFreshAfterMissing = false;
+                this.restoring = false;
+                this.waitingElsewhere = false;
+                this.manager.persistSession(this);
+                this.setStatus('Connected', 'connected');
+            } else if (message.type === 'output' && typeof message.data === 'string') {
+                this.terminal.write(message.encoding === 'base64' ? Uint8Array.from(atob(message.data), char => char.charCodeAt(0)) : message.data);
+            } else if (message.type === 'error') {
+                this.setStatus(message.message || message.error || 'Terminal error', 'error');
+            } else if (message.type === 'exit' || message.type === 'closed') {
+                this.suppressReconnect = true;
+                this.manager.forgetSession(this.terminalId);
+                this.setStatus(`Exited${message.code === undefined ? '' : ` (${message.code})`}`, 'error');
+            }
+        }
+
+        sendControl(payload) {
+            if (this.socket?.readyState !== WebSocket.OPEN) return false;
+            this.socket.send(JSON.stringify(payload));
+            return true;
+        }
+
+        fit() {
+            if (!this.terminal || !this.fitAddon || this.disposed || this.windowEl.classList.contains('is-minimized')) return;
+            try {
+                this.fitAddon.fit();
+                const dimensions = `${this.terminal.cols}x${this.terminal.rows}`;
+                if (dimensions !== this.lastResize && this.terminal.cols > 0 && this.terminal.rows > 0) {
+                    if (this.sendControl({ type: 'resize', cols: this.terminal.cols, rows: this.terminal.rows })) {
+                        this.lastResize = dimensions;
+                    }
+                }
+            } catch (error) {
+                console.warn('Terminal fit failed:', error);
+            }
+        }
+
+        currentGeometry() {
+            const rect = this.windowEl.getBoundingClientRect();
+            return this.manager.clampGeometry({
+                x: rect.left,
+                y: rect.top,
+                width: rect.width,
+                height: this.windowEl.classList.contains('is-minimized') ? (this.restoreGeometry?.height || this.geometry.height) : rect.height,
+                minimized: this.windowEl.classList.contains('is-minimized'),
+                docked: false,
+            });
+        }
+
+        persistGeometry() {
+            if (this.maximized || this.disposed) return;
+            this.geometry = this.docked
+                ? this.manager.clampGeometry({ ...this.geometry, minimized: false, docked: true })
+                : this.currentGeometry();
+            this.manager.persistGeometry(this.slot, this.geometry);
+        }
+
+        applyGeometry(value) {
+            this.geometry = this.manager.clampGeometry(value);
+            if (this.geometry.minimized) this.restoreGeometry = { ...this.geometry, minimized: false };
+            this.windowEl.style.left = `${this.geometry.x}px`;
+            this.windowEl.style.top = `${this.geometry.y}px`;
+            this.windowEl.style.width = `${this.geometry.width}px`;
+            this.windowEl.style.height = `${this.geometry.height}px`;
+            this.setMinimized(this.geometry.minimized, false);
+        }
+
+        updateDockButton() {
+            if (!this.dockButtonEl) return;
+            const label = this.docked ? `Pop terminal ${this.number} out` : `Dock terminal ${this.number} to the right`;
+            this.dockButtonEl.title = this.docked ? 'Pop terminal out' : 'Dock terminal to the right';
+            this.dockButtonEl.setAttribute('aria-label', label);
+            this.dockButtonEl.setAttribute('aria-pressed', String(this.docked));
+        }
+
+        setDocked(docked, persist = true) {
+            if (this.docked === docked) return;
+            if (docked) {
+                if (this.maximized) this.toggleMaximize();
+                if (this.windowEl.classList.contains('is-minimized')) this.setMinimized(false);
+                if (persist) this.persistGeometry();
+                this.docked = true;
+                this.geometry = this.manager.clampGeometry({
+                    ...this.geometry,
+                    minimized: false,
+                    docked: true,
+                    dockOrder: this.geometry.dockOrder || ++this.manager.dockSerial,
+                });
+                this.windowEl.classList.add('is-docked');
+                this.manager.columnStackEl?.appendChild(this.windowEl);
+                this.updateDockButton();
+                if (persist) this.manager.persistGeometry(this.slot, this.geometry);
+                this.manager.syncTerminalColumn();
+                this.manager.renderDock();
+                requestAnimationFrame(() => { this.fit(); this.terminal?.focus(); });
+                return;
+            }
+
+            this.docked = false;
+            this.geometry = this.manager.clampGeometry({ ...this.geometry, minimized: false, docked: false, dockOrder: null });
+            this.windowEl.classList.remove('is-docked');
+            this.manager.hostEl.appendChild(this.windowEl);
+            this.updateDockButton();
+            this.applyGeometry(this.geometry);
+            if (persist) this.manager.persistGeometry(this.slot, this.geometry);
+            this.manager.syncTerminalColumn();
+            this.raise();
+            requestAnimationFrame(() => { this.fit(); this.terminal?.focus(); });
+        }
+
+        toggleDocked() {
+            this.setDocked(!this.docked);
+        }
+
+        setMinimized(minimized, persist = true) {
+            this.windowEl.classList.toggle('is-minimized', minimized);
+            this.bodyEl.hidden = minimized;
+            this.bodyEl.inert = minimized;
+            this.bodyEl.setAttribute('aria-hidden', String(minimized));
+            this.minimizeEl.setAttribute('aria-label', `${minimized ? 'Restore' : 'Minimize'} terminal ${this.number}`);
+            this.minimizeEl.title = minimized ? 'Restore terminal' : 'Minimize terminal';
+            this.minimizeEl.innerHTML = minimized ? '&#9633;' : '&#8722;';
+            if (persist && minimized && this.restoreGeometry) {
+                this.geometry = this.manager.clampGeometry({ ...this.restoreGeometry, minimized: true });
+                this.manager.persistGeometry(this.slot, this.geometry);
+            } else if (persist) {
+                this.persistGeometry();
+            }
+            this.manager.renderDock();
+        }
+
+        toggleMinimize() {
+            if (this.docked) return;
+            if (this.maximized) this.toggleMaximize();
+            const minimized = !this.windowEl.classList.contains('is-minimized');
+            if (minimized) this.restoreGeometry = this.currentGeometry();
+            this.setMinimized(minimized);
+            if (!minimized) requestAnimationFrame(() => { this.fit(); this.terminal?.focus(); });
+        }
+
+        toggleMaximize() {
+            if (this.docked) return;
+            if (!this.maximized) {
+                if (this.windowEl.classList.contains('is-minimized')) this.setMinimized(false);
+                this.restoreGeometry = this.currentGeometry();
+                this.maximized = true;
+                this.windowEl.classList.add('is-maximized');
+                this.maximizeEl.setAttribute('aria-label', `Restore terminal ${this.number}`);
+                this.maximizeEl.title = 'Restore terminal window';
+            } else {
+                this.maximized = false;
+                this.windowEl.classList.remove('is-maximized');
+                this.applyGeometry(this.restoreGeometry || this.geometry);
+                this.maximizeEl.setAttribute('aria-label', `Maximize terminal ${this.number}`);
+                this.maximizeEl.title = 'Maximize terminal';
+            }
+            requestAnimationFrame(() => { this.fit(); this.terminal?.focus(); });
+        }
+
+        handleViewportResize() {
+            if (this.docked) {
+                this.fit();
+                return;
+            }
+            if (!this.maximized) {
+                this.applyGeometry(this.windowEl.classList.contains('is-minimized') ? this.geometry : this.currentGeometry());
+            }
+            this.fit();
+        }
+
+        startDrag(event) {
+            if (event.button !== 0 || event.target.closest('button') || this.maximized || this.docked) return;
+            const rect = this.windowEl.getBoundingClientRect();
+            this.dragState = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: rect.left, y: rect.top };
+            this.headerEl.setPointerCapture(event.pointerId);
+            this.raise();
+            event.preventDefault();
+        }
+
+        drag(event) {
+            if (!this.dragState || this.dragState.pointerId !== event.pointerId) return;
+            const rect = this.windowEl.getBoundingClientRect();
+            const next = this.manager.clampGeometry({
+                x: this.dragState.x + event.clientX - this.dragState.startX,
+                y: this.dragState.y + event.clientY - this.dragState.startY,
+                width: rect.width,
+                height: rect.height,
+                minimized: this.windowEl.classList.contains('is-minimized'),
+            });
+            this.windowEl.style.left = `${next.x}px`;
+            this.windowEl.style.top = `${next.y}px`;
+        }
+
+        endDrag(event) {
+            if (!this.dragState || this.dragState.pointerId !== event.pointerId) return;
+            this.dragState = null;
+            if (this.headerEl.hasPointerCapture?.(event.pointerId)) this.headerEl.releasePointerCapture(event.pointerId);
+            this.persistGeometry();
+        }
+
+        raise() {
+            this.manager.raise(this);
+        }
+
+        close() {
+            if (this.disposed) return;
+            this.persistGeometry();
+            this.manager.forgetSession(this.terminalId);
+            this.disposed = true;
+            this.suppressReconnect = true;
+            window.clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+            this.resizeObserver?.disconnect();
+            const closingSocket = this.socket;
+            this.socket = null;
+            if (closingSocket?.readyState === WebSocket.OPEN) {
+                closingSocket.send(JSON.stringify({ type: 'close' }));
+                closingSocket.close(1000, 'Terminal closed by user');
+            } else if (closingSocket?.readyState === WebSocket.CONNECTING) {
+                closingSocket.addEventListener('open', () => {
+                    closingSocket.send(JSON.stringify({ type: 'close' }));
+                    closingSocket.close(1000, 'Terminal closed by user');
+                }, { once: true });
+                window.setTimeout(() => {
+                    if (closingSocket.readyState === WebSocket.CONNECTING) closingSocket.close();
+                }, 3000);
+            } else {
+                closingSocket?.close(1000, 'Terminal closed by user');
+            }
+            this.terminal?.dispose();
+            this.terminal = null;
+            this.fitAddon = null;
+            this.terminalId = null;
+            this.resumeToken = null;
+            this.windowEl.remove();
+            this.manager.remove(this);
+        }
+    }
+
+    window.BrowserTerminalManager = BrowserTerminalManager;
+    window.TerminalWindowController = TerminalWindowController;
+    const manager = new BrowserTerminalManager();
+    if (!manager.initialize()) return;
+    window.openTerminalWindow = () => manager.open();
+    window.hermesTerminalManager = manager;
+    window.hermesTerminalController = manager;
+})();
 
 userInput.focus();
 

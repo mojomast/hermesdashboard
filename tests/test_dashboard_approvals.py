@@ -25,7 +25,8 @@ def test_approval_passphrase_frontend_contract():
     assert "APPROVAL_PASSPHRASE_STORAGE_KEY" in source
     assert "function currentApprovalPassphrase()" in source
     assert "passphrase_required" in source
-    assert "body: JSON.stringify({ session_id: sessionId, decision, all: Boolean(options.all), passphrase })" in source
+    assert "request_id: options.requestId || undefined" in source
+    assert "always_scope: options.alwaysScope || undefined" in source
 
 
 def test_approval_controls_are_inline_not_top_context_panel():
@@ -35,11 +36,76 @@ def test_approval_controls_are_inline_not_top_context_panel():
     assert 'id="approval-list"' not in source
     assert "function renderApprovalChatBubble(approvals)" in source
     assert "id = 'approval-chat-bubble'" in source
-    assert "Approve</button>" in source
+    assert "Approve Once</button>" in source
+    assert "Approve Session</button>" in source
+    assert "Always Exact</button>" in source
+    assert "Always Prefix</button>" in source
+    assert "Always This Type</button>" in source
+    assert "Prefix: <code>" in source
     assert "Deny</button>" in source
+    assert "data-approval-decision=\"once\"" in source
+    assert "data-approval-decision=\"session\"" in source
+    assert "Boolean(approval.allow_session)" in source
+    assert "Boolean(approval.allow_permanent)" in source
+    assert "data-approval-decision=\"deny\"" in source
+    assert "button.addEventListener('click'" in source
+    assert "dataset.approvalSignature === signature" in source
+    assert 'onclick="respondToApproval(' not in source
     assert "Auto-approve controls live in the gear/options menu" in source
     assert 'id="approval-auto-toggle"' in source
     assert 'id="approval-auto-minutes"' in source
+    assert "activeRun?.approvalSessionId" in source
+    assert "parsed.approval_session_id" in source
+
+
+def test_chat_stream_enables_isolated_blocking_approvals(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        headers = {
+            "X-Hermes-Session-Id": "chat-session-1",
+            "X-Hermes-Approval-Session-Id": "approval-run-1",
+        }
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            yield "data: [DONE]"
+
+    class FakeStream:
+        def __enter__(self):
+            return FakeResponse()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url, headers=None, json=None):
+            captured["headers"] = headers
+            return FakeStream()
+
+    state = {"session_id": None, "stop_requested": False, "done": False, "events": []}
+    monkeypatch.setitem(dashboard_app.ACTIVE_RUNS, "dashboard-run-1", state)
+    monkeypatch.setattr(dashboard_app.httpx, "Client", FakeClient)
+
+    dashboard_app._run_chat_stream_sync("dashboard-run-1", [], None)
+
+    assert captured["headers"]["X-Hermes-Blocking-Approvals"] == "true"
+    assert state["approval_session_id"] == "approval-run-1"
+    run_state = json.loads(state["events"][0]["data"])
+    assert run_state["approval_session_id"] == "approval-run-1"
+    dashboard_app.ACTIVE_RUNS.pop("dashboard-run-1", None)
 
 
 def test_configured_approval_passphrase_reads_config_without_restart(monkeypatch):
@@ -95,11 +161,24 @@ def test_approval_respond_strips_passphrase_before_proxy(monkeypatch):
 
     response = asyncio.run(
         dashboard_app.dashboard_approvals_respond_endpoint(
-            FakeJsonRequest({"session_id": "s1", "decision": "session", "passphrase": "open-sesame"})
+            FakeJsonRequest(
+                {
+                    "session_id": "s1",
+                    "request_id": "req-1",
+                    "decision": "always",
+                    "always_scope": "exact",
+                    "passphrase": "open-sesame",
+                }
+            )
         )
     )
     payload = response_json(response)
 
     assert response.status_code == 200
     assert payload == {"ok": True, "resolved": 1}
-    assert captured["json"] == {"session_id": "s1", "decision": "session"}
+    assert captured["json"] == {
+        "session_id": "s1",
+        "request_id": "req-1",
+        "decision": "always",
+        "always_scope": "exact",
+    }

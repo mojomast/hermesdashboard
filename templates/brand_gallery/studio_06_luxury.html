@@ -1,0 +1,153 @@
+<style>
+    .s6-gallery {
+        --s6-ivory: #eee7d8;
+        margin-top: 52px;
+    }
+    .s6-heading { margin: 0 0 24px; }
+    .s6-kicker { color: #d2b46f; font: 700 10px/1 ui-monospace, monospace; letter-spacing: .22em; text-transform: uppercase; }
+    .s6-title { margin: 9px 0 6px; color: #f5efe3; font: 600 clamp(25px, 3vw, 39px)/1.05 Georgia, serif; letter-spacing: -.035em; }
+    .s6-deck { margin: 0; max-width: 660px; color: #8c92a8; font-size: 13px; line-height: 1.6; }
+    .s6-gallery .stage { position: relative; }
+    .s6-gallery .brand { position: relative; z-index: 2; }
+    .s6-gallery .concept::after { content: "HEADER FIT  280 x 48"; }
+
+    .s6-leather { background: radial-gradient(ellipse at 48% 35%, #24211f, #090909 70%); }
+    .s6-leather::before { content: ""; position: absolute; inset: 0; opacity: .36; background: repeating-radial-gradient(ellipse at 30% 40%, transparent 0 4px, rgba(255,255,255,.025) 5px, transparent 7px); }
+    .s6-leather .s6-leather-panel { fill: #11100f; stroke: #34302b; stroke-width: 1; filter: url(#s6-leather-shadow); }
+    .s6-leather .s6-leather-stitch { fill: none; stroke: #8e7853; stroke-width: 1; stroke-dasharray: 2 5; opacity: .58; }
+    .s6-leather .s6-leather-main { fill: #0b0b0a; stroke: #4a443b; stroke-width: .65; font: 700 34px/1 Georgia, serif; letter-spacing: 1px; filter: url(#s6-leather-emboss); }
+    .s6-leather .s6-leather-sub { fill: #87775d; font: 600 8px/1 ui-monospace, monospace; letter-spacing: 4px; }
+
+    .s6-silk { color: #271b20; background: linear-gradient(115deg, #b38a93, #ead5d4 37%, #aa7c89 65%, #e3c7c8); }
+    .s6-silk::before { content: ""; position: absolute; inset: 0; opacity: .22; background: repeating-linear-gradient(93deg, transparent 0 2px, #fff 3px, transparent 4px); }
+    .s6-silk::after, .s6-perfume::after, .s6-pearl::after, .s6-vellum::after, .s6-receipt::after, .s6-stone::after { color: rgba(20,12,15,.38) !important; }
+    .s6-silk .meta, .s6-perfume .meta, .s6-pearl .meta, .s6-vellum .meta, .s6-receipt .meta, .s6-stone .meta { color: #1d1718; }
+    .s6-silk .tags, .s6-perfume .tags, .s6-pearl .tags, .s6-vellum .tags, .s6-receipt .tags, .s6-stone .tags { color: rgba(20,12,15,.55); }
+    .s6-silk .s6-silk-label { fill: #ead9d6; stroke: #6e4c56; stroke-width: 1; filter: url(#s6-silk-soft); }
+    .s6-silk .s6-silk-thread { fill: none; stroke: #795763; stroke-width: .8; stroke-dasharray: 1 3; }
+    .s6-silk .s6-silk-main { fill: #2b1d22; font: 600 31px/1 Georgia, serif; letter-spacing: 1px; }
+    .s6-silk .s6-silk-sub { fill: #76525e; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 4px; }
+
+    .s6-perfume { background: #d8d0bf; }
+    .s6-perfume::before { content: ""; position: absolute; inset: 13px; border: 1px solid rgba(70,54,34,.16); background: radial-gradient(circle at 20% 20%, rgba(255,255,255,.4), transparent 35%), repeating-linear-gradient(0deg, rgba(50,35,18,.018) 0 1px, transparent 1px 4px); }
+    .s6-perfume .s6-perfume-rule { stroke: #8f6e32; stroke-width: .8; }
+    .s6-perfume .s6-perfume-seal { fill: none; stroke: #8f6e32; stroke-width: 1; }
+    .s6-perfume .s6-perfume-h { fill: #69502b; font: 500 24px/1 Georgia, serif; }
+    .s6-perfume .s6-perfume-main { fill: #231f19; font: 500 29px/1 Georgia, serif; letter-spacing: 4px; }
+    .s6-perfume .s6-perfume-sub { fill: #69593f; font: 600 7px/1 ui-monospace, monospace; letter-spacing: 4px; }
+
+    .s6-hallmark { background: radial-gradient(circle at 50% 42%, #30291f, #090909 72%); }
+    .s6-hallmark .s6-hallmark-chain { fill: none; stroke: #bda66d; stroke-width: 1.2; opacity: .32; }
+    .s6-hallmark .s6-hallmark-plate { fill: #bca568; stroke: #f2df9d; stroke-width: .8; filter: url(#s6-hallmark-shadow); }
+    .s6-hallmark .s6-hallmark-inner { fill: none; stroke: #5c4a27; stroke-width: 1; }
+    .s6-hallmark .s6-hallmark-main { fill: #211b10; font: 700 26px/1 Georgia, serif; letter-spacing: 1px; }
+    .s6-hallmark .s6-hallmark-sub { fill: #584723; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 3px; }
+
+    .s6-pearl { background: linear-gradient(135deg, #cdc9ba, #f0e8d9 38%, #b8c9c5 72%, #e7d6d8); }
+    .s6-pearl::before { content: ""; position: absolute; width: 320px; height: 120px; border-radius: 50%; background: conic-gradient(from 30deg, rgba(255,130,185,.24), rgba(100,221,212,.2), rgba(255,244,180,.3), rgba(175,147,255,.2), rgba(255,130,185,.24)); filter: blur(25px); }
+    .s6-pearl .s6-pearl-shell { fill: url(#s6-pearl-inlay); stroke: rgba(73,68,58,.45); stroke-width: 1; filter: url(#s6-pearl-depth); }
+    .s6-pearl .s6-pearl-main { fill: #292a27; font: 600 31px/1 Georgia, serif; letter-spacing: 1px; }
+    .s6-pearl .s6-pearl-sub { fill: #4c5550; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 4px; }
+
+    .s6-vellum { background: linear-gradient(135deg, #ada99c, #ded9c8); }
+    .s6-vellum::before { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 28%, rgba(255,255,255,.4) 29%, transparent 32%), repeating-linear-gradient(82deg, rgba(84,70,45,.045) 0 1px, transparent 1px 7px); }
+    .s6-vellum .s6-vellum-sheet { fill: rgba(246,240,218,.66); stroke: rgba(88,72,44,.28); filter: url(#s6-vellum-shadow); }
+    .s6-vellum .s6-vellum-fold { fill: none; stroke: rgba(255,255,255,.8); stroke-width: 1; }
+    .s6-vellum .s6-vellum-main { fill: #443a2c; font: 600 31px/1 Georgia, serif; letter-spacing: 1px; }
+    .s6-vellum .s6-vellum-sub { fill: #776a54; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 4px; }
+
+    .s6-ceramic { background: radial-gradient(circle at 50% 34%, #e8e1ce, #827a6c 75%); }
+    .s6-ceramic .s6-ceramic-disc { fill: #d8d0bd; stroke: #bdb39e; stroke-width: 2; filter: url(#s6-ceramic-shadow); }
+    .s6-ceramic .s6-ceramic-ring { fill: none; stroke: #b4a993; stroke-width: 1; stroke-dasharray: 2 3; }
+    .s6-ceramic .s6-ceramic-mark { fill: none; stroke: #24453f; stroke-width: 3; stroke-linecap: round; }
+    .s6-ceramic .s6-ceramic-main { fill: #24453f; font: 700 29px/1 Georgia, serif; letter-spacing: 1px; }
+    .s6-ceramic .s6-ceramic-sub { fill: #64736b; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 3px; }
+
+    .s6-receipt { background: #d8d2c3; }
+    .s6-receipt::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 5px, rgba(32,43,76,.035) 6px); }
+    .s6-receipt .s6-receipt-paper { fill: #e8e2d2; stroke: #9d978b; stroke-width: .8; filter: url(#s6-receipt-shadow); }
+    .s6-receipt .s6-receipt-copy { fill: #28345e; font: 700 27px/1 ui-monospace, monospace; letter-spacing: -1px; }
+    .s6-receipt .s6-receipt-sub { fill: #5b6483; font: 600 7px/1 ui-monospace, monospace; letter-spacing: 3px; }
+    .s6-receipt .s6-receipt-rule { stroke: #536082; stroke-width: .7; stroke-dasharray: 4 3; }
+
+    .s6-stone { background: linear-gradient(145deg, #c8c2b6, #807b72); }
+    .s6-stone::before { content: ""; position: absolute; inset: 0; opacity: .35; background: radial-gradient(circle at 18% 30%, #fff 0 1px, transparent 2px), radial-gradient(circle at 74% 70%, #403f3b 0 1px, transparent 2px); background-size: 19px 23px, 31px 29px; }
+    .s6-stone .s6-stone-slab { fill: url(#s6-stone-face); stroke: #77736b; stroke-width: 1; filter: url(#s6-stone-shadow); }
+    .s6-stone .s6-stone-main { fill: #77736b; stroke: #ddd8cc; stroke-width: .4; font: 600 29px/1 Georgia, serif; letter-spacing: 3px; filter: url(#s6-stone-cut); }
+    .s6-stone .s6-stone-sub { fill: #6d6961; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 4px; }
+
+    .s6-foil { background: #101115; }
+    .s6-foil::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at center, rgba(96,80,150,.2), transparent 55%); }
+    .s6-foil .s6-foil-seal { fill: url(#s6-foil-spectrum); stroke: rgba(255,255,255,.7); stroke-width: .7; filter: url(#s6-foil-glow); }
+    .s6-foil .s6-foil-guilloche { fill: none; stroke: rgba(29,25,34,.55); stroke-width: .65; }
+    .s6-foil .s6-foil-main { fill: #111217; font: 800 28px/1 system-ui; letter-spacing: -1px; }
+    .s6-foil .s6-foil-sub { fill: #29212f; font: 700 7px/1 ui-monospace, monospace; letter-spacing: 3px; }
+    .s6-foil .s6-foil-flash { fill: rgba(255,255,255,.5); animation: s6-foil-shift 5s ease-in-out infinite alternate; }
+
+    @keyframes s6-foil-shift { to { transform: translateX(130px); opacity: .15; } }
+    @media (max-width: 520px) {
+        .s6-gallery { margin-top: 34px; }
+        .s6-heading { margin-bottom: 18px; }
+        .s6-gallery .brand { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) { .s6-foil .s6-foil-flash { animation: none; } }
+</style>
+
+<section class="s6-gallery" aria-labelledby="s6-gallery-title">
+    <header class="s6-heading">
+        <div class="s6-kicker">Studio 06 / Material signatures</div>
+        <h2 class="s6-title" id="s6-gallery-title">Luxury, made tactile.</h2>
+        <p class="s6-deck">Ten compact-header marks shaped by atelier materials, ceremonial packaging, and permanent inscriptions.</p>
+    </header>
+    <div class="grid">
+        <article class="concept s6-leather">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Embossed black leather, Hermes Dashboard"><defs><filter id="s6-leather-shadow"><feDropShadow dx="0" dy="8" stdDeviation="7" flood-opacity=".6"/></filter><filter id="s6-leather-emboss"><feDropShadow dx="0" dy="1" stdDeviation=".3" flood-color="#777064" flood-opacity=".55"/></filter></defs><rect class="s6-leather-panel" x="28" y="25" width="384" height="68" rx="10"/><rect class="s6-leather-stitch" x="35" y="32" width="370" height="54" rx="7"/><text class="s6-leather-main" x="57" y="65">Hermes Dashboard</text><text class="s6-leather-sub" x="60" y="80">HAND FINISHED / PARIS</text></svg></div>
+            <div class="meta"><div><div class="number">61</div><div class="name">Noir Saddlery</div></div><div class="tags">embossed leather<br>quiet tactility</div></div>
+        </article>
+
+        <article class="concept s6-silk">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Silk fashion label, Hermes Dashboard"><defs><filter id="s6-silk-soft"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#52343d" flood-opacity=".25"/></filter></defs><path class="s6-silk-label" d="M42 29 Q220 19 398 29 L389 88 Q220 98 51 88Z"/><path class="s6-silk-thread" d="M51 35 Q220 26 389 35M58 82Q220 91 382 82"/><text class="s6-silk-main" x="74" y="64">Hermes Dashboard</text><text class="s6-silk-sub" x="136" y="80">MAISON NUMERIQUE</text></svg></div>
+            <div class="meta"><div><div class="number">62</div><div class="name">Maison Silk Label</div></div><div class="tags">woven silk<br>fashion provenance</div></div>
+        </article>
+
+        <article class="concept s6-perfume">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Perfume carton, Hermes Dashboard"><line class="s6-perfume-rule" x1="48" y1="35" x2="174" y2="35"/><circle class="s6-perfume-seal" cx="220" cy="35" r="17"/><text class="s6-perfume-h" x="211" y="43">H</text><line class="s6-perfume-rule" x1="266" y1="35" x2="392" y2="35"/><text class="s6-perfume-main" x="45" y="75">Hermes Dashboard</text><text class="s6-perfume-sub" x="121" y="94">OLYMPUS / No. 8363</text></svg></div>
+            <div class="meta"><div><div class="number">63</div><div class="name">Olympus Parfum</div></div><div class="tags">perfume carton<br>ritual packaging</div></div>
+        </article>
+
+        <article class="concept s6-hallmark">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Jewelry hallmark, Hermes Dashboard"><defs><filter id="s6-hallmark-shadow"><feDropShadow dx="0" dy="7" stdDeviation="6" flood-opacity=".65"/></filter></defs><path class="s6-hallmark-chain" d="M0 59H48M392 59h48"/><path class="s6-hallmark-plate" d="M52 29 70 19h300l18 10v60l-18 10H70L52 89Z"/><path class="s6-hallmark-inner" d="M62 34 76 27h288l14 7v50l-14 7H76l-14-7Z"/><text class="s6-hallmark-main" x="83" y="62">Hermes Dashboard</text><text class="s6-hallmark-sub" x="130" y="79">HD · 750 · OLYMPUS</text></svg></div>
+            <div class="meta"><div><div class="number">64</div><div class="name">750 Hallmark</div></div><div class="tags">jewelry stamp<br>precious authority</div></div>
+        </article>
+
+        <article class="concept s6-pearl">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Mother-of-pearl inlay, Hermes Dashboard"><defs><linearGradient id="s6-pearl-inlay" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe7ef"/><stop offset=".28" stop-color="#c7f1e8"/><stop offset=".55" stop-color="#fff6c9"/><stop offset=".78" stop-color="#d9d0ff"/><stop offset="1" stop-color="#f5e8e5"/></linearGradient><filter id="s6-pearl-depth"><feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#4c514e" flood-opacity=".45"/></filter></defs><path class="s6-pearl-shell" d="M28 38 43 24h354l15 14-13 55H41Z"/><text class="s6-pearl-main" x="65" y="63">Hermes Dashboard</text><text class="s6-pearl-sub" x="129" y="81">NATURAL INTERFACE</text></svg></div>
+            <div class="meta"><div><div class="number">65</div><div class="name">Nacre Inlay</div></div><div class="tags">mother-of-pearl<br>organic prestige</div></div>
+        </article>
+
+        <article class="concept s6-vellum">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Translucent vellum, Hermes Dashboard"><defs><filter id="s6-vellum-shadow"><feDropShadow dx="4" dy="6" stdDeviation="5" flood-color="#413927" flood-opacity=".25"/></filter></defs><path class="s6-vellum-sheet" d="M43 20 405 30 392 98 31 88Z"/><path class="s6-vellum-fold" d="M43 20 53 81 392 98"/><text class="s6-vellum-main" x="67" y="62" transform="rotate(1 220 59)">Hermes Dashboard</text><text class="s6-vellum-sub" x="121" y="80" transform="rotate(1 220 59)">PRIVATE INSTRUMENT</text></svg></div>
+            <div class="meta"><div><div class="number">66</div><div class="name">Vellum Whisper</div></div><div class="tags">translucent vellum<br>weightless craft</div></div>
+        </article>
+
+        <article class="concept s6-ceramic">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Ceramic maker stamp, Hermes Dashboard"><defs><filter id="s6-ceramic-shadow"><feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#332e25" flood-opacity=".4"/></filter></defs><ellipse class="s6-ceramic-disc" cx="220" cy="59" rx="191" ry="48"/><ellipse class="s6-ceramic-ring" cx="220" cy="59" rx="180" ry="39"/><path class="s6-ceramic-mark" d="M66 68V43m0 12h16V43m-16 12h16v13"/><text class="s6-ceramic-main" x="102" y="62">Hermes Dashboard</text><text class="s6-ceramic-sub" x="139" y="78">MAKER / OLYMPUS</text></svg></div>
+            <div class="meta"><div><div class="number">67</div><div class="name">Olympus Kiln</div></div><div class="tags">ceramic stamp<br>maker authenticity</div></div>
+        </article>
+
+        <article class="concept s6-receipt">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Carbon paper receipt couture, Hermes Dashboard"><defs><filter id="s6-receipt-shadow"><feDropShadow dx="3" dy="5" stdDeviation="3" flood-color="#343a51" flood-opacity=".25"/></filter></defs><path class="s6-receipt-paper" d="M42 17H398V96l-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5V17Z"/><text class="s6-receipt-copy" x="67" y="54">HERMES DASHBOARD</text><line class="s6-receipt-rule" x1="68" y1="65" x2="372" y2="65"/><text class="s6-receipt-sub" x="68" y="80">COUTURE SYSTEM  01  /  PAID</text></svg></div>
+            <div class="meta"><div><div class="number">68</div><div class="name">Carbon Couture</div></div><div class="tags">carbon receipt<br>atelier utility</div></div>
+        </article>
+
+        <article class="concept s6-stone">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Architectural stone inscription, Hermes Dashboard"><defs><linearGradient id="s6-stone-face" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#d9d4c9"/><stop offset="1" stop-color="#aaa69d"/></linearGradient><filter id="s6-stone-shadow"><feDropShadow dx="5" dy="7" stdDeviation="4" flood-color="#373632" flood-opacity=".45"/></filter><filter id="s6-stone-cut"><feDropShadow dx="1" dy="1" stdDeviation=".35" flood-color="#4a4843" flood-opacity=".8"/></filter></defs><path class="s6-stone-slab" d="M27 27 401 20 413 90 38 97Z"/><text class="s6-stone-main" x="55" y="62">Hermes Dashboard</text><text class="s6-stone-sub" x="135" y="80">EST. ON OLYMPUS</text></svg></div>
+            <div class="meta"><div><div class="number">69</div><div class="name">Monument Cut</div></div><div class="tags">stone inscription<br>architectural permanence</div></div>
+        </article>
+
+        <article class="concept s6-foil">
+            <div class="stage"><svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Iridescent foil security seal, Hermes Dashboard"><defs><linearGradient id="s6-foil-spectrum" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#72e8db"/><stop offset=".2" stop-color="#f1e979"/><stop offset=".42" stop-color="#ff8fae"/><stop offset=".63" stop-color="#b895ff"/><stop offset=".82" stop-color="#8de8ff"/><stop offset="1" stop-color="#f5dd8b"/></linearGradient><filter id="s6-foil-glow"><feDropShadow dx="0" dy="0" stdDeviation="7" flood-color="#b795ff" flood-opacity=".35"/></filter></defs><path class="s6-foil-seal" d="M22 59 34 32l29-5 21-16 28 10 27-8 25 13 28-8 28 9 28-9 27 9 28-8 24 14 30-4 11 30-12 27-29 5-21 16-28-10-27 8-25-13-28 8-28-9-28 9-27-9-28 8-24-14-30 4Z"/><path class="s6-foil-guilloche" d="M51 59c34-38 61 38 95 0s61 38 95 0 61 38 95 0M51 59c34 28 61-28 95 0s61-28 95 0 61-28 95 0"/><rect class="s6-foil-flash" x="65" y="24" width="18" height="70" transform="skewX(-22)"/><text class="s6-foil-main" x="72" y="62">Hermes Dashboard</text><text class="s6-foil-sub" x="130" y="79">AUTHENTIC / 070</text></svg></div>
+            <div class="meta"><div><div class="number">70</div><div class="name">Iris Security Seal</div></div><div class="tags">iridescent foil<br>verified rarity</div></div>
+        </article>
+    </div>
+</section>

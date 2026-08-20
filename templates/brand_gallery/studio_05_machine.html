@@ -1,0 +1,305 @@
+<style>
+    .s5-studio {
+        --s5-paper: #0a0b0d;
+        color: #f4f2e9;
+        margin-top: 56px;
+    }
+    .s5-studio .s5-collection {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin: 0 0 20px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid rgba(255,255,255,.13);
+    }
+    .s5-studio .s5-kicker {
+        color: #ff5b36;
+        font: 800 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+        letter-spacing: .22em;
+        text-transform: uppercase;
+    }
+    .s5-studio .s5-title {
+        margin: 7px 0 0;
+        font: 850 clamp(25px, 3.5vw, 43px)/.95 Arial, Helvetica, sans-serif;
+        letter-spacing: -.045em;
+    }
+    .s5-studio .s5-note {
+        margin: 0;
+        color: rgba(255,255,255,.5);
+        font: 600 9px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+        letter-spacing: .12em;
+        text-align: right;
+        text-transform: uppercase;
+    }
+    .s5-studio .concept { background: var(--s5-paper); }
+    .s5-studio .stage { position: relative; }
+    .s5-studio .brand { max-height: 118px; }
+    .s5-studio .s5-type-wide { font-family: Arial, Helvetica, sans-serif; font-weight: 900; }
+    .s5-studio .s5-type-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+    /* 51: Formula racing telemetry */
+    .s5-studio .s5-telemetry {
+        background-color: #080b0d;
+        background-image: linear-gradient(rgba(74,255,122,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(74,255,122,.055) 1px, transparent 1px);
+        background-size: 19px 19px;
+    }
+    .s5-studio .s5-telemetry .s5-tel-line { fill: none; stroke: #43ff77; stroke-width: 1.3; }
+    .s5-studio .s5-telemetry .s5-tel-main { fill: #f7fff9; font-size: 32px; font-style: italic; letter-spacing: -1.8px; }
+    .s5-studio .s5-telemetry .s5-tel-sub { fill: #43ff77; font-size: 10px; font-weight: 800; letter-spacing: 3px; }
+    .s5-studio .s5-telemetry .s5-tel-data { fill: #718079; font-size: 6.5px; letter-spacing: .7px; }
+    .s5-studio .s5-telemetry .s5-tel-block { fill: #43ff77; }
+
+    /* 52: endurance racing livery */
+    .s5-studio .s5-endurance { background: #eee9dd; color: #111; }
+    .s5-studio .s5-endurance::after, .s5-studio .s5-endurance .tags { color: rgba(0,0,0,.48); }
+    .s5-studio .s5-endurance .s5-end-stripe-a { fill: #e83725; }
+    .s5-studio .s5-endurance .s5-end-stripe-b { fill: #192f99; }
+    .s5-studio .s5-endurance .s5-end-main { fill: #101010; font-size: 35px; font-style: italic; letter-spacing: -2.5px; }
+    .s5-studio .s5-endurance .s5-end-sub { fill: #101010; font-size: 9px; font-weight: 900; letter-spacing: 3.8px; }
+    .s5-studio .s5-endurance .s5-end-roundel { fill: #eee9dd; stroke: #101010; stroke-width: 2; }
+    .s5-studio .s5-endurance .s5-end-num { fill: #101010; font-size: 27px; font-weight: 900; }
+
+    /* 53: aviation squadron stencil */
+    .s5-studio .s5-squadron {
+        background: linear-gradient(165deg, #515a56, #252b29);
+        border-color: rgba(230,222,189,.25);
+    }
+    .s5-studio .s5-squadron .s5-sqd-wing { fill: none; stroke: #e1d9b8; stroke-width: 3; stroke-linejoin: bevel; }
+    .s5-studio .s5-squadron .s5-sqd-main { fill: #f0e7c4; font-size: 30px; font-weight: 800; letter-spacing: 2px; }
+    .s5-studio .s5-squadron .s5-sqd-cut { stroke: #3c4440; stroke-width: 2.5; }
+    .s5-studio .s5-squadron .s5-sqd-sub { fill: #e5bc48; font-size: 8px; font-weight: 800; letter-spacing: 4px; }
+    .s5-studio .s5-squadron .s5-sqd-rule { stroke: #e1d9b8; stroke-width: 1; stroke-dasharray: 15 4; }
+
+    /* 54: industrial hazard plate */
+    .s5-studio .s5-hazard {
+        color: #111;
+        background: repeating-linear-gradient(135deg, #f2bd1b 0 18px, #111 18px 36px);
+        border-radius: 7px;
+    }
+    .s5-studio .s5-hazard::after { color: rgba(0,0,0,.62); background: #f2bd1b; padding: 3px 5px; }
+    .s5-studio .s5-hazard .meta { color: #f8cf34; text-shadow: 0 1px #000; }
+    .s5-studio .s5-hazard .tags { color: rgba(255,220,70,.8); }
+    .s5-studio .s5-hazard .s5-haz-plate { fill: #f2bd1b; stroke: #090909; stroke-width: 6; }
+    .s5-studio .s5-hazard .s5-haz-mark { fill: #111; }
+    .s5-studio .s5-hazard .s5-haz-h { fill: #f2bd1b; font-size: 28px; font-weight: 900; }
+    .s5-studio .s5-hazard .s5-haz-main { fill: #111; font-size: 29px; letter-spacing: -1px; }
+    .s5-studio .s5-hazard .s5-haz-sub { fill: #111; font-size: 8px; font-weight: 900; letter-spacing: 2.9px; }
+
+    /* 55: precision watch dial */
+    .s5-studio .s5-chronometer { background: radial-gradient(circle at 32% 45%, #27312e, #080b0a 61%); }
+    .s5-studio .s5-chronometer .s5-watch-ring { fill: none; stroke: #c7a96a; stroke-width: 1.2; }
+    .s5-studio .s5-chronometer .s5-watch-ticks { fill: none; stroke: #e7dcc1; stroke-width: 5; stroke-dasharray: 1 9.47; }
+    .s5-studio .s5-chronometer .s5-watch-hand { stroke: #e04a35; stroke-width: 1.5; }
+    .s5-studio .s5-chronometer .s5-watch-main { fill: #f0eadb; font: 600 29px/1 Georgia, "Times New Roman", serif; letter-spacing: 2px; }
+    .s5-studio .s5-chronometer .s5-watch-sub { fill: #c7a96a; font-size: 7.5px; letter-spacing: 4px; }
+    .s5-studio .s5-chronometer .s5-watch-micro { fill: #8d948d; font-size: 5.5px; letter-spacing: 1.5px; }
+
+    /* 56: cycling team identity */
+    .s5-studio .s5-peloton { background: #e9ff38; color: #10120e; }
+    .s5-studio .s5-peloton::after, .s5-studio .s5-peloton .tags { color: rgba(0,0,0,.55); }
+    .s5-studio .s5-peloton .s5-cycle-slash { fill: #ff4c25; }
+    .s5-studio .s5-peloton .s5-cycle-main { fill: #11130f; font-size: 34px; font-style: italic; letter-spacing: -2.5px; }
+    .s5-studio .s5-peloton .s5-cycle-sub { fill: #11130f; font-size: 9px; font-weight: 900; letter-spacing: 3px; }
+    .s5-studio .s5-peloton .s5-cycle-wheel { fill: none; stroke: #11130f; stroke-width: 1.5; }
+    .s5-studio .s5-peloton .s5-cycle-spoke { stroke: #11130f; stroke-width: .7; }
+
+    /* 57: sneaker technical label */
+    .s5-studio .s5-footwear { background: #d8d4c9; color: #121212; }
+    .s5-studio .s5-footwear::before { content: ""; position: absolute; inset: 0; opacity: .2; background: repeating-linear-gradient(90deg, transparent 0 3px, #444 4px); }
+    .s5-studio .s5-footwear::after, .s5-studio .s5-footwear .tags { color: rgba(0,0,0,.48); }
+    .s5-studio .s5-footwear .s5-shoe-label { fill: #f3f0e7; stroke: #171717; stroke-width: 1.5; }
+    .s5-studio .s5-footwear .s5-shoe-main { fill: #111; font-size: 27px; font-weight: 900; letter-spacing: -1.2px; }
+    .s5-studio .s5-footwear .s5-shoe-sub { fill: #111; font-size: 8px; font-weight: 800; letter-spacing: 2.2px; }
+    .s5-studio .s5-footwear .s5-shoe-data { fill: #111; font-size: 6px; letter-spacing: .4px; }
+    .s5-studio .s5-footwear .s5-shoe-code { fill: #111; }
+    .s5-studio .s5-footwear .s5-shoe-accent { fill: #ef3c23; }
+
+    /* 58: motorsport carbon badge */
+    .s5-studio .s5-carbon {
+        background-color: #111315;
+        background-image: linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.035) 75%), linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.035) 75%);
+        background-position: 0 0, 6px 6px;
+        background-size: 12px 12px;
+    }
+    .s5-studio .s5-carbon .s5-carbon-shell { fill: #17191b; stroke: url(#s5-carbon-edge); stroke-width: 2.5; }
+    .s5-studio .s5-carbon .s5-carbon-red { fill: #ed2f24; }
+    .s5-studio .s5-carbon .s5-carbon-h { fill: #fff; font-size: 29px; font-style: italic; font-weight: 900; }
+    .s5-studio .s5-carbon .s5-carbon-main { fill: #fff; font-size: 27px; font-style: italic; letter-spacing: -1.4px; }
+    .s5-studio .s5-carbon .s5-carbon-sub { fill: #b6babd; font-size: 7px; font-weight: 700; letter-spacing: 3.2px; }
+
+    /* 59: shipping container stencil */
+    .s5-studio .s5-container {
+        background-color: #ab3b28;
+        background-image: repeating-linear-gradient(90deg, rgba(0,0,0,.14) 0 2px, transparent 2px 43px, rgba(255,255,255,.08) 44px 46px);
+    }
+    .s5-studio .s5-container .s5-ship-main { fill: #f2ead4; font-size: 31px; font-weight: 800; letter-spacing: 2px; }
+    .s5-studio .s5-container .s5-ship-sub { fill: #f2ead4; font-size: 8px; font-weight: 700; letter-spacing: 3.4px; }
+    .s5-studio .s5-container .s5-ship-code { fill: #e4bc47; font-size: 7px; font-weight: 700; letter-spacing: 1px; }
+    .s5-studio .s5-container .s5-ship-frame { fill: none; stroke: #f2ead4; stroke-width: 1.4; }
+    .s5-studio .s5-container .s5-ship-door { stroke: rgba(0,0,0,.45); stroke-width: 2; }
+
+    /* 60: arcade cabinet marquee */
+    .s5-studio .s5-arcade { background: radial-gradient(ellipse at center, #351266, #090410 68%); }
+    .s5-studio .s5-arcade .s5-arc-frame { fill: #120620; stroke: #ffce38; stroke-width: 2; }
+    .s5-studio .s5-arcade .s5-arc-shadow { fill: #2e75ff; }
+    .s5-studio .s5-arcade .s5-arc-main { fill: url(#s5-arcade-fill); stroke: #fff2b0; stroke-width: .7; font-size: 32px; font-style: italic; letter-spacing: -1.5px; }
+    .s5-studio .s5-arcade .s5-arc-sub { fill: #58f7ff; font-size: 8px; font-weight: 800; letter-spacing: 3.6px; }
+    .s5-studio .s5-arcade .s5-arc-star { fill: #ff4fb8; }
+    .s5-studio .s5-arcade .s5-arc-grid { fill: none; stroke: #7139af; stroke-width: .7; }
+
+    @media (max-width: 600px) {
+        .s5-studio .s5-collection { align-items: start; flex-direction: column; }
+        .s5-studio .s5-note { text-align: left; }
+    }
+</style>
+
+<section class="s5-studio" aria-labelledby="s5-collection-title">
+    <header class="s5-collection">
+        <div>
+            <div class="s5-kicker">Studio 05 / Performance machines</div>
+            <h2 class="s5-title" id="s5-collection-title">Velocity, calibrated.</h2>
+        </div>
+        <p class="s5-note">Ten compact marks<br>race / sport / industry</p>
+    </header>
+
+    <div class="grid" aria-label="Studio 5 Hermes Dashboard logo concepts">
+        <article class="concept s5-telemetry">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Delta Trace, Hermes Dashboard">
+                    <path class="s5-tel-line" d="M8 74h26l8-15 10 26 13-48 11 37h28l9-10h29"/>
+                    <rect class="s5-tel-block" x="17" y="26" width="40" height="4"/>
+                    <text class="s5-tel-data s5-type-mono" x="17" y="20">LAP 51 / S1  29.774</text>
+                    <text class="s5-tel-main s5-type-wide" x="151" y="58">HERMES</text>
+                    <text class="s5-tel-sub s5-type-mono" x="154" y="77">DASHBOARD</text>
+                    <text class="s5-tel-data s5-type-mono" x="350" y="77">+0.081</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">51</div><div class="name">Delta Trace</div></div><div class="tags">formula telemetry<br>live sector data</div></div>
+        </article>
+
+        <article class="concept s5-endurance">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Le Mans Relay, Hermes Dashboard">
+                    <polygon class="s5-end-stripe-b" points="0,72 124,10 147,10 23,72"/>
+                    <polygon class="s5-end-stripe-a" points="13,87 166,10 183,10 30,87"/>
+                    <circle class="s5-end-roundel" cx="61" cy="54" r="29"/>
+                    <text class="s5-end-num s5-type-wide" x="44" y="64">52</text>
+                    <text class="s5-end-main s5-type-wide" x="113" y="53">HERMES</text>
+                    <text class="s5-end-sub s5-type-mono" x="116" y="73">DASHBOARD / 24H</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">52</div><div class="name">Le Mans Relay</div></div><div class="tags">endurance livery<br>heritage speed</div></div>
+        </article>
+
+        <article class="concept s5-squadron">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Wing Command, Hermes Dashboard">
+                    <path class="s5-sqd-wing" d="M18 59h31l23-25 23 25h31L72 78z"/>
+                    <path class="s5-sqd-wing" d="M50 60 72 45l22 15-22 7z"/>
+                    <line class="s5-sqd-rule" x1="136" y1="24" x2="415" y2="24"/>
+                    <text class="s5-sqd-main s5-type-mono" x="136" y="59">HERMES</text>
+                    <line class="s5-sqd-cut" x1="176" y1="31" x2="176" y2="65"/><line class="s5-sqd-cut" x1="240" y1="31" x2="240" y2="65"/>
+                    <text class="s5-sqd-sub s5-type-mono" x="139" y="78">DASHBOARD // HD-53</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">53</div><div class="name">Wing Command</div></div><div class="tags">squadron stencil<br>flight marked</div></div>
+        </article>
+
+        <article class="concept s5-hazard">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Restricted Torque, Hermes Dashboard">
+                    <rect class="s5-haz-plate" x="8" y="13" width="424" height="74" rx="2"/>
+                    <path class="s5-haz-mark" d="M24 24h58l13 26-13 26H24L11 50z"/>
+                    <text class="s5-haz-h s5-type-wide" x="39" y="60">H</text>
+                    <text class="s5-haz-main s5-type-wide" x="108" y="50">HERMES</text>
+                    <text class="s5-haz-sub s5-type-mono" x="110" y="68">DASHBOARD / CAUTION 54</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">54</div><div class="name">Restricted Torque</div></div><div class="tags">hazard plate<br>industrial force</div></div>
+        </article>
+
+        <article class="concept s5-chronometer">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Calibre Fifty-Five, Hermes Dashboard">
+                    <circle class="s5-watch-ring" cx="61" cy="50" r="39"/>
+                    <circle class="s5-watch-ticks" cx="61" cy="50" r="33" pathLength="60"/>
+                    <line class="s5-watch-hand" x1="61" y1="50" x2="79" y2="25"/><circle cx="61" cy="50" r="3" fill="#c7a96a"/>
+                    <text class="s5-watch-main" x="119" y="51">Hermes</text>
+                    <text class="s5-watch-sub s5-type-mono" x="122" y="69">DASHBOARD</text>
+                    <text class="s5-watch-micro s5-type-mono" x="122" y="84">CAL.55 / PRECISION INTERFACE</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">55</div><div class="name">Calibre Fifty-Five</div></div><div class="tags">watch dial<br>measured luxury</div></div>
+        </article>
+
+        <article class="concept s5-peloton">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Breakaway Team, Hermes Dashboard">
+                    <polygon class="s5-cycle-slash" points="13,76 66,19 94,19 41,76"/><polygon class="s5-cycle-slash" points="55,76 108,19 119,19 66,76" opacity=".55"/>
+                    <circle class="s5-cycle-wheel" cx="382" cy="50" r="31"/><circle class="s5-cycle-wheel" cx="382" cy="50" r="22"/>
+                    <line class="s5-cycle-spoke" x1="351" y1="50" x2="413" y2="50"/><line class="s5-cycle-spoke" x1="382" y1="19" x2="382" y2="81"/>
+                    <text class="s5-cycle-main s5-type-wide" x="102" y="52">HERMES</text>
+                    <text class="s5-cycle-sub s5-type-mono" x="105" y="72">DASHBOARD RACING</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">56</div><div class="name">Breakaway Team</div></div><div class="tags">cycling identity<br>high-vis motion</div></div>
+        </article>
+
+        <article class="concept s5-footwear">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Aero Sample, Hermes Dashboard">
+                    <rect class="s5-shoe-label" x="18" y="9" width="404" height="82" rx="4"/>
+                    <rect class="s5-shoe-accent" x="18" y="9" width="9" height="82"/>
+                    <text class="s5-shoe-main s5-type-wide" x="43" y="45">HERMES</text>
+                    <text class="s5-shoe-sub s5-type-mono" x="45" y="63">DASHBOARD / PROTO 57</text>
+                    <text class="s5-shoe-data s5-type-mono" x="45" y="78">US 10.5   EUR 44.5   CM 28.5</text>
+                    <g class="s5-shoe-code"><rect x="309" y="25" width="2" height="48"/><rect x="315" y="25" width="5" height="48"/><rect x="324" y="25" width="2" height="48"/><rect x="330" y="25" width="7" height="48"/><rect x="341" y="25" width="3" height="48"/><rect x="349" y="25" width="6" height="48"/><rect x="359" y="25" width="2" height="48"/><rect x="365" y="25" width="4" height="48"/><rect x="374" y="25" width="7" height="48"/><rect x="385" y="25" width="2" height="48"/></g>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">57</div><div class="name">Aero Sample</div></div><div class="tags">sneaker label<br>prototype issue</div></div>
+        </article>
+
+        <article class="concept s5-carbon">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Carbon Apex, Hermes Dashboard">
+                    <defs><linearGradient id="s5-carbon-edge"><stop stop-color="#f7f7f7"/><stop offset=".35" stop-color="#555"/><stop offset=".7" stop-color="#eee"/><stop offset="1" stop-color="#333"/></linearGradient></defs>
+                    <path class="s5-carbon-shell" d="M15 22 32 10h377l16 12-10 57-18 11H31L15 78z"/>
+                    <path class="s5-carbon-red" d="M31 20h66L77 80H31L21 72z"/>
+                    <text class="s5-carbon-h s5-type-wide" x="45" y="62">H</text>
+                    <text class="s5-carbon-main s5-type-wide" x="112" y="51">HERMES</text>
+                    <text class="s5-carbon-sub s5-type-mono" x="115" y="69">DASHBOARD / APEX 58</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">58</div><div class="name">Carbon Apex</div></div><div class="tags">carbon badge<br>motorsport trim</div></div>
+        </article>
+
+        <article class="concept s5-container">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Intermodal H, Hermes Dashboard">
+                    <rect class="s5-ship-frame" x="17" y="17" width="406" height="66"/>
+                    <line class="s5-ship-door" x1="102" y1="17" x2="102" y2="83"/><line class="s5-ship-door" x1="109" y1="17" x2="109" y2="83"/>
+                    <text class="s5-ship-code s5-type-mono" x="30" y="41">HMDU</text><text class="s5-ship-code s5-type-mono" x="30" y="55">590 053</text><text class="s5-ship-code s5-type-mono" x="30" y="69">22G1</text>
+                    <text class="s5-ship-main s5-type-mono" x="130" y="51">HERMES</text>
+                    <text class="s5-ship-sub s5-type-mono" x="132" y="70">DASHBOARD / INTL.</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">59</div><div class="name">Intermodal H</div></div><div class="tags">container stencil<br>global utility</div></div>
+        </article>
+
+        <article class="concept s5-arcade">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 100" role="img" aria-label="Turbo Olympus, Hermes Dashboard">
+                    <defs><linearGradient id="s5-arcade-fill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff36a"/><stop offset=".48" stop-color="#ff8a2a"/><stop offset="1" stop-color="#ff3c8f"/></linearGradient></defs>
+                    <path class="s5-arc-frame" d="M10 19 35 7h372l23 15-11 65H23z"/>
+                    <path class="s5-arc-grid" d="M14 83h412M41 61 25 88m76-27L87 88m75-27-12 27m73-27-9 27m70-27-6 27m67-27-3 27"/>
+                    <text class="s5-arc-shadow s5-type-wide" x="47" y="59" font-size="32" font-style="italic" font-weight="900">HERMES</text>
+                    <text class="s5-arc-main s5-type-wide" x="43" y="55">HERMES</text>
+                    <text class="s5-arc-sub s5-type-mono" x="48" y="74">DASHBOARD // INSERT COIN</text>
+                    <path class="s5-arc-star" d="m382 26 4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">60</div><div class="name">Turbo Olympus</div></div><div class="tags">arcade marquee<br>coin-op velocity</div></div>
+        </article>
+    </div>
+</section>

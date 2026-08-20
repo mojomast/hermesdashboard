@@ -8,8 +8,11 @@
 
 {% include "dashboard/partials/modals.html" %}
 
+    <div class="dashboard-workspace" id="dashboard-workspace">
     <div class="container">
 {% include "dashboard/partials/panels/chat.html" %}
+
+{% include "dashboard/partials/panels/bots.html" %}
 
 {% include "dashboard/partials/panels/message_board.html" %}
 
@@ -51,8 +54,48 @@
 
 {% include "dashboard/partials/panels/schedule.html" %}
     </div>
+    <aside class="terminal-column" id="terminal-column" aria-label="Docked terminals" hidden>
+        <div class="terminal-column-resizer" id="terminal-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize docked terminal column" aria-valuemin="320" aria-valuemax="720" aria-valuenow="480" tabindex="0"></div>
+        <div class="terminal-column-stack" id="terminal-column-stack"></div>
+    </aside>
+    </div>
 
 {% include "dashboard/partials/session_drawer.html" %}
+
+    <div id="terminal-window-host"></div>
+    <template id="terminal-window-template">
+        <section class="terminal-window" data-terminal-role="window" role="dialog" aria-modal="false">
+            <header class="terminal-window-header" data-terminal-role="header">
+                <div class="terminal-window-title">
+                    <span class="terminal-prompt-mark" aria-hidden="true">&gt;_</span>
+                    <strong data-terminal-role="title">Terminal</strong>
+                    <span class="terminal-connection-status" data-terminal-role="status" role="status" aria-live="polite">Disconnected</span>
+                </div>
+                <div class="terminal-window-actions">
+                    <button type="button" data-terminal-role="dock" title="Dock terminal to the right" aria-label="Dock terminal to the right" aria-pressed="false">&#8644;</button>
+                    <button type="button" data-terminal-role="minimize" title="Minimize terminal" aria-label="Minimize terminal">&#8722;</button>
+                    <button type="button" data-terminal-role="maximize" title="Maximize terminal" aria-label="Maximize terminal">&#9633;</button>
+                    <button type="button" data-terminal-role="close" title="Terminate terminal" aria-label="Terminate terminal">&#215;</button>
+                </div>
+            </header>
+            <div class="terminal-window-body" data-terminal-role="body">
+                <div class="terminal-screen" data-terminal-role="screen" tabindex="-1"></div>
+            </div>
+        </section>
+    </template>
+
+    <section class="terminal-auth" id="terminal-auth" role="dialog" aria-modal="true" aria-labelledby="terminal-auth-title" aria-describedby="terminal-auth-help terminal-auth-error" hidden>
+        <div class="terminal-auth-card">
+            <h2 id="terminal-auth-title">Authorize browser terminals</h2>
+            <label for="terminal-access-token">Terminal access token</label>
+            <div class="terminal-auth-row">
+                <input id="terminal-access-token" type="password" autocomplete="off" spellcheck="false" placeholder="Enter access token">
+                <button class="btn primary" id="terminal-auth-submit" type="button">Connect</button>
+            </div>
+            <p id="terminal-auth-help">The token authorizes every terminal in this page once and is never stored in this browser.</p>
+            <p class="terminal-auth-error" id="terminal-auth-error" role="alert"></p>
+        </div>
+    </section>
 
 {% include "dashboard/partials/scripts.html" %}
 </body>

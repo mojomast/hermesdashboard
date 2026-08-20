@@ -23,6 +23,7 @@ def test_docker_assets_define_dashboard_container_runtime():
     assert "uvicorn" in dockerfile
     assert "hermesdashboard:" in compose
     assert "host.docker.internal" in compose
+    assert 'DASHBOARD_RUNNING_IN_DOCKER: "true"' in compose
     assert '"${HERMES_HOME:-$HOME/.hermes}:/hermes-home"' in compose
     assert '"${HERMES_AGENT_PATH:-$HOME/.hermes/hermes-agent}:/hermes-agent:ro"' in compose
     assert "docker compose" in runner

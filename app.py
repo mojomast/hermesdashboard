@@ -19,6 +19,7 @@ from collections import Counter, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 
 import httpx
 import aiohttp
@@ -68,6 +69,28 @@ from dashboard_backend.routes.dashboard_state import (
     get_dashboard_state_endpoint as _get_dashboard_state_endpoint_impl,
     set_dashboard_state_endpoint as _set_dashboard_state_endpoint_impl,
 )
+from dashboard_backend.routes.terminal import (
+    terminal_auth_endpoint as _terminal_auth_endpoint_impl,
+    terminal_status_endpoint as _terminal_status_endpoint_impl,
+    terminal_websocket_endpoint as _terminal_websocket_endpoint_impl,
+)
+from dashboard_backend.routes.bot_rooms import (
+    get_bot_room_endpoint as _get_bot_room_endpoint_impl,
+    list_bot_rooms_endpoint as _list_bot_rooms_endpoint_impl,
+    put_bot_room_endpoint as _put_bot_room_endpoint_impl,
+    shared_message_endpoint as _shared_message_endpoint_impl,
+    shared_message_stream_endpoint as _shared_message_stream_endpoint_impl,
+)
+from dashboard_backend.routes.bots import (
+    create_bot_endpoint as _create_bot_endpoint_impl,
+    delete_avatar_endpoint as _delete_avatar_endpoint_impl,
+    delete_bot_endpoint as _delete_bot_endpoint_impl,
+    get_avatar_endpoint as _get_avatar_endpoint_impl,
+    get_bot_endpoint as _get_bot_endpoint_impl,
+    list_bots_endpoint as _list_bots_endpoint_impl,
+    put_avatar_endpoint as _put_avatar_endpoint_impl,
+    update_bot_endpoint as _update_bot_endpoint_impl,
+)
 from dashboard_backend.services.dashboard_chat import (
     _dashboard_chat_runtime_config as _dashboard_chat_runtime_config_impl,
     _dashboard_chat_status_payload as _dashboard_chat_status_payload_impl,
@@ -85,6 +108,23 @@ from dashboard_backend.services.dashboard_state import (
     load_dashboard_state as _load_dashboard_state_impl,
     save_dashboard_state as _save_dashboard_state_impl,
     validate_dashboard_state_key as _validate_dashboard_state_key_impl,
+)
+from dashboard_backend.services.bot_rooms import (
+    list_rooms as _list_bot_rooms_impl,
+    load_room as _load_bot_room_impl,
+    orchestrate_shared_message as _orchestrate_shared_message_impl,
+    save_room as _save_bot_room_impl,
+)
+from dashboard_backend.services.bots import (
+    PROFILE_RE as BOT_PROFILE_RE,
+    create_bot as _create_bot_impl,
+    delete_avatar as _delete_avatar_impl,
+    get_avatar as _get_avatar_impl,
+    get_bot as _get_bot_impl,
+    hide_bot as _hide_bot_impl,
+    list_bots as _list_bots_impl,
+    save_avatar as _save_avatar_impl,
+    update_bot as _update_bot_impl,
 )
 from dashboard_backend.services.games_catalog import (
     categorize_game_skill as _categorize_game_skill_impl,
@@ -117,6 +157,7 @@ from dashboard_backend.services.token_usage import (
     get_session_context_gauge as _get_session_context_gauge_impl,
     get_token_usage_summary as _get_token_usage_summary_impl,
 )
+from dashboard_backend.services.terminal import terminal_manager
 
 
 def _hermes_agent_path() -> Path:
@@ -381,6 +422,8 @@ _STARTUP_METADATA_BACKFILL_STARTED = False
 DASHBOARD_STATE_DB_PATH = HERMES_HOME / "dashboard_state.db"
 DASHBOARD_STATE_KEYS = {"conversation", "active_run"}
 DASHBOARD_STATE_LOCK = threading.Lock()
+BOT_ROOMS_DB_PATH = HERMES_HOME / "dashboard_bots.db"
+BOT_ROOMS_LOCK = threading.Lock()
 PARALLEL_ARENA_HOME = Path(
     os.getenv("PARALLEL_ARENA_HOME", str(SELF_IMPROVEMENT_HOME / "parallel-arena"))
 ).expanduser().resolve()
@@ -723,6 +766,18 @@ async def dashboard_chat_websocket_endpoint(websocket):
     )
 
 
+async def terminal_status_endpoint(request):
+    return await _terminal_status_endpoint_impl(request, manager=terminal_manager)
+
+
+async def terminal_auth_endpoint(request):
+    return await _terminal_auth_endpoint_impl(request, manager=terminal_manager)
+
+
+async def terminal_websocket_endpoint(websocket):
+    return await _terminal_websocket_endpoint_impl(websocket, manager=terminal_manager)
+
+
 def _log_stream(run_id: str, message: str) -> None:
     print(f"[dashboard:/chat:{run_id}] {message}", file=sys.stderr, flush=True)
 
@@ -784,15 +839,204 @@ async def delete_dashboard_state(request):
     )
 
 
-def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]) -> None:
+def _list_bots():
+    return _list_bots_impl()
+
+
+def _create_bot(data):
+    return _create_bot_impl(data)
+
+
+def _update_bot(name, data):
+    return _update_bot_impl(name, data)
+
+
+def _hide_bot(name):
+    return _hide_bot_impl(name)
+
+
+def _api_key_for_profile(profile: str | None) -> str:
+    profile = str(profile or "default").strip()
+    if profile == "default":
+        key = API_KEY
+    else:
+        if not BOT_PROFILE_RE.fullmatch(profile):
+            raise ValueError("Invalid bot profile")
+        from agent.secret_scope import build_profile_secret_scope
+        from hermes_cli import profiles as profiles_api
+        from hermes_cli.env_loader import hydrate_profile_secret_sources
+
+        profile_home = Path(profiles_api.get_profile_dir(profile)).resolve()
+        hydrate_profile_secret_sources(profile_home)
+        key = str(build_profile_secret_scope(profile_home).get("API_SERVER_KEY") or "")
+    if len(key) < 16:
+        raise RuntimeError(
+            f"Profile @{profile} is missing a usable API_SERVER_KEY for multiplex access"
+        )
+    return key
+
+
+def _get_bot(name):
+    return _get_bot_impl(name)
+
+
+def _save_bot_avatar(name, raw, content_type):
+    return _save_avatar_impl(name, raw, content_type=content_type)
+
+
+def _get_bot_avatar(name):
+    return _get_avatar_impl(name)
+
+
+def _delete_bot_avatar(name):
+    return _delete_avatar_impl(name)
+
+
+async def list_bots_endpoint(request):
+    async def list_bots():
+        return await asyncio.to_thread(_list_bots)
+
+    return await _list_bots_endpoint_impl(request, list_bots=list_bots)
+
+
+async def get_bot_endpoint(request):
+    async def get_bot(name):
+        return await asyncio.to_thread(_get_bot, name)
+
+    return await _get_bot_endpoint_impl(request, get_bot=get_bot)
+
+
+async def put_bot_avatar_endpoint(request):
+    async def save_avatar(name, raw, content_type):
+        return await asyncio.to_thread(_save_bot_avatar, name, raw, content_type)
+
+    return await _put_avatar_endpoint_impl(request, save_avatar=save_avatar)
+
+
+async def get_bot_avatar_endpoint(request):
+    async def get_avatar(name):
+        return await asyncio.to_thread(_get_bot_avatar, name)
+
+    return await _get_avatar_endpoint_impl(request, get_avatar=get_avatar)
+
+
+async def delete_bot_avatar_endpoint(request):
+    async def delete_avatar(name):
+        return await asyncio.to_thread(_delete_bot_avatar, name)
+
+    return await _delete_avatar_endpoint_impl(request, delete_avatar=delete_avatar)
+
+
+async def create_bot_endpoint(request):
+    async def create_bot(data):
+        return await asyncio.to_thread(_create_bot, data)
+
+    return await _create_bot_endpoint_impl(request, create_bot=create_bot)
+
+
+async def update_bot_endpoint(request):
+    async def update_bot(name, data):
+        return await asyncio.to_thread(_update_bot, name, data)
+
+    return await _update_bot_endpoint_impl(request, update_bot=update_bot)
+
+
+async def delete_bot_endpoint(request):
+    async def hide_bot(name):
+        return await asyncio.to_thread(_hide_bot, name)
+
+    return await _delete_bot_endpoint_impl(request, hide_bot=hide_bot)
+
+
+def _load_bot_room(room_id):
+    return _load_bot_room_impl(room_id, db_path=BOT_ROOMS_DB_PATH, lock=BOT_ROOMS_LOCK)
+
+
+def _canonicalize_bot_chat_session(profile, session_id):
+    profile_prefix = "" if profile == "default" else f"/p/{profile}"
+    with httpx.Client(timeout=10.0) as client:
+        response = client.patch(
+            f"{HERMES_API}{profile_prefix}/api/sessions/{quote(session_id, safe='')}",
+            headers={"Authorization": f"Bearer {_api_key_for_profile(profile)}", "Content-Type": "application/json"},
+            json={"title": "Bot Chat", "hidden": True, "pinned": True},
+        )
+        response.raise_for_status()
+
+
+def _save_bot_room(room_id, *, conversation, session_id):
+    existing = _load_bot_room(room_id)
+    room = _save_bot_room_impl(
+        room_id,
+        conversation=conversation,
+        session_id=session_id,
+        db_path=BOT_ROOMS_DB_PATH,
+        lock=BOT_ROOMS_LOCK,
+    )
+    if room_id.startswith("bot:") and room["session_id"] and existing["session_id"] != room["session_id"]:
+        try:
+            _canonicalize_bot_chat_session(room_id[4:], room["session_id"])
+        except Exception as exc:
+            print(f"[dashboard/bots] Failed to canonicalize {room_id} session: {exc}", file=sys.stderr)
+    return room
+
+
+def _list_bot_rooms():
+    return _list_bot_rooms_impl(db_path=BOT_ROOMS_DB_PATH, lock=BOT_ROOMS_LOCK)
+
+
+def _send_shared_bot_message(message, on_event=None):
+    return _orchestrate_shared_message_impl(
+        message,
+        bots=_list_bots(),
+        db_path=BOT_ROOMS_DB_PATH,
+        lock=BOT_ROOMS_LOCK,
+        hermes_api=HERMES_API,
+        api_key=_api_key_for_profile,
+        on_event=on_event,
+    )
+
+
+async def list_bot_rooms_endpoint(request):
+    return await _list_bot_rooms_endpoint_impl(request, list_rooms=_list_bot_rooms)
+
+
+async def get_bot_room_endpoint(request):
+    return await _get_bot_room_endpoint_impl(request, load_room=_load_bot_room)
+
+
+async def put_bot_room_endpoint(request):
+    return await _put_bot_room_endpoint_impl(request, save_room=_save_bot_room)
+
+
+async def shared_bot_message_endpoint(request):
+    async def send_message(message):
+        return await asyncio.to_thread(_send_shared_bot_message, message)
+
+    return await _shared_message_endpoint_impl(
+        request,
+        send_message=send_message,
+    )
+
+
+async def shared_bot_message_stream_endpoint(request):
+    async def send_message(message, on_event):
+        return await asyncio.to_thread(_send_shared_bot_message, message, on_event)
+
+    return await _shared_message_stream_endpoint_impl(request, send_message=send_message)
+
+
+def _run_chat_stream_sync(
+    run_id: str, messages: list, session_id: Optional[str], profile: Optional[str] = None
+) -> None:
     state = ACTIVE_RUNS[run_id]
     event_count = 0
     content_events = 0
     tool_events = 0
     raw_line_count = 0
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {_api_key_for_profile(profile)}",
         "Content-Type": "application/json",
+        "X-Hermes-Blocking-Approvals": "true",
     }
     if session_id:
         headers["X-Hermes-Session-Id"] = session_id
@@ -806,9 +1050,10 @@ def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]
                 pool=30.0,
             )
         ) as client:
+            profile_prefix = f"/p/{profile}" if profile and profile != "default" else ""
             with client.stream(
                 "POST",
-                f"{HERMES_API}/v1/chat/completions",
+                f"{HERMES_API.rstrip('/')}{profile_prefix}/v1/chat/completions",
                 headers=headers,
                 json={
                     "model": "hermes-agent",
@@ -818,6 +1063,9 @@ def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]
             ) as response:
                 response.raise_for_status()
                 _log_stream(run_id, f"sync upstream status={response.status_code}")
+                approval_sid = response.headers.get("X-Hermes-Approval-Session-Id", "").strip()
+                if approval_sid:
+                    state["approval_session_id"] = approval_sid
                 if not state.get("session_id"):
                     sid = response.headers.get("X-Hermes-Session-Id", "").strip()
                     if sid:
@@ -829,10 +1077,26 @@ def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]
                                         "type": "run_state",
                                         "run_id": run_id,
                                         "session_id": sid,
+                                        "approval_session_id": approval_sid or None,
+                                        "profile": profile,
                                     }
                                 )
                             }
                         )
+                elif approval_sid:
+                    state["events"].append(
+                        {
+                            "data": json.dumps(
+                                {
+                                    "type": "run_state",
+                                    "run_id": run_id,
+                                    "session_id": state.get("session_id"),
+                                    "approval_session_id": approval_sid,
+                                    "profile": profile,
+                                }
+                            )
+                        }
+                    )
                 first_useful_event_at = time.time()
                 saw_useful_event = False
                 for line in response.iter_lines():
@@ -914,9 +1178,9 @@ def _run_chat_stream_sync(run_id: str, messages: list, session_id: Optional[str]
 
 
 async def _run_chat_stream(
-    run_id: str, messages: list, session_id: Optional[str]
+    run_id: str, messages: list, session_id: Optional[str], profile: Optional[str] = None
 ) -> None:
-    await asyncio.to_thread(_run_chat_stream_sync, run_id, messages, session_id)
+    await asyncio.to_thread(_run_chat_stream_sync, run_id, messages, session_id, profile)
     return
     state = ACTIVE_RUNS[run_id]
     event_count = 0
@@ -2114,12 +2378,21 @@ async def homepage(request):
     return response
 
 
+async def brand_gallery(request):
+    response = templates.TemplateResponse(request, "brand_gallery.html")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
+
+
 async def chat_stream(request):
     body = await request.body()
     data = json.loads(body)
     run_id = str(data.get("run_id") or "").strip()
     resume = bool(data.get("resume"))
     session_id = str(data.get("session_id") or "").strip() or None
+    profile = str(data.get("profile") or "default").strip()
+    if not BOT_PROFILE_RE.fullmatch(profile):
+        return JSONResponse({"error": "Invalid bot profile"}, status_code=400)
 
     if run_id and resume:
         if run_id not in ACTIVE_RUNS:
@@ -2145,7 +2418,12 @@ async def chat_stream(request):
                 send_timeout=30,
             )
         state = ACTIVE_RUNS[run_id]
+        profile = str(state.get("profile") or profile or "default")
     else:
+        # The upstream API derives a stable ID from the first user message when
+        # this header is omitted. Allocate one here so two fresh dashboard chats
+        # that begin with the same text cannot collide and resume old context.
+        session_id = session_id or f"dashboard-{uuid.uuid4().hex}"
         messages = _sanitize_chat_messages(data.get("messages", []))
         preview = []
         for msg in messages[-6:]:
@@ -2180,11 +2458,12 @@ async def chat_stream(request):
             "updated_at": time.time(),
             "task": None,
             "session_id": session_id,
+            "profile": profile,
         }
         ACTIVE_RUNS[run_id] = state
         _log_stream(run_id, f"accepted sanitized_messages={len(messages)}")
         state["task"] = asyncio.create_task(
-            _run_chat_stream(run_id, messages, session_id)
+            _run_chat_stream(run_id, messages, session_id, profile)
         )
 
     async def generate():
@@ -2199,6 +2478,7 @@ async def chat_stream(request):
                             "type": "run_state",
                             "run_id": run_id,
                             "session_id": initial_session_id,
+                            "profile": state.get("profile", "default"),
                         }
                     )
                 }
@@ -2221,6 +2501,7 @@ async def chat_stream(request):
                                 "type": "heartbeat",
                                 "run_id": run_id,
                                 "session_id": state.get("session_id"),
+                                "profile": state.get("profile", "default"),
                             }
                         )
                     }
@@ -3035,7 +3316,11 @@ def _run_startup_session_metadata_backfill() -> None:
 @asynccontextmanager
 async def _lifespan(_app):
     _run_startup_session_metadata_backfill()
-    yield
+    await terminal_manager.start()
+    try:
+        yield
+    finally:
+        await terminal_manager.shutdown()
 
 
 def _dashboard_allowed_roots() -> list[Path]:
@@ -12218,6 +12503,7 @@ routes = [
         name="static",
     ),
     Route("/", homepage),
+    Route("/brand-gallery", brand_gallery),
     # Campaigns is implemented as a hash-routed dashboard panel (#dnd), but
     # users/bookmarks can land on path-style URLs after navigation or refresh.
     # Serve the SPA shell for those aliases so the browser can load the panel
@@ -12228,6 +12514,19 @@ routes = [
     Route("/campaigns", homepage),
     Route("/campaigns/", homepage),
     Route("/chat", chat_stream, methods=["POST"]),
+    Route("/api/bots", list_bots_endpoint),
+    Route("/api/bots", create_bot_endpoint, methods=["POST"]),
+    Route("/api/bots/{name}/avatar", get_bot_avatar_endpoint),
+    Route("/api/bots/{name}/avatar", put_bot_avatar_endpoint, methods=["PUT"]),
+    Route("/api/bots/{name}/avatar", delete_bot_avatar_endpoint, methods=["DELETE"]),
+    Route("/api/bots/{name}", get_bot_endpoint),
+    Route("/api/bots/{name}", update_bot_endpoint, methods=["PATCH"]),
+    Route("/api/bots/{name}", delete_bot_endpoint, methods=["DELETE"]),
+    Route("/api/bot-rooms", list_bot_rooms_endpoint),
+    Route("/api/bot-rooms/shared/messages", shared_bot_message_endpoint, methods=["POST"]),
+    Route("/api/bot-rooms/shared/messages/stream", shared_bot_message_stream_endpoint, methods=["POST"]),
+    Route("/api/bot-rooms/{room_id}", get_bot_room_endpoint),
+    Route("/api/bot-rooms/{room_id}", put_bot_room_endpoint, methods=["PUT"]),
     Route("/api/runs/{run_id}/stop", stop_run, methods=["POST"]),
     Route("/api/dashboard-state/{key}", get_dashboard_state),
     Route("/api/dashboard-state/{key}", set_dashboard_state, methods=["PUT"]),
@@ -12237,6 +12536,8 @@ routes = [
     Route("/api/approvals/respond", dashboard_approvals_respond_endpoint, methods=["POST"]),
     Route("/health", health),
     Route("/api/status", get_status),
+    Route("/api/terminal/status", terminal_status_endpoint),
+    Route("/api/terminal/auth", terminal_auth_endpoint, methods=["POST"]),
     Route("/api/dashboard-chat/status", dashboard_chat_status_endpoint),
     Route("/api/config", get_config_endpoint),
     Route("/api/settings", get_settings),
@@ -12379,6 +12680,7 @@ routes = [
 ]
 
 if WebSocketRoute is not None:
+    routes.insert(-1, WebSocketRoute("/api/terminal/ws", terminal_websocket_endpoint, name="terminal_ws"))
     routes.insert(-1, WebSocketRoute("/api/dashboard-chat/ws", dashboard_chat_websocket_endpoint, name="dashboard_chat_ws"))
     routes.insert(-1, WebSocketRoute("/pokemon/ws", pokemon_websocket_proxy_endpoint, name="pokemon_ws"))
     routes.insert(-1, WebSocketRoute("/pokemon/watch/ws", pokemon_websocket_proxy_endpoint, name="pokemon_watch_ws"))

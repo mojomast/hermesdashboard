@@ -33,6 +33,29 @@ def test_delegate_task_live_header_does_not_cap_child_sessions_at_three():
     assert "live subagent" in html
 
 
+def test_in_flight_subagent_rail_indicator_reuses_live_windows_and_stop_controls():
+    html = dashboard_source()
+    css = DASHBOARD_JS.parent.parent.joinpath("css", "dashboard.css").read_text(encoding="utf-8")
+
+    assert "function getInFlightSubagents()" in html
+    assert "function renderSubagentFlightRailItem()" in html
+    assert "function renderSubagentFlightPopover(" in html
+    assert "function watchSubagentFlightStatus(" in html
+    assert "restoreActiveRunChildSessions();" in html
+    assert "rememberRunChildSession(runState, childEntry, 'LIVE')" in html
+    assert "updateDrawerBadge(childSessionId, 'STOPPING')" in html
+    assert "previousStatus === 'STOPPING'" in html
+    assert "restoredChildFlightSessions.has(childSessionId)" in html
+    assert "childFlightEventSources.delete(childSessionId)" in html
+    assert 'class="btn live-view-btn"' in html
+    assert 'class="btn emergency-stop-btn subagent-stop-btn"' in html
+    assert "openChildSessionDrawer(childSessionId, anchorEl, label)" in html
+    assert "requestStopSubagent(stopBtn.dataset.childSessionId" in html
+    assert ".subagent-flight-toggle" in css
+    assert "subagent-flight-hover" in css
+    assert ".subagent-flight-popover" in css
+
+
 def test_delegate_live_actions_are_not_nested_inside_the_tool_toggle_button():
     html = dashboard_source()
 

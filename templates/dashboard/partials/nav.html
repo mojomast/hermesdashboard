@@ -1,5 +1,8 @@
     <div class="header">
-        <div class="logo">Hermes <span>Dashboard</span></div>
+        <a class="logo" id="dashboard-logo" href="/brand-gallery" title="Choose dashboard logo">
+            <span class="dashboard-logo-default" id="dashboard-logo-default">Hermes <span>Dashboard</span></span>
+            <iframe class="dashboard-logo-preview" id="dashboard-logo-preview" title="Selected Hermes Dashboard logo" tabindex="-1" aria-hidden="true" hidden></iframe>
+        </a>
         <div style="display:flex;align-items:center;gap:1rem;">
             <button class="hamburger" id="hamburger" onclick="toggleMobileMenu()">&#9776;</button>
             <div class="token-usage-widget" id="token-usage-widget" tabindex="0" aria-live="polite" title="Token usage loading">
@@ -16,6 +19,11 @@
             <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
                 <span id="theme-icon">&#9790;</span>
             </button>
+            <button class="terminal-launcher" id="terminal-launcher" type="button" onclick="openTerminalWindow()" title="New terminal" aria-controls="terminal-window-host" aria-label="New terminal, 0 open" hidden>
+                <span aria-hidden="true">&gt;_</span><span class="terminal-launcher-count" id="terminal-launcher-count" aria-hidden="true">0</span><span class="sr-only">New terminal</span>
+            </button>
+            <span class="terminal-disabled-message" id="terminal-disabled-message" role="status" hidden>Terminal unavailable in Docker</span>
+            <span class="sr-only" id="terminal-launcher-status" role="status" aria-live="polite"></span>
             <div class="dashboard-settings-wrapper">
                 <button class="dashboard-settings-button" id="dashboard-settings-button" onclick="toggleDashboardSettings(event)" title="Dashboard settings" aria-haspopup="true" aria-expanded="false">
                     <span aria-hidden="true">&#9881;</span><span class="sr-only">Dashboard settings</span>
@@ -60,6 +68,7 @@
 
     <div class="tabs">
         <button class="tab active" data-panel="chat">Chat</button>
+        <button class="tab" data-panel="bots">Bots</button>
         <button class="tab" data-panel="message-board">Message Board</button>
         <button class="tab" data-panel="dashboard-chat">Dashboard Chat</button>
         <button class="tab" data-panel="parallel-arena">Parallel Arena</button>

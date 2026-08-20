@@ -1,0 +1,362 @@
+<style>
+    .s9-studio {
+        --s9-ivory: #f4f0e8;
+        --s9-ink: #11131a;
+        margin-top: 48px;
+    }
+    .s9-heading { margin: 0 0 18px; }
+    .s9-heading span {
+        display: block;
+        margin-bottom: 7px;
+        color: #a89bff;
+        font: 700 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+        letter-spacing: .2em;
+        text-transform: uppercase;
+    }
+    .s9-heading h2 {
+        margin: 0;
+        font-size: clamp(25px, 3vw, 40px);
+        line-height: 1;
+        letter-spacing: -.045em;
+    }
+    .s9-studio .grid { isolation: isolate; }
+    .s9-studio .stage { position: relative; }
+    .s9-studio .brand { position: relative; z-index: 2; }
+
+    .s9-cascade { background: #11131a; }
+    .s9-cascade .s9-cascade-rule { fill: #c9ff4a; }
+    .s9-cascade .s9-cascade-word {
+        fill: none;
+        stroke: #f5f2e9;
+        stroke-width: 1;
+        font: 850 38px/1 Arial, sans-serif;
+        letter-spacing: -2.5px;
+    }
+    .s9-cascade .s9-cascade-fill { fill: #f5f2e9; stroke: none; }
+    .s9-cascade .s9-cascade-sub {
+        fill: #c9ff4a;
+        font: 700 9px/1 ui-monospace, monospace;
+        letter-spacing: 3.6px;
+    }
+
+    .s9-reflection {
+        background: radial-gradient(ellipse at 50% 49%, #303455 0, #141622 43%, #090a0f 75%);
+    }
+    .s9-reflection .s9-ref-axis { stroke: #8bf4ff; stroke-width: .65; opacity: .65; }
+    .s9-reflection .s9-ref-main {
+        fill: #f8f9ff;
+        font: 800 38px/1 Georgia, serif;
+        letter-spacing: -2px;
+    }
+    .s9-reflection .s9-ref-ghost { fill: url(#s9-reflection-fade); opacity: .62; }
+    .s9-reflection .s9-ref-sub {
+        fill: #8bf4ff;
+        font: 650 8px/1 ui-monospace, monospace;
+        letter-spacing: 4px;
+    }
+
+    .s9-moire { background: #efe9dd; color: #171717; }
+    .s9-moire::after { color: rgba(0,0,0,.38); }
+    .s9-moire .meta { color: #171717; }
+    .s9-moire .tags { color: rgba(0,0,0,.54); }
+    .s9-moire .s9-moire-line { stroke: #171717; stroke-width: 1; opacity: .82; }
+    .s9-moire .s9-moire-accent { fill: #ff4d24; }
+    .s9-moire .s9-moire-sub {
+        fill: #171717;
+        font: 800 9px/1 ui-monospace, monospace;
+        letter-spacing: 3.2px;
+    }
+
+    .s9-seven { background: #091714; }
+    .s9-seven::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent 49.8%, rgba(94,255,194,.05) 50%);
+        background-size: 24px 100%;
+    }
+    .s9-seven .s9-seven-box { fill: #0c211c; stroke: #245c4b; }
+    .s9-seven .s9-seven-text {
+        fill: #72ffc6;
+        font: 700 34px/1 "Courier New", monospace;
+        letter-spacing: 2px;
+        filter: url(#s9-seven-glow);
+    }
+    .s9-seven .s9-seven-sub {
+        fill: #88b9a8;
+        font: 700 8px/1 ui-monospace, monospace;
+        letter-spacing: 4.2px;
+    }
+    .s9-seven .s9-seven-seg { fill: #72ffc6; }
+
+    .s9-negative { background: #d7ff3f; color: #111; }
+    .s9-negative::after { color: rgba(0,0,0,.42); }
+    .s9-negative .meta { color: #111; }
+    .s9-negative .tags { color: rgba(0,0,0,.57); }
+    .s9-negative .s9-neg-slab { fill: #111; }
+    .s9-negative .s9-neg-word {
+        fill: #d7ff3f;
+        font: 950 39px/1 Arial Black, Arial, sans-serif;
+        letter-spacing: -3px;
+    }
+    .s9-negative .s9-neg-cut { fill: #111; }
+    .s9-negative .s9-neg-sub {
+        fill: #111;
+        font: 800 9px/1 ui-monospace, monospace;
+        letter-spacing: 3px;
+    }
+
+    .s9-isometric { background: linear-gradient(150deg, #1e1731, #0c0c14 68%); }
+    .s9-isometric .s9-iso-back {
+        fill: #5a36b7;
+        font: 900 37px/1 Arial, sans-serif;
+        letter-spacing: -2.6px;
+    }
+    .s9-isometric .s9-iso-mid { fill: #15a6aa; }
+    .s9-isometric .s9-iso-front { fill: #effffb; }
+    .s9-isometric .s9-iso-sub {
+        fill: #65ffe0;
+        font: 700 8px/1 ui-monospace, monospace;
+        letter-spacing: 3.6px;
+    }
+    .s9-isometric .s9-iso-cube { fill: none; stroke: #65ffe0; stroke-width: 1; opacity: .7; }
+
+    .s9-micro { background: #f5f0e6; color: #151515; }
+    .s9-micro::after { color: rgba(0,0,0,.38); }
+    .s9-micro .meta { color: #151515; }
+    .s9-micro .tags { color: rgba(0,0,0,.55); }
+    .s9-micro .s9-micro-big {
+        fill: #161616;
+        font: 950 69px/.8 Arial Black, Arial, sans-serif;
+        letter-spacing: -6px;
+    }
+    .s9-micro .s9-micro-copy {
+        fill: #e74322;
+        font: 800 6px/1 ui-monospace, monospace;
+        letter-spacing: 1.3px;
+    }
+    .s9-micro .s9-micro-sub {
+        fill: #161616;
+        font: 850 10px/1 ui-monospace, monospace;
+        letter-spacing: 3.5px;
+    }
+
+    .s9-weave { background: #171320; }
+    .s9-weave .s9-weave-warp { stroke: #56496b; stroke-width: 5; }
+    .s9-weave .s9-weave-under,
+    .s9-weave .s9-weave-over {
+        fill: none;
+        stroke-width: 7;
+        stroke-linecap: square;
+        stroke-linejoin: bevel;
+    }
+    .s9-weave .s9-weave-under { stroke: #ffb33b; }
+    .s9-weave .s9-weave-over { stroke: #f3e9ff; stroke-dasharray: 16 8; }
+    .s9-weave .s9-weave-sub {
+        fill: #c5acd8;
+        font: 700 8px/1 ui-monospace, monospace;
+        letter-spacing: 3.8px;
+    }
+
+    .s9-lenticular { background: #08090d; }
+    .s9-lenticular .s9-lens-r,
+    .s9-lenticular .s9-lens-g,
+    .s9-lenticular .s9-lens-b,
+    .s9-lenticular .s9-lens-core {
+        font: 900 39px/1 Arial, sans-serif;
+        letter-spacing: -3px;
+    }
+    .s9-lenticular .s9-lens-r { fill: #ff3e62; transform: translateX(-3px); }
+    .s9-lenticular .s9-lens-g { fill: #4cff9b; }
+    .s9-lenticular .s9-lens-b { fill: #4d72ff; transform: translateX(3px); }
+    .s9-lenticular .s9-lens-core { fill: #f7f5ee; }
+    .s9-lenticular .s9-lens-r,
+    .s9-lenticular .s9-lens-g,
+    .s9-lenticular .s9-lens-b { mix-blend-mode: screen; }
+    .s9-lenticular .s9-lens-core { clip-path: url(#s9-lens-slats); }
+    .s9-lenticular .s9-lens-sub {
+        fill: #d1d4df;
+        font: 700 8px/1 ui-monospace, monospace;
+        letter-spacing: 4px;
+    }
+    .s9-lenticular .s9-lens-tick { stroke: #fff; opacity: .2; }
+
+    .s9-continuous { background: #e9ecf5; color: #17213b; }
+    .s9-continuous::after { color: rgba(23,33,59,.42); }
+    .s9-continuous .meta { color: #17213b; }
+    .s9-continuous .tags { color: rgba(23,33,59,.56); }
+    .s9-continuous .s9-one-line {
+        fill: none;
+        stroke: #17213b;
+        stroke-width: 3.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+    .s9-continuous .s9-one-dot { fill: #ff4938; }
+    .s9-continuous .s9-one-sub {
+        fill: #ff4938;
+        font: 800 8px/1 ui-monospace, monospace;
+        letter-spacing: 3.4px;
+    }
+
+    @media (max-width: 520px) {
+        .s9-studio { margin-top: 34px; }
+        .s9-heading { margin-left: 4px; }
+        .s9-studio .brand { width: 100%; }
+    }
+    @media (prefers-contrast: more) {
+        .s9-studio .concept { border-color: rgba(255,255,255,.45); }
+    }
+</style>
+
+<section class="s9-studio" aria-labelledby="s9-title">
+    <header class="s9-heading">
+        <span>Studio 09 / Experimental typography and optical systems</span>
+        <h2 id="s9-title">Type as instrument.</h2>
+    </header>
+
+    <div class="grid" aria-label="Hermes Dashboard experimental typography logo concepts 91 through 100">
+        <article class="concept s9-cascade" aria-labelledby="s9-name-91">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard variable-width cascade logo">
+                    <rect class="s9-cascade-rule" x="18" y="24" width="4" height="70"/>
+                    <g transform="translate(31 0)">
+                        <text class="s9-cascade-word" x="0" y="48" transform="scale(.77 1)">HERMES</text>
+                        <text class="s9-cascade-word" x="0" y="67" transform="scale(.9 1)">HERMES</text>
+                        <text class="s9-cascade-word s9-cascade-fill" x="0" y="87">HERMES</text>
+                    </g>
+                    <text class="s9-cascade-sub" x="274" y="84">DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">91</div><div class="name" id="s9-name-91">Widthfall</div></div><div class="tags">variable width<br>controlled cascade</div></div>
+        </article>
+
+        <article class="concept s9-reflection" aria-labelledby="s9-name-92">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard ambigram-inspired reflection logo">
+                    <defs>
+                        <linearGradient id="s9-reflection-fade" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8bf4ff" stop-opacity=".72"/><stop offset="1" stop-color="#8bf4ff" stop-opacity="0"/></linearGradient>
+                        <clipPath id="s9-reflection-clip"><rect x="15" y="61" width="410" height="26"/></clipPath>
+                    </defs>
+                    <line class="s9-ref-axis" x1="25" y1="59.5" x2="415" y2="59.5"/>
+                    <text class="s9-ref-main" x="28" y="55">Hermes</text>
+                    <text class="s9-ref-main s9-ref-ghost" x="28" y="55" transform="translate(0 119) scale(1 -1)" clip-path="url(#s9-reflection-clip)">Hermes</text>
+                    <text class="s9-ref-sub" x="260" y="55">DASHBOARD</text>
+                    <text class="s9-ref-sub s9-ref-ghost" x="260" y="55" transform="translate(0 119) scale(1 -1)" clip-path="url(#s9-reflection-clip)">DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">92</div><div class="name" id="s9-name-92">Mercury Mirror</div></div><div class="tags">ambigram study<br>bilateral poise</div></div>
+        </article>
+
+        <article class="concept s9-moire" aria-labelledby="s9-name-93">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard moire line typography logo">
+                    <defs>
+                        <clipPath id="s9-moire-type"><text x="20" y="72" font-family="Arial Black, Arial, sans-serif" font-size="55" font-weight="900" letter-spacing="-5">HERMES</text></clipPath>
+                    </defs>
+                    <g clip-path="url(#s9-moire-type)">
+                        <path class="s9-moire-line" d="M8 19h286M8 23h286M8 27h286M8 31h286M8 35h286M8 39h286M8 43h286M8 47h286M8 51h286M8 55h286M8 59h286M8 63h286M8 67h286M8 71h286M8 75h286M8 79h286M8 83h286"/>
+                        <path class="s9-moire-line" d="M12 94 104 10m-55 91 92-84m-55 91 92-84m-55 91 92-84m-55 91 92-84m-55 91 92-84"/>
+                    </g>
+                    <rect class="s9-moire-accent" x="305" y="29" width="7" height="47"/>
+                    <text class="s9-moire-sub" x="326" y="54">DASH</text><text class="s9-moire-sub" x="326" y="69">BOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">93</div><div class="name" id="s9-name-93">Interference Serif</div></div><div class="tags">moire line type<br>optical density</div></div>
+        </article>
+
+        <article class="concept s9-seven" aria-labelledby="s9-name-94">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard modular seven-segment logo">
+                    <defs><filter id="s9-seven-glow"><feGaussianBlur stdDeviation="1.5" result="s9-seven-blur"/><feMerge><feMergeNode in="s9-seven-blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+                    <rect class="s9-seven-box" x="13" y="23" width="414" height="67" rx="5"/>
+                    <g transform="translate(27 36)"><path class="s9-seven-seg" d="M0 0h24l-4 4H4zM0 3l4 4v11l-4 4zm24 0v19l-4-4V7zM0 25l4-4h16l4 4-4 4H4zm0 3 4 4v11l-4 4zm24 0v19l-4-4V32zM0 50l4-4h16l4 4z"/></g>
+                    <text class="s9-seven-text" x="65" y="66">HERMES</text>
+                    <text class="s9-seven-sub" x="67" y="81">DASHBOARD / MOD-7</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">94</div><div class="name" id="s9-name-94">Olympus Seven</div></div><div class="tags">seven segment<br>modular display</div></div>
+        </article>
+
+        <article class="concept s9-negative" aria-labelledby="s9-name-95">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard negative-space cut letter logo">
+                    <rect class="s9-neg-slab" x="14" y="25" width="296" height="61" rx="2"/>
+                    <text class="s9-neg-word" x="27" y="70">HERMES</text>
+                    <path class="s9-neg-cut" d="M35 37h17L35 55zm58 0h16L93 55zm53 31h19l-19-18zm55-31h17l-17 18zm56 31h20l-20-19z"/>
+                    <text class="s9-neg-sub" x="326" y="49">DASH</text><text class="s9-neg-sub" x="326" y="66">BOARD</text>
+                    <rect class="s9-neg-slab" x="326" y="76" width="78" height="3"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">95</div><div class="name" id="s9-name-95">Countercut</div></div><div class="tags">negative space<br>hard aperture</div></div>
+        </article>
+
+        <article class="concept s9-isometric" aria-labelledby="s9-name-96">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard isometric extrusion logo">
+                    <text class="s9-iso-back" x="33" y="72">HERMES</text>
+                    <text class="s9-iso-back s9-iso-mid" x="29" y="68">HERMES</text>
+                    <text class="s9-iso-back s9-iso-front" x="25" y="64">HERMES</text>
+                    <path class="s9-iso-cube" d="m321 35 24-13 24 13-24 14zm0 0v28l24 14 24-14V35m-24 14v28"/>
+                    <text class="s9-iso-sub" x="286" y="94">DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">96</div><div class="name" id="s9-name-96">Axonometric Word</div></div><div class="tags">isometric depth<br>solid letterform</div></div>
+        </article>
+
+        <article class="concept s9-micro" aria-labelledby="s9-name-97">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard microtype and macrotype contrast logo">
+                    <text class="s9-micro-big" x="13" y="75">H</text>
+                    <g class="s9-micro-copy">
+                        <text x="92" y="28">HERMES DASHBOARD / OPERATOR INTERFACE</text><text x="92" y="38">ROUTES / TASKS / SESSIONS / SIGNALS / STATUS</text>
+                        <text x="92" y="48">HERMES DASHBOARD / OPERATOR INTERFACE</text><text x="92" y="58">ROUTES / TASKS / SESSIONS / SIGNALS / STATUS</text>
+                        <text x="92" y="68">HERMES DASHBOARD / OPERATOR INTERFACE</text>
+                    </g>
+                    <line x1="92" y1="76" x2="417" y2="76" stroke="#161616"/>
+                    <text class="s9-micro-sub" x="92" y="92">HERMES DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">97</div><div class="name" id="s9-name-97">Scale Index</div></div><div class="tags">micro / macro<br>editorial contrast</div></div>
+        </article>
+
+        <article class="concept s9-weave" aria-labelledby="s9-name-98">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard typographic weave logo">
+                    <path class="s9-weave-warp" d="M24 22v66M42 22v66M60 22v66M78 22v66M96 22v66M114 22v66M132 22v66M150 22v66M168 22v66M186 22v66M204 22v66M222 22v66M240 22v66M258 22v66M276 22v66M294 22v66M312 22v66"/>
+                    <g aria-hidden="true">
+                        <path class="s9-weave-under" d="M25 75V35h18v15h19V35h18v40M94 75V35h37m-37 19h31m-31 21h37M145 75V35l19 27 19-27v40M198 75V35h37m-37 19h31m-31 21h37M249 75V35h26c15 0 15 20 0 20h-26m19 0 18 20m9-33c0-9 27-10 27 0 0 9-27 8-27 22 0 11 29 10 29 0"/>
+                        <path class="s9-weave-over" d="M25 75V35h18v15h19V35h18v40M94 75V35h37m-37 19h31m-31 21h37M145 75V35l19 27 19-27v40M198 75V35h37m-37 19h31m-31 21h37M249 75V35h26c15 0 15 20 0 20h-26m19 0 18 20m9-33c0-9 27-10 27 0 0 9-27 8-27 22 0 11 29 10 29 0"/>
+                    </g>
+                    <text class="s9-weave-sub" x="350" y="53">DASH</text><text class="s9-weave-sub" x="350" y="68">BOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">98</div><div class="name" id="s9-name-98">Loomword</div></div><div class="tags">typographic weave<br>interlaced system</div></div>
+        </article>
+
+        <article class="concept s9-lenticular" aria-labelledby="s9-name-99">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard lenticular RGB split logo">
+                    <defs><clipPath id="s9-lens-slats"><path d="M0 0h440v4H0zm0 8h440v4H0zm0 16h440v4H0zm0 24h440v4H0zm0 32h440v4H0zm0 40h440v4H0zm0 48h440v4H0zm0 56h440v4H0zm0 64h440v4H0zm0 72h440v4H0z"/></clipPath></defs>
+                    <g opacity=".68"><text class="s9-lens-r" x="22" y="67">HERMES</text><text class="s9-lens-g" x="22" y="67">HERMES</text><text class="s9-lens-b" x="22" y="67">HERMES</text></g>
+                    <text class="s9-lens-core" x="22" y="67">HERMES</text>
+                    <path class="s9-lens-tick" d="M22 27h396M22 35h396M22 43h396M22 51h396M22 59h396M22 67h396M22 75h396"/>
+                    <text class="s9-lens-sub" x="284" y="88">DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">99</div><div class="name" id="s9-name-99">Trichrome Slant</div></div><div class="tags">lenticular RGB<br>view-angle color</div></div>
+        </article>
+
+        <article class="concept s9-continuous" aria-labelledby="s9-name-100">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Hermes Dashboard continuous one-line lettering logo">
+                    <path class="s9-one-line" d="M16 72V37v18h22V37v35c0 12 24 10 24-4V54c0-11-21-10-21 3h37c0-14 20-15 20-2v17-17c0-13 21-14 21 0v17-17c0-13 21-14 21 0v17c0 11 23 10 23-4V54c0-11-21-10-21 3h38c0-14 21-15 21-2v17-17c0-12 23-14 23 1 0 16-25 6-25 16 0 11 29 10 29-3V38"/>
+                    <circle class="s9-one-dot" cx="16" cy="72" r="4"/><circle class="s9-one-dot" cx="228" cy="38" r="4"/>
+                    <path class="s9-one-line" d="M228 38h30c11 0 18 7 18 17s-7 17-18 17h-15V38m46 34V38h17c23 0 23 34 0 34zm43 0V38h27m-27 17h22m-22 17h27m13 0V38h17c22 0 22 24 0 24h-17m17 0 16 10"/>
+                    <text class="s9-one-sub" x="243" y="92">HERMES DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">100</div><div class="name" id="s9-name-100">Unbroken Route</div></div><div class="tags">single line<br>continuous signal</div></div>
+        </article>
+    </div>
+</section>

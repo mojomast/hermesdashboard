@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Hermes Dashboard - Brand Lab</title>
+    <style>
+        :root {
+            --ink: #f5f7ff;
+            --muted: #8c92a8;
+            --line: rgba(255,255,255,.11);
+            --paper: #090a0f;
+        }
+        * { box-sizing: border-box; }
+        html { background: var(--paper); }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--ink);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background:
+                radial-gradient(circle at 8% 0%, rgba(110,72,255,.16), transparent 28rem),
+                radial-gradient(circle at 94% 14%, rgba(0,229,255,.10), transparent 24rem),
+                #090a0f;
+        }
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            opacity: .22;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.12'/%3E%3C/svg%3E");
+            mix-blend-mode: screen;
+        }
+        .page { width: min(1500px, calc(100% - 40px)); margin: 0 auto; padding: 54px 0 90px; }
+        .intro { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 30px; margin-bottom: 34px; }
+        .eyebrow { color: #8d7cff; font: 700 11px/1 ui-monospace, monospace; letter-spacing: .22em; text-transform: uppercase; }
+        h1 { margin: 11px 0 8px; font-size: clamp(34px, 5vw, 72px); line-height: .93; letter-spacing: -.06em; max-width: 880px; }
+        .intro p { margin: 0; color: var(--muted); max-width: 650px; line-height: 1.65; }
+        .return { color: #ccd0e2; text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 11px 16px; font-size: 12px; transition: .2s ease; }
+        .return:hover { color: white; border-color: #8d7cff; background: rgba(141,124,255,.1); }
+        .studio-nav {
+            position: sticky;
+            top: 10px;
+            z-index: 50;
+            display: flex;
+            gap: 7px;
+            margin: 0 0 30px;
+            padding: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: rgba(9,10,15,.78);
+            box-shadow: 0 12px 45px rgba(0,0,0,.28);
+            backdrop-filter: blur(18px) saturate(140%);
+            scrollbar-width: none;
+        }
+        .studio-nav::-webkit-scrollbar { display: none; }
+        .studio-nav a { flex: 0 0 auto; color: #9da3b8; text-decoration: none; border-radius: 10px; padding: 9px 11px; font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; transition: .2s ease; }
+        .studio-nav a:hover, .studio-nav a:focus-visible { color: white; outline: none; background: rgba(141,124,255,.18); }
+        .picker-bar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: -12px 0 30px; padding: 13px 16px; border: 1px solid rgba(141,124,255,.28); border-radius: 14px; color: #c9cde0; background: rgba(141,124,255,.08); font-size: 12px; }
+        .picker-bar strong { color: white; }
+        .picker-reset { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; color: #dfe2ef; background: rgba(255,255,255,.04); font: 650 10px/1 ui-monospace, monospace; cursor: pointer; }
+        .picker-reset:hover, .picker-reset:focus-visible { border-color: #8d7cff; outline: none; background: rgba(141,124,255,.14); }
+        .studio-anchor { scroll-margin-top: 84px; content-visibility: auto; contain-intrinsic-size: auto 1600px; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+        .concept {
+            position: relative;
+            isolation: isolate;
+            min-height: 270px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            background: #101118;
+            box-shadow: 0 24px 70px rgba(0,0,0,.22);
+            transition: transform .35s cubic-bezier(.2,.8,.2,1), border-color .35s ease;
+            content-visibility: auto;
+            contain-intrinsic-size: 270px;
+        }
+        .concept:hover { transform: translateY(-4px); border-color: rgba(255,255,255,.25); }
+        body:not(.brand-embed) .concept[data-logo-id] { cursor: pointer; }
+        body:not(.brand-embed) .concept[data-logo-id]:focus-visible { outline: 3px solid #a99aff; outline-offset: 3px; }
+        body:not(.brand-embed) .concept.logo-selected { border-color: #a99aff; box-shadow: 0 0 0 2px #a99aff, 0 24px 70px rgba(80,56,255,.28); }
+        body:not(.brand-embed) .concept.logo-selected::before { content: "SELECTED"; position: absolute; z-index: 20; top: 14px; left: 14px; padding: 7px 9px; border-radius: 8px; color: #0c0b12; background: #b8adff; font: 850 8px/1 ui-monospace, monospace; letter-spacing: .12em; box-shadow: 0 5px 18px rgba(0,0,0,.25); }
+        .meta { position: absolute; z-index: 5; left: 20px; right: 20px; bottom: 17px; display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+        .number { font: 700 10px/1 ui-monospace, monospace; letter-spacing: .18em; opacity: .55; }
+        .name { margin-top: 5px; font-size: 13px; font-weight: 650; letter-spacing: .01em; }
+        .tags { color: rgba(255,255,255,.5); font: 500 9px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .12em; text-align: right; }
+        .stage { height: 215px; display: grid; place-items: center; padding: 24px; }
+        .brand { width: min(440px, 92%); height: auto; overflow: visible; }
+        .concept::after { content: "HEADER FIT  280 x 48"; position: absolute; top: 16px; right: 18px; z-index: 4; color: rgba(255,255,255,.28); font: 600 8px/1 ui-monospace, monospace; letter-spacing: .12em; }
+
+        /* 01: precision prism */
+        .prism { background: radial-gradient(circle at 30% 40%, #282443 0, #11121a 45%, #090a0f 100%); }
+        .prism .stage::before { content: ""; position: absolute; width: 300px; height: 160px; background: conic-gradient(from 120deg, #7c5cff, #00e5ff, #ff4fd8, #7c5cff); filter: blur(70px); opacity: .18; animation: orbit 9s linear infinite; }
+        .prism .word-main { fill: white; font: 800 45px/1 system-ui; letter-spacing: -3px; }
+        .prism .word-sub { fill: #a7aec4; font: 600 12px/1 ui-monospace, monospace; letter-spacing: 4.4px; }
+        .prism .wing { stroke: url(#prismGradient); stroke-width: 2.2; fill: none; filter: url(#prismGlow); }
+        .prism .spark { fill: #d8fbff; animation: pulse 2s ease-in-out infinite; transform-origin: center; }
+
+        /* 02: liquid chrome */
+        .chrome { background: linear-gradient(145deg, #18191c, #050505 65%); }
+        .chrome::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(105deg, transparent 0 35px, rgba(255,255,255,.025) 36px 37px); }
+        .chrome .chrome-text { font: 900 43px/1 Arial Black, system-ui; letter-spacing: -3px; fill: url(#chromeMetal); filter: url(#chromeWarp); }
+        .chrome .dash { font: 600 10px/1 ui-monospace, monospace; letter-spacing: 4px; fill: #b9ff35; }
+        .chrome .capsule { fill: #b9ff35; filter: drop-shadow(0 0 10px rgba(185,255,53,.6)); }
+
+        /* 03: orbital signal */
+        .orbital { background-color: #070c19; background-image: linear-gradient(rgba(53,217,255,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(53,217,255,.055) 1px, transparent 1px); background-size: 24px 24px; }
+        .orbital .ring { fill: none; stroke: #36dcff; stroke-width: 1.2; stroke-dasharray: 2 8; transform-origin: 74px 59px; animation: orbit 12s linear infinite; }
+        .orbital .planet { fill: url(#orbitCore); filter: url(#orbitGlow); }
+        .orbital .htext { fill: #eafcff; font: 700 35px/1 system-ui; letter-spacing: -1.5px; }
+        .orbital .dtext { fill: #36dcff; font: 600 11px/1 ui-monospace, monospace; letter-spacing: 4px; }
+        .orbital .beam { stroke: url(#beamGradient); stroke-width: 1; opacity: .7; }
+
+        /* 04: new editorial */
+        .editorial { background: #eee9dd; color: #101010; }
+        .editorial::after { color: rgba(0,0,0,.35); }
+        .editorial .meta { color: #111; }
+        .editorial .tags { color: rgba(0,0,0,.52); }
+        .editorial .stage { place-items: center start; padding-left: 9%; }
+        .editorial .stack { position: relative; transform: rotate(-2deg); }
+        .editorial .hermes { color: #0c0c0c; font-family: Georgia, "Times New Roman", serif; font-size: clamp(42px, 6vw, 70px); font-style: italic; font-weight: 700; letter-spacing: -.08em; line-height: .75; }
+        .editorial .dashboard { display: inline-block; margin-left: 80px; color: #ff3c16; font: 900 clamp(19px, 3vw, 31px)/1 Arial Black, system-ui; text-transform: uppercase; letter-spacing: -.05em; transform: skew(-8deg); }
+        .editorial .index { position: absolute; top: -15px; right: -38px; width: 27px; height: 27px; border: 1px solid #111; border-radius: 50%; display: grid; place-items: center; font: 700 8px/1 ui-monospace, monospace; }
+        .editorial .rule { position: absolute; width: 150px; height: 2px; background: #111; right: -135px; top: 44px; }
+
+        /* 05: holographic glass */
+        .holo { background: linear-gradient(135deg, #17152b, #101e28 55%, #1f1425); }
+        .holo .glass { position: relative; padding: 24px 34px 23px; border: 1px solid rgba(255,255,255,.28); border-radius: 19px; background: linear-gradient(115deg, rgba(255,255,255,.12), rgba(255,255,255,.025)); box-shadow: inset 0 1px rgba(255,255,255,.3), 0 18px 60px rgba(0,0,0,.4); transform: perspective(700px) rotateX(5deg) rotateY(-8deg); backdrop-filter: blur(15px); }
+        .holo .glass::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; background: linear-gradient(110deg, #6af4ff, transparent 30%, #ff78dc 65%, #f8ff9b); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity: .8; }
+        .holo .holo-main { font-size: 37px; font-weight: 800; letter-spacing: -.06em; background: linear-gradient(90deg, #bdfbff, #fff, #ffc8ee); color: transparent; background-clip: text; }
+        .holo .holo-sub { margin-top: 4px; color: #c6d2e7; font: 600 9px/1 ui-monospace, monospace; letter-spacing: .42em; text-transform: uppercase; }
+        .holo .flare { position: absolute; width: 70px; height: 2px; top: 25%; left: 10%; background: white; box-shadow: 0 0 14px 5px #8eeeff; animation: scan 4s ease-in-out infinite; }
+
+        /* 06: phosphor terminal */
+        .terminal { background: #05100c; box-shadow: inset 0 0 90px rgba(38,255,142,.06); }
+        .terminal::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(81,255,169,.035) 4px); pointer-events: none; }
+        .terminal .prompt { fill: #40ff9a; font: 700 34px/1 ui-monospace, SFMono-Regular, monospace; filter: url(#terminalGlow); }
+        .terminal .term-sub { fill: #8bbca2; font: 500 10px/1 ui-monospace, monospace; letter-spacing: 3px; }
+        .terminal .cursor { fill: #40ff9a; animation: blink 1s steps(1) infinite; }
+        .terminal .code { fill: #245e40; font: 500 7px/1 ui-monospace, monospace; letter-spacing: 1px; }
+
+        /* 07: brutal utility */
+        .brutal { background: #ffdb00; color: #080808; border-radius: 5px; border: 3px solid #080808; box-shadow: 8px 8px 0 #ff3f8e; }
+        .brutal::after { color: rgba(0,0,0,.55); }
+        .brutal .meta { color: #080808; }
+        .brutal .tags { color: rgba(0,0,0,.65); }
+        .brutal .block { display: flex; align-items: stretch; transform: rotate(1deg); box-shadow: 7px 7px 0 #ff3f8e; }
+        .brutal .mark { width: 58px; background: #080808; color: #ffdb00; display: grid; place-items: center; font: 900 32px/1 Arial Black, system-ui; }
+        .brutal .copy { border: 4px solid #080808; background: #fff7d4; padding: 10px 17px 9px; }
+        .brutal .brut-main { font: 950 31px/.9 Arial Black, system-ui; letter-spacing: -.07em; text-transform: uppercase; }
+        .brutal .brut-sub { margin-top: 8px; font: 800 8px/1 ui-monospace, monospace; letter-spacing: .32em; text-transform: uppercase; }
+
+        /* 08: celestial cartography */
+        .celestial { background: radial-gradient(circle at center, #18203c, #080a17 68%); }
+        .celestial .stars { fill: white; }
+        .celestial .constellation { stroke: #8fa7ff; stroke-width: .7; opacity: .55; fill: none; }
+        .celestial .cel-main { fill: #f2eddf; font: 500 38px/1 Georgia, serif; letter-spacing: 3px; }
+        .celestial .cel-sub { fill: #a9b9f8; font: 500 9px/1 ui-monospace, monospace; letter-spacing: 5px; }
+        .celestial .halo { fill: none; stroke: url(#celestialGold); stroke-width: 1.1; }
+        .celestial .star-hot { animation: pulse 2.6s ease-in-out infinite; transform-origin: center; }
+
+        /* 09: soft bio-digital */
+        .bio { background: #e6ffd5; color: #152114; }
+        .bio::after { color: rgba(21,33,20,.4); }
+        .bio .meta { color: #152114; }
+        .bio .tags { color: rgba(21,33,20,.52); }
+        .bio .blob { position: absolute; width: 250px; height: 145px; border-radius: 58% 42% 60% 40% / 45% 60% 40% 55%; background: #98ff60; filter: drop-shadow(20px 15px 0 #ffa9dd); animation: morph 7s ease-in-out infinite alternate; }
+        .bio .bio-lockup { z-index: 1; display: flex; align-items: center; gap: 12px; }
+        .bio .seed { width: 42px; height: 42px; border-radius: 50% 8% 50% 50%; background: #152114; transform: rotate(45deg); position: relative; }
+        .bio .seed::after { content: "H"; position: absolute; inset: 0; display: grid; place-items: center; color: #e6ffd5; font: 800 17px/1 system-ui; transform: rotate(-45deg); }
+        .bio .bio-main { font-size: 34px; font-weight: 780; letter-spacing: -.06em; }
+        .bio .bio-sub { font: 700 8px/1 ui-monospace, monospace; letter-spacing: .35em; text-transform: uppercase; }
+
+        /* 10: kinetic frequency */
+        .kinetic { background: #100b16; }
+        .kinetic .frequency { position: absolute; inset: 10px; opacity: .35; }
+        .kinetic .freq-line { fill: none; stroke: url(#freqGradient); stroke-width: 1; vector-effect: non-scaling-stroke; }
+        .kinetic .k-main { fill: white; font: 900 40px/1 system-ui; letter-spacing: -3px; }
+        .kinetic .k-main-shadow { fill: none; stroke: #ff3eaf; stroke-width: .7; opacity: .65; transform: translate(3px, 3px); }
+        .kinetic .k-sub { fill: #ffdf4a; font: 700 9px/1 ui-monospace, monospace; letter-spacing: 5px; }
+        .kinetic .slash { fill: #a869ff; animation: slide 3s ease-in-out infinite alternate; }
+
+        @keyframes orbit { to { transform: rotate(360deg); } }
+        @keyframes pulse { 50% { opacity: .35; transform: scale(.65); } }
+        @keyframes blink { 50% { opacity: 0; } }
+        @keyframes scan { 0%,100% { transform: translateX(0); opacity: 0; } 25%,75% { opacity: .7; } 50% { transform: translateX(300px); } }
+        @keyframes morph { to { border-radius: 35% 65% 42% 58% / 62% 38% 65% 35%; transform: rotate(7deg) scale(1.08); } }
+        @keyframes slide { to { transform: translateX(52px); } }
+        @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } .intro { grid-template-columns: 1fr; } .return { justify-self: start; } }
+        @media (max-width: 520px) { .page { width: min(100% - 20px, 1500px); padding-top: 30px; } .concept { min-height: 240px; border-radius: 17px; contain-intrinsic-size: 240px; } .stage { height: 190px; padding: 13px; } .meta { left: 14px; right: 14px; bottom: 12px; } .tags { display: none; } .studio-nav { top: 5px; margin-inline: -4px; } }
+        body.brand-embed { min-height: 0; overflow: hidden; background: transparent; }
+        body.brand-embed::before { display: none; }
+        .brand-embed-shell { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+        .brand-embed-context { position: absolute; left: 0; top: 0; width: 560px; height: 108px; display: grid; place-items: center; transform-origin: 0 0; }
+        .brand-embed-surface { position: relative; width: 560px; height: 108px; display: grid; place-items: center; overflow: visible; color: white; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; }
+        .brand-embed-surface .stage { position: relative; width: 560px; height: 108px; min-height: 0; padding: 0 20px; overflow: visible; transform: none !important; }
+        .brand-embed-surface .brand { max-height: 106px; }
+        .brand-embed-surface::before, .brand-embed-surface::after { display: none !important; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+    </style>
+</head>
+<body>
+<main class="page">
+    <header class="intro">
+        <div>
+            <div class="eyebrow">Hermes identity study / 110 directions</div>
+            <h1>Pick your signal.</h1>
+            <p>One hundred and ten compact marks designed for the dashboard's top-left corner. Eleven studios explore radically different visual worlds while keeping “Hermes Dashboard” legible at header scale.</p>
+        </div>
+        <a class="return" href="/">Return to dashboard</a>
+    </header>
+
+    <nav class="studio-nav" aria-label="Jump to design studio">
+        <a href="#studio-00">Original 01-10</a><a href="#studio-01">Analog 11-20</a><a href="#studio-02">Science 21-30</a><a href="#studio-03">Movements 31-40</a><a href="#studio-04">Mythic 41-50</a><a href="#studio-05">Machine 51-60</a><a href="#studio-06">Luxury 61-70</a><a href="#studio-07">Play 71-80</a><a href="#studio-08">Earth 81-90</a><a href="#studio-09">Type 91-100</a><a href="#studio-10">Interfaces 101-110</a>
+    </nav>
+    <div class="picker-bar" role="status" aria-live="polite">
+        <span id="picker-status"><strong>No custom logo selected.</strong> Choose any card to apply it to the dashboard header.</span>
+        <button class="picker-reset" id="picker-reset" type="button">Use default text</button>
+    </div>
+
+    <section class="grid studio-anchor" id="studio-00" aria-label="Original Hermes Dashboard logo concepts">
+        <article class="concept prism">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Prism Courier, Hermes Dashboard">
+                    <defs>
+                        <linearGradient id="prismGradient"><stop stop-color="#9b72ff"/><stop offset=".48" stop-color="#37e6ff"/><stop offset="1" stop-color="#ff5ccc"/></linearGradient>
+                        <filter id="prismGlow"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                    </defs>
+                    <path class="wing" d="M15 61 45 24l-5 27 28-34-13 35 30-20-25 33 24 2-34 10-14 25 1-27z"/>
+                    <circle class="spark" cx="72" cy="27" r="2.5"/><circle class="spark" cx="31" cy="39" r="1.7" style="animation-delay:.7s"/>
+                    <text class="word-main" x="105" y="61">Hermes</text><text class="word-sub" x="108" y="87">DASHBOARD / 01</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">01</div><div class="name">Prism Courier</div></div><div class="tags">speed / dimensional<br>premium tech</div></div>
+        </article>
+
+        <article class="concept chrome">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Liquid Mercury, Hermes Dashboard">
+                    <defs>
+                        <linearGradient id="chromeMetal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".22" stop-color="#555"/><stop offset=".44" stop-color="#f8f8f8"/><stop offset=".63" stop-color="#272727"/><stop offset=".82" stop-color="#ddd"/><stop offset="1" stop-color="#666"/></linearGradient>
+                        <filter id="chromeWarp"><feTurbulence type="fractalNoise" baseFrequency=".012 .08" numOctaves="1" seed="8" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="3"/></filter>
+                    </defs>
+                    <rect class="capsule" x="15" y="39" width="12" height="43" rx="6"/><text class="chrome-text" x="44" y="69">HERMES</text><text class="dash" x="47" y="91">DASHBOARD_SYSTEM</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">02</div><div class="name">Liquid Mercury</div></div><div class="tags">chrome / fashion<br>high contrast</div></div>
+        </article>
+
+        <article class="concept orbital">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Orbital Signal, Hermes Dashboard">
+                    <defs><radialGradient id="orbitCore"><stop stop-color="#fff"/><stop offset=".25" stop-color="#42e6ff"/><stop offset="1" stop-color="#6656ff"/></radialGradient><linearGradient id="beamGradient"><stop stop-color="#36dcff"/><stop offset="1" stop-color="#36dcff" stop-opacity="0"/></linearGradient><filter id="orbitGlow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+                    <circle class="ring" cx="65" cy="58" r="44"/><ellipse class="ring" cx="65" cy="58" rx="48" ry="17" style="animation-direction:reverse"/><circle class="planet" cx="65" cy="58" r="9"/><line class="beam" x1="65" y1="58" x2="137" y2="30"/>
+                    <text class="htext" x="130" y="61">Hermes</text><text class="dtext" x="133" y="84">DASHBOARD // LIVE</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">03</div><div class="name">Orbital Signal</div></div><div class="tags">mission control<br>networked / alive</div></div>
+        </article>
+
+        <article class="concept editorial">
+            <div class="stage"><div class="stack"><div class="hermes">Hermes</div><div class="dashboard">Dashboard</div><span class="index">04</span><span class="rule"></span></div></div>
+            <div class="meta"><div><div class="number">04</div><div class="name">New Editorial</div></div><div class="tags">culture / magazine<br>confident contrast</div></div>
+        </article>
+
+        <article class="concept holo">
+            <div class="stage"><div class="flare"></div><div class="glass"><div class="holo-main">Hermes</div><div class="holo-sub">Dashboard</div></div></div>
+            <div class="meta"><div><div class="number">05</div><div class="name">Holographic Pane</div></div><div class="tags">glass / spatial<br>luminous depth</div></div>
+        </article>
+
+        <article class="concept terminal">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Phosphor Shell, Hermes Dashboard">
+                    <defs><filter id="terminalGlow"><feGaussianBlur stdDeviation="1.8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+                    <text class="code" x="18" y="23">SYS://OLYMPUS/NODE_01</text><text class="prompt" x="18" y="68">&gt; hermes</text><rect class="cursor" x="212" y="42" width="15" height="31"/><text class="term-sub" x="20" y="94">DASHBOARD IS ONLINE</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">06</div><div class="name">Phosphor Shell</div></div><div class="tags">developer native<br>retro terminal</div></div>
+        </article>
+
+        <article class="concept brutal">
+            <div class="stage"><div class="block"><div class="mark">H</div><div class="copy"><div class="brut-main">Hermes</div><div class="brut-sub">Dashboard</div></div></div></div>
+            <div class="meta"><div><div class="number">07</div><div class="name">Brutal Utility</div></div><div class="tags">anti-polish / bold<br>unmissable</div></div>
+        </article>
+
+        <article class="concept celestial">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Celestial Atlas, Hermes Dashboard">
+                    <defs><linearGradient id="celestialGold"><stop stop-color="#ffe6a4"/><stop offset=".5" stop-color="#798dff"/><stop offset="1" stop-color="#ffe6a4"/></linearGradient></defs>
+                    <path class="constellation" d="M20 84 58 35l31 31 42-43 42 58 37-25"/><circle class="stars" cx="20" cy="84" r="1.5"/><circle class="stars star-hot" cx="58" cy="35" r="3"/><circle class="stars" cx="89" cy="66" r="1.5"/><circle class="stars" cx="131" cy="23" r="2"/>
+                    <circle class="halo" cx="83" cy="59" r="48"/><text class="cel-main" x="122" y="66">HERMES</text><text class="cel-sub" x="126" y="87">DASHBOARD</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">08</div><div class="name">Celestial Atlas</div></div><div class="tags">mythic / elegant<br>timeless system</div></div>
+        </article>
+
+        <article class="concept bio">
+            <div class="stage"><div class="blob"></div><div class="bio-lockup"><div class="seed"></div><div><div class="bio-main">Hermes</div><div class="bio-sub">Dashboard</div></div></div></div>
+            <div class="meta"><div><div class="number">09</div><div class="name">Bio-Digital</div></div><div class="tags">friendly / adaptive<br>organic software</div></div>
+        </article>
+
+        <article class="concept kinetic">
+            <div class="stage">
+                <svg class="frequency" viewBox="0 0 620 230" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="freqGradient"><stop stop-color="#7c4dff"/><stop offset=".5" stop-color="#ff3eaf"/><stop offset="1" stop-color="#ffdf4a"/></linearGradient></defs><path class="freq-line" d="M0 116 C30 116 30 20 60 20S90 205 120 205s30-145 60-145 30 95 60 95 30-125 60-125 30 175 60 175 30-93 60-93 30 40 60 40 30-118 60-118 30 80 80 80"/></svg>
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Kinetic Frequency, Hermes Dashboard"><defs><linearGradient id="freqGradient2"><stop stop-color="#a869ff"/><stop offset="1" stop-color="#ff3eaf"/></linearGradient></defs><polygon class="slash" points="24,26 48,26 24,91 0,91"/><text class="k-main-shadow" x="60" y="68">HERMES</text><text class="k-main" x="57" y="65">HERMES</text><text class="k-sub" x="60" y="88">DASHBOARD / SIGNAL</text></svg>
+            </div>
+            <div class="meta"><div><div class="number">10</div><div class="name">Kinetic Frequency</div></div><div class="tags">music / motion<br>expressive system</div></div>
+        </article>
+    </section>
+
+    <div class="studio-anchor" id="studio-01">{% include "brand_gallery/studio_01_analog.html" %}</div>
+    <div class="studio-anchor" id="studio-02">{% include "brand_gallery/studio_02_science.html" %}</div>
+    <div class="studio-anchor" id="studio-03">{% include "brand_gallery/studio_03_movements.html" %}</div>
+    <div class="studio-anchor" id="studio-04">{% include "brand_gallery/studio_04_mythic.html" %}</div>
+    <div class="studio-anchor" id="studio-05">{% include "brand_gallery/studio_05_machine.html" %}</div>
+    <div class="studio-anchor" id="studio-06">{% include "brand_gallery/studio_06_luxury.html" %}</div>
+    <div class="studio-anchor" id="studio-07">{% include "brand_gallery/studio_07_play.html" %}</div>
+    <div class="studio-anchor" id="studio-08">{% include "brand_gallery/studio_08_earth.html" %}</div>
+    <div class="studio-anchor" id="studio-09">{% include "brand_gallery/studio_09_type.html" %}</div>
+    <div class="studio-anchor" id="studio-10">{% include "brand_gallery/studio_10_interfaces.html" %}</div>
+</main>
+<script>
+(() => {
+    const storageKey = 'hermes_dashboard_brand_concept_v1';
+    const concepts = Array.from(document.querySelectorAll('.concept'));
+    const requested = Number.parseInt(new URLSearchParams(location.search).get('embed') || '', 10);
+    const validId = value => Number.isInteger(value) && value >= 1 && value <= concepts.length ? value : null;
+
+    concepts.forEach((concept, index) => {
+        concept.dataset.logoId = String(index + 1);
+    });
+
+    if (validId(requested)) {
+        const selected = concepts[requested - 1];
+        const context = document.createElement('div');
+        context.className = 'brand-embed-context';
+        for (let node = selected.parentElement; node && node.tagName !== 'MAIN'; node = node.parentElement) {
+            node.classList.forEach(name => {
+                if (/^s\d+-/.test(name)) context.classList.add(name);
+            });
+        }
+        const surface = document.createElement('div');
+        surface.className = 'brand-embed-surface';
+        selected.classList.forEach(name => {
+            if (name !== 'concept') surface.classList.add(name);
+        });
+        const stage = selected.querySelector('.stage');
+        const embeddedStage = stage?.cloneNode(true);
+        if (embeddedStage) surface.append(embeddedStage);
+        context.append(surface);
+        document.querySelectorAll('main style').forEach(style => document.head.append(style));
+        const shell = document.createElement('div');
+        shell.className = 'brand-embed-shell';
+        shell.append(context);
+        document.body.replaceChildren(shell);
+        document.body.className = 'brand-embed';
+        const fitArtwork = () => {
+            const artwork = surface.querySelector('.brand') || embeddedStage?.lastElementChild;
+            if (!artwork) return;
+            context.style.transform = 'none';
+            const contextRect = context.getBoundingClientRect();
+            const artworkRect = artwork.getBoundingClientRect();
+            if (!artworkRect.width || !artworkRect.height) return;
+            const inset = 1;
+            const scale = Math.min(
+                Math.max(1, window.innerWidth - inset * 2) / artworkRect.width,
+                Math.max(1, window.innerHeight - inset * 2) / artworkRect.height
+            );
+            const artworkLeft = artworkRect.left - contextRect.left;
+            const artworkTop = artworkRect.top - contextRect.top;
+            const x = inset - artworkLeft * scale;
+            const centeredY = (window.innerHeight - artworkRect.height * scale) / 2;
+            const y = Math.max(inset, centeredY - 2) - artworkTop * scale;
+            context.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+        };
+        requestAnimationFrame(() => requestAnimationFrame(fitArtwork));
+        document.fonts?.ready?.then(fitArtwork);
+        window.addEventListener('resize', fitArtwork);
+        return;
+    }
+
+    const status = document.getElementById('picker-status');
+    const reset = document.getElementById('picker-reset');
+    const readSelection = () => {
+        try { return validId(Number.parseInt(localStorage.getItem(storageKey) || '', 10)); }
+        catch (error) { return null; }
+    };
+    const conceptName = concept => concept.querySelector('.name')?.textContent?.trim() || `Concept ${concept.dataset.logoId}`;
+    const renderSelection = selectedId => {
+        concepts.forEach(concept => {
+            const selected = Number(concept.dataset.logoId) === selectedId;
+            concept.classList.toggle('logo-selected', selected);
+            concept.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        });
+        if (!status) return;
+        if (!selectedId) {
+            status.innerHTML = '<strong>Default text logo active.</strong> Choose any card to apply it to the dashboard header.';
+            return;
+        }
+        status.innerHTML = `<strong>Concept ${selectedId}: ${conceptName(concepts[selectedId - 1])}</strong> is now active. Return to the dashboard to see it.`;
+    };
+    const selectConcept = concept => {
+        const selectedId = validId(Number(concept.dataset.logoId));
+        if (!selectedId) return;
+        try { localStorage.setItem(storageKey, String(selectedId)); } catch (error) {}
+        renderSelection(selectedId);
+    };
+
+    concepts.forEach(concept => {
+        concept.tabIndex = 0;
+        concept.setAttribute('role', 'button');
+        concept.addEventListener('click', () => selectConcept(concept));
+        concept.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            selectConcept(concept);
+        });
+    });
+    reset?.addEventListener('click', () => {
+        try { localStorage.removeItem(storageKey); } catch (error) {}
+        renderSelection(null);
+    });
+    window.addEventListener('storage', event => {
+        if (event.key === storageKey) renderSelection(readSelection());
+    });
+    renderSelection(readSelection());
+})();
+</script>
+</body>
+</html>

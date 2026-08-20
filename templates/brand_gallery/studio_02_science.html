@@ -1,0 +1,237 @@
+<style>
+    .s2-gallery { margin-top: 42px; }
+    .s2-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin: 0 0 18px; padding-top: 24px; border-top: 1px solid var(--line); }
+    .s2-kicker { color: #8dd9ca; font: 700 10px/1 ui-monospace, monospace; letter-spacing: .2em; text-transform: uppercase; }
+    .s2-title { margin: 8px 0 0; font-size: clamp(25px, 3vw, 38px); line-height: 1; letter-spacing: -.045em; }
+    .s2-note { max-width: 390px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; text-align: right; }
+    .s2-grid .stage { position: relative; }
+    .s2-grid .brand { max-height: 118px; }
+    .s2-grid svg text { text-rendering: geometricPrecision; }
+    .s2-grid .s2-label { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+    .s2-scope { background: #d8d4c3; color: #1f2823; }
+    .s2-scope::after, .s2-contour::after, .s2-specimen::after { color: rgba(20,25,22,.42); }
+    .s2-scope .meta, .s2-contour .meta, .s2-specimen .meta { color: #18201c; }
+    .s2-scope .tags, .s2-contour .tags, .s2-specimen .tags { color: rgba(20,25,22,.55); }
+    .s2-scope-face { fill: #b9b8a9; stroke: #353d37; stroke-width: 1.2; }
+    .s2-scope-screen { fill: #13241d; stroke: #4c5b52; stroke-width: 2; }
+    .s2-scope-grid { stroke: #5d806c; stroke-width: .45; opacity: .55; }
+    .s2-scope-trace { fill: none; stroke: #b8ffbf; stroke-width: 2.2; filter: url(#s2-scope-glow); }
+    .s2-scope-copy { fill: #17231d; font: 700 21px/1 ui-monospace, monospace; letter-spacing: -.8px; }
+    .s2-scope-tick { fill: #405047; font: 600 6px/1 ui-monospace, monospace; letter-spacing: .7px; }
+
+    .s2-particle { background: #090d12; }
+    .s2-particle-ring { fill: none; stroke: #678294; stroke-width: 1; }
+    .s2-particle-sector { fill: none; stroke: #263844; stroke-width: 8; stroke-dasharray: 9 3; }
+    .s2-particle-track { fill: none; stroke: #f2ad57; stroke-width: 1.2; }
+    .s2-particle-hit { fill: #fff0b8; }
+    .s2-particle-copy { fill: #e9edf0; font: 650 24px/1 system-ui, sans-serif; letter-spacing: -.8px; }
+    .s2-particle-data { fill: #7194a8; font: 600 6px/1 ui-monospace, monospace; letter-spacing: 1px; }
+
+    .s2-genome { background: #f2eee5; color: #222825; }
+    .s2-genome::after { color: rgba(25,30,27,.38); }
+    .s2-genome .meta { color: #202522; }
+    .s2-genome .tags { color: rgba(25,30,27,.55); }
+    .s2-genome-rule { stroke: #cbc4b8; stroke-width: 1; }
+    .s2-genome-base { font: 800 13px/1 ui-monospace, monospace; }
+    .s2-genome-a { fill: #147d68; }
+    .s2-genome-c { fill: #2d63a5; }
+    .s2-genome-g { fill: #c2771d; }
+    .s2-genome-t { fill: #a43d4f; }
+    .s2-genome-copy { fill: #1c2420; font: 750 25px/1 system-ui, sans-serif; letter-spacing: -1px; }
+    .s2-genome-index { fill: #80796f; font: 600 6px/1 ui-monospace, monospace; letter-spacing: .8px; }
+
+    .s2-contour { background: #d9dfd2; }
+    .s2-contour-line { fill: none; stroke: #536c5c; stroke-width: .8; }
+    .s2-contour-major { stroke: #2a4939; stroke-width: 1.4; }
+    .s2-contour-mask { fill: #d9dfd2; opacity: .93; }
+    .s2-contour-copy { fill: #173426; font: 700 24px/1 Georgia, serif; letter-spacing: -.4px; }
+    .s2-contour-coord { fill: #53665a; font: 600 6px/1 ui-monospace, monospace; letter-spacing: 1px; }
+
+    .s2-spectrum { background: #08090b; }
+    .s2-spectrum-frame { fill: #111216; stroke: #555963; stroke-width: .8; }
+    .s2-spectrum-band { fill: url(#s2-spectrum-color); }
+    .s2-spectrum-line { stroke: #050506; stroke-width: 2; opacity: .9; }
+    .s2-spectrum-copy { fill: #f3f0e8; font: 500 23px/1 Georgia, serif; letter-spacing: 1.5px; }
+    .s2-spectrum-scale { fill: #8b8f98; font: 500 5.5px/1 ui-monospace, monospace; letter-spacing: .7px; }
+
+    .s2-specimen { background: #ddd7c8; }
+    .s2-specimen-tag { fill: #f2eddf; stroke: #787266; stroke-width: 1; }
+    .s2-specimen-hole { fill: #ddd7c8; stroke: #787266; }
+    .s2-specimen-rule { stroke: #b0a99b; stroke-width: .7; }
+    .s2-specimen-copy { fill: #282a25; font: 700 22px/1 ui-monospace, monospace; letter-spacing: -1px; }
+    .s2-specimen-data { fill: #5f615a; font: 600 6px/1 ui-monospace, monospace; letter-spacing: .8px; }
+    .s2-specimen-stamp { fill: none; stroke: #8b342d; stroke-width: 1.2; }
+    .s2-specimen-stamp-text { fill: #8b342d; font: 800 6px/1 ui-monospace, monospace; letter-spacing: 1px; }
+
+    .s2-seismic { background: #191817; }
+    .s2-seismic-paper { fill: #e5dcc6; }
+    .s2-seismic-rule { stroke: #bcb19c; stroke-width: .45; }
+    .s2-seismic-trace { fill: none; stroke: #372f2b; stroke-width: 1.15; }
+    .s2-seismic-copy { fill: #292420; font: 750 22px/1 ui-monospace, monospace; letter-spacing: -1px; }
+    .s2-seismic-time { fill: #776d60; font: 600 5.5px/1 ui-monospace, monospace; letter-spacing: .5px; }
+
+    .s2-quantum { background: #f5f3ed; color: #181b20; }
+    .s2-quantum::after { color: rgba(20,24,29,.38); }
+    .s2-quantum .meta { color: #181b20; }
+    .s2-quantum .tags { color: rgba(20,24,29,.55); }
+    .s2-quantum-wire { stroke: #20252c; stroke-width: 1.2; }
+    .s2-quantum-gate { fill: #f5f3ed; stroke: #20252c; stroke-width: 1.2; }
+    .s2-quantum-accent { fill: #214fbe; stroke: #214fbe; }
+    .s2-quantum-symbol { fill: #20252c; font: 600 10px/1 Georgia, serif; }
+    .s2-quantum-copy { fill: #161b22; font: 700 23px/1 system-ui, sans-serif; letter-spacing: -.8px; }
+    .s2-quantum-ket { fill: #52606f; font: 500 7px/1 ui-monospace, monospace; }
+
+    .s2-radar { background: #10201e; }
+    .s2-radar-disc { fill: #18302c; stroke: #64817a; stroke-width: .8; }
+    .s2-radar-grid { fill: none; stroke: #67847c; stroke-width: .55; opacity: .7; }
+    .s2-radar-cell-1 { fill: #78c868; }
+    .s2-radar-cell-2 { fill: #e3ca4a; }
+    .s2-radar-cell-3 { fill: #df613c; }
+    .s2-radar-copy { fill: #edf3ec; font: 650 23px/1 system-ui, sans-serif; letter-spacing: -.7px; }
+    .s2-radar-data { fill: #83aaa1; font: 600 6px/1 ui-monospace, monospace; letter-spacing: .8px; }
+
+    .s2-chalk { background: #263b34; box-shadow: inset 0 0 70px rgba(0,0,0,.3); }
+    .s2-chalk-formula { fill: #b9c8bf; font: italic 11px/1 Georgia, serif; opacity: .65; }
+    .s2-chalk-copy { fill: #f0eee2; font: italic 25px/1 Georgia, serif; letter-spacing: .4px; }
+    .s2-chalk-line { fill: none; stroke: #e8e4d7; stroke-width: 1.1; opacity: .75; }
+    .s2-chalk-note { fill: #d2c98d; font: italic 7px/1 Georgia, serif; }
+
+    @media (max-width: 620px) {
+        .s2-heading { align-items: start; flex-direction: column; gap: 10px; }
+        .s2-note { text-align: left; }
+        .s2-grid .brand { width: 100%; }
+    }
+</style>
+
+<section class="s2-gallery" aria-labelledby="s2-collection-title">
+    <header class="s2-heading">
+        <div>
+            <div class="s2-kicker">Studio 02 / Scientific Instruments</div>
+            <h2 class="s2-title" id="s2-collection-title">Measured signals</h2>
+        </div>
+        <p class="s2-note">Ten compact identities drawn from observation, notation, field records, and laboratory hardware.</p>
+    </header>
+
+    <div class="grid s2-grid" aria-label="Scientific Hermes Dashboard logo concepts">
+        <article class="concept s2-scope">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Calibrated Pulse oscilloscope logo for Hermes Dashboard">
+                    <defs><filter id="s2-scope-glow"><feGaussianBlur stdDeviation="1.2" result="s2-scope-blur"/><feMerge><feMergeNode in="s2-scope-blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+                    <rect class="s2-scope-face" x="9" y="15" width="422" height="88" rx="6"/>
+                    <rect class="s2-scope-screen" x="20" y="25" width="151" height="67" rx="3"/>
+                    <path class="s2-scope-grid" d="M20 42h151M20 59h151M20 76h151M50 25v67M80 25v67M110 25v67M140 25v67"/>
+                    <path class="s2-scope-trace" d="M22 63h20l5-3 6 3h13l4-10 5 27 6-42 7 45 6-31 7 11h19l5-4 6 4h38"/>
+                    <text class="s2-scope-copy" x="191" y="57">Hermes Dashboard</text><text class="s2-scope-tick" x="193" y="75">CH 01  /  2.0 ms  /  CAL</text>
+                    <circle cx="396" cy="78" r="7" fill="none" stroke="#465149"/><path d="M396 71v4" stroke="#465149"/>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">21</div><div class="name">Calibrated Pulse</div></div><div class="tags">oscilloscope trace<br>bench precision</div></div>
+        </article>
+
+        <article class="concept s2-particle">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Coincidence Array particle detector logo for Hermes Dashboard">
+                    <g transform="translate(59 59)"><circle class="s2-particle-sector" r="43"/><circle class="s2-particle-ring" r="31"/><circle class="s2-particle-ring" r="18"/><path class="s2-particle-ring" d="M-47 0h94M0-47v94"/><path class="s2-particle-track" d="M-38 31C-16 7 2 1 38-24M-42-12C-14-10 8 4 42 35M-12-43C-9-15 1 7 16 44"/><circle class="s2-particle-hit" cx="-17" cy="8" r="2.2"/><circle class="s2-particle-hit" cx="18" cy="-11" r="1.6"/><circle class="s2-particle-hit" cx="7" cy="20" r="1.8"/></g>
+                    <text class="s2-particle-copy" x="123" y="58">Hermes Dashboard</text><text class="s2-particle-data" x="125" y="76">EVENT 8363  ·  4 TRACKS  ·  12.8 GeV</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">22</div><div class="name">Coincidence Array</div></div><div class="tags">particle detector<br>collision geometry</div></div>
+        </article>
+
+        <article class="concept s2-genome">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Basecall Registry genomic sequence logo for Hermes Dashboard">
+                    <text class="s2-genome-index" x="12" y="19">00021</text><path class="s2-genome-rule" d="M10 27h420M10 52h420M10 93h420"/>
+                    <text class="s2-genome-base s2-genome-a" x="16" y="45">A</text><text class="s2-genome-base s2-genome-c" x="35" y="45">C</text><text class="s2-genome-base s2-genome-g" x="54" y="45">G</text><text class="s2-genome-base s2-genome-t" x="73" y="45">T</text><text class="s2-genome-base s2-genome-t" x="92" y="45">T</text><text class="s2-genome-base s2-genome-a" x="111" y="45">A</text><text class="s2-genome-base s2-genome-g" x="130" y="45">G</text><text class="s2-genome-base s2-genome-c" x="149" y="45">C</text>
+                    <rect class="s2-genome-a" x="16" y="84" width="32" height="4"/><rect class="s2-genome-c" x="51" y="84" width="24" height="4"/><rect class="s2-genome-g" x="78" y="84" width="47" height="4"/><rect class="s2-genome-t" x="128" y="84" width="31" height="4"/>
+                    <text class="s2-genome-copy" x="179" y="58">Hermes Dashboard</text><text class="s2-genome-index" x="181" y="75">LOCUS HD-02  /  SEQUENCE VERIFIED</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">23</div><div class="name">Basecall Registry</div></div><div class="tags">genomic sequence<br>coded identity</div></div>
+        </article>
+
+        <article class="concept s2-contour">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Isoline Survey contour map logo for Hermes Dashboard">
+                    <path class="s2-contour-line" d="M-8 84C20 65 21 25 63 21s48 25 87 11 68-29 102-9 59 7 94-4 72 1 101 20M-5 97c40-9 37-50 74-56s56 26 91 7 60-23 89-4 67 0 98-9 68 3 97 26M9 110c35-12 47-47 72-48s50 24 80 7 59-20 83-4 56 12 92-5 72 5 103 18M18 72c21-12 19-40 49-40s44 21 74 10M273 17c31 22 58 9 86-2s60 3 78 16"/>
+                    <path class="s2-contour-line s2-contour-major" d="M-10 52C29 42 28 8 72 8s59 24 93 6M245 101c29-13 56-9 79-27s63-13 119 9"/>
+                    <rect class="s2-contour-mask" x="96" y="36" width="252" height="45" rx="2"/>
+                    <text class="s2-contour-copy" x="112" y="60">Hermes Dashboard</text><text class="s2-contour-coord" x="114" y="74">46°12'N  ·  006°09'E  ·  DATUM 02</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">24</div><div class="name">Isoline Survey</div></div><div class="tags">contour map<br>terrain intelligence</div></div>
+        </article>
+
+        <article class="concept s2-spectrum">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Fraunhofer Index astronomical spectrograph logo for Hermes Dashboard">
+                    <rect class="s2-spectrum-frame" x="10" y="19" width="420" height="80" rx="2"/><rect class="s2-spectrum-band" x="21" y="31" width="398" height="24"/>
+                    <path class="s2-spectrum-line" d="M48 31v24M82 31v24M116 31v24M119 31v24M168 31v24M225 31v24M277 31v24M281 31v24M339 31v24M384 31v24"/>
+                    <path d="M21 65h398M21 65v5M87 65v5M153 65v5M219 65v5M285 65v5M351 65v5M419 65v5" stroke="#70747c" stroke-width=".7"/>
+                    <text class="s2-spectrum-copy" x="21" y="91">Hermes Dashboard</text><text class="s2-spectrum-scale" x="300" y="89">λ 380 — 740 nm</text>
+                    <defs><linearGradient id="s2-spectrum-color"><stop stop-color="#493088"/><stop offset=".17" stop-color="#315fc1"/><stop offset=".34" stop-color="#2ba4aa"/><stop offset=".5" stop-color="#67ad49"/><stop offset=".67" stop-color="#d5bc3d"/><stop offset=".83" stop-color="#d66f32"/><stop offset="1" stop-color="#8d2532"/></linearGradient></defs>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">25</div><div class="name">Fraunhofer Index</div></div><div class="tags">spectrograph<br>measured light</div></div>
+        </article>
+
+        <article class="concept s2-specimen">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Specimen 8363 laboratory tag logo for Hermes Dashboard">
+                    <path class="s2-specimen-tag" d="M25 13h390l15 46-15 46H25L10 59z"/><circle class="s2-specimen-hole" cx="31" cy="59" r="7"/>
+                    <path class="s2-specimen-rule" d="M50 31h238M50 81h238M304 20v78"/>
+                    <text class="s2-specimen-data" x="50" y="28">ACCESSION / HD-8363-B</text><text class="s2-specimen-copy" x="50" y="61">Hermes Dashboard</text><text class="s2-specimen-data" x="50" y="76">INSTRUMENT RECORD · STUDIO 02</text>
+                    <g transform="translate(358 59) rotate(-5)"><circle class="s2-specimen-stamp" r="28"/><circle class="s2-specimen-stamp" r="22"/><text class="s2-specimen-stamp-text" x="-14" y="-2">VERIFIED</text><text class="s2-specimen-stamp-text" x="-11" y="8">19 AUG</text></g>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">26</div><div class="name">Specimen 8363</div></div><div class="tags">laboratory tag<br>archival evidence</div></div>
+        </article>
+
+        <article class="concept s2-seismic">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Ground Motion Ledger seismograph logo for Hermes Dashboard">
+                    <rect class="s2-seismic-paper" x="7" y="14" width="426" height="90" rx="1"/>
+                    <path class="s2-seismic-rule" d="M7 29h426M7 44h426M7 59h426M7 74h426M7 89h426M27 14v90M47 14v90M67 14v90M87 14v90M107 14v90M127 14v90M147 14v90M167 14v90M187 14v90M207 14v90M227 14v90M247 14v90M267 14v90M287 14v90M307 14v90M327 14v90M347 14v90M367 14v90M387 14v90M407 14v90"/>
+                    <path class="s2-seismic-trace" d="M8 37h35l3-2 4 4 3-5 4 2 5 1 4-2 5 3 6-2 7 1h34l4-3 3 6 4-8 3 11 4-13 4 19 5-29 5 36 5-44 5 40 4-24 4 15 5-8 6 4 7-3 8 2h39l4-2 5 3 7-2 7 1h149"/>
+                    <text class="s2-seismic-copy" x="23" y="82">Hermes Dashboard</text><text class="s2-seismic-time" x="247" y="81">UTC 19:08:36  /  M 4.2</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">27</div><div class="name">Ground Motion Ledger</div></div><div class="tags">seismograph<br>recorded force</div></div>
+        </article>
+
+        <article class="concept s2-quantum">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Qubit Relay quantum circuit logo for Hermes Dashboard">
+                    <text class="s2-quantum-ket" x="10" y="36">|0⟩</text><text class="s2-quantum-ket" x="10" y="58">|ψ⟩</text><text class="s2-quantum-ket" x="10" y="80">|0⟩</text>
+                    <path class="s2-quantum-wire" d="M34 33h392M34 55h392M34 77h392"/>
+                    <rect class="s2-quantum-gate" x="51" y="23" width="20" height="20"/><text class="s2-quantum-symbol" x="57" y="37">H</text><circle class="s2-quantum-accent" cx="94" cy="33" r="3"/><path class="s2-quantum-wire" d="M94 33v44"/><circle class="s2-quantum-gate" cx="94" cy="77" r="8"/><path class="s2-quantum-wire" d="M88 77h12M94 71v12"/>
+                    <rect class="s2-quantum-gate" x="119" y="45" width="20" height="20"/><text class="s2-quantum-symbol" x="125" y="59">X</text>
+                    <rect x="153" y="18" width="263" height="70" rx="3" fill="#f5f3ed" opacity=".96"/><text class="s2-quantum-copy" x="168" y="53">Hermes Dashboard</text><text class="s2-quantum-ket" x="170" y="69">U(t) = exp(−iHt/ℏ)  ·  READOUT 02</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">28</div><div class="name">Qubit Relay</div></div><div class="tags">quantum circuit<br>logical states</div></div>
+        </article>
+
+        <article class="concept s2-radar">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Doppler Field weather radar logo for Hermes Dashboard">
+                    <g transform="translate(62 59)"><circle class="s2-radar-disc" r="48"/><circle class="s2-radar-grid" r="34"/><circle class="s2-radar-grid" r="18"/><path class="s2-radar-grid" d="M-48 0h96M0-48v96M-34-34l68 68M34-34l-68 68"/><path class="s2-radar-cell-1" d="M5-35c15 0 26 10 27 21S21 3 9-1-19-20-4-34z" opacity=".75"/><path class="s2-radar-cell-2" d="M9-27c10 1 17 7 16 14S17-5 9-8-10-14 0-19z"/><path class="s2-radar-cell-3" d="M11-20c5 1 8 4 7 8s-5 5-9 2-4-8 2-10z"/></g>
+                    <text class="s2-radar-copy" x="126" y="57">Hermes Dashboard</text><text class="s2-radar-data" x="128" y="74">DOPPLER 0.5°  ·  42 dBZ  ·  SWEEP 21</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">29</div><div class="name">Doppler Field</div></div><div class="tags">weather radar<br>atmospheric data</div></div>
+        </article>
+
+        <article class="concept s2-chalk">
+            <div class="stage">
+                <svg class="brand" viewBox="0 0 440 118" role="img" aria-label="Proof Surface mathematical chalkboard logo for Hermes Dashboard">
+                    <text class="s2-chalk-formula" x="10" y="22">∫₀∞ e⁻ˣ² dx = √π/2</text><text class="s2-chalk-formula" x="304" y="22">∇·F = ρ/ε₀</text><text class="s2-chalk-formula" x="19" y="101">f(x+h) − f(x)</text><text class="s2-chalk-formula" x="328" y="99">Σ 1/n² = π²/6</text>
+                    <path class="s2-chalk-line" d="M80 35c29-8 68-6 91 2M77 81c73 7 202 6 282-1"/>
+                    <text class="s2-chalk-copy" x="91" y="68">Hermes Dashboard</text><text class="s2-chalk-note" x="305" y="68">∴ observed</text>
+                </svg>
+            </div>
+            <div class="meta"><div><div class="number">30</div><div class="name">Proof Surface</div></div><div class="tags">chalkboard math<br>working theorem</div></div>
+        </article>
+    </div>
+</section>

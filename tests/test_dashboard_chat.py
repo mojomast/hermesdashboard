@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import app as dashboard_app
-from tests.dashboard_sources import dashboard_source
+from tests.dashboard_sources import dashboard_source, dashboard_template
 
 
 class FakeTask:
@@ -66,7 +66,7 @@ def test_chat_emergency_stop_frontend_contract():
     assert 'id="chat-run-stop-btn"' in source
     assert 'class="btn emergency-stop-btn"' in source
     assert "Stop main agent" in source
-    assert "requestInterrupt(activeRun?.sessionId || null, activeRun?.runId || null)" in source
+    assert "requestInterrupt(getActiveRun()?.sessionId || null, getActiveRun()?.runId || null)" in source
     assert "const chatRunStopBtn = document.getElementById('chat-run-stop-btn');" in source
     assert "function requestInterrupt(sessionId, runId = null)" in source
     assert "if (!sessionId && !runId) return;" in source
@@ -74,10 +74,64 @@ def test_chat_emergency_stop_frontend_contract():
     assert "'/api/runs/' + encodeURIComponent(runId) + '/stop'" in source
     assert "body: JSON.stringify({ action: 'stop', run_id: runId || '' })" in source
     assert "data.status === 'interrupt_queued' || data.status === 'stop_queued'" in source
-    assert "btn.textContent = 'Stopping…'" in source
+    assert "btn.textContent = 'Stopping...'" in source
     assert "msg.textContent = 'Emergency stop queued.'" in source
     assert ".emergency-stop-btn" in source
+    assert "const btn = chatRunStopBtn;" in source
+    assert "interrupt-btn-wrapper" not in source
+    assert "chatRunStopBtn.disabled = stopQueued;" in source
+    assert "streamResumeInFlight || stopQueued" not in source
     assert "type=\"module\"" not in source
+
+
+def test_chat_header_run_disclosure_and_bottom_context_contract():
+    html = dashboard_template()
+    source = dashboard_source()
+
+    heading_start = html.index('<header class="chat-room-heading">')
+    heading_end = html.index("</header>", heading_start)
+    run_status = html.index('id="chat-run-status"')
+    run_details = html.index('id="chat-run-status-details"')
+    details_end = html.index("</details>", run_details)
+    run_actions = html.index('class="chat-run-status-actions"')
+    input_position = html.index('class="input-container"')
+    context_position = html.index('id="chat-context-panel"')
+
+    assert heading_start < run_status < heading_end
+    assert heading_start < run_details < details_end < run_actions < heading_end
+    assert 'class="chat-working-spark"' in html
+    assert '>Reattach<' in html
+    assert '>Follow stream<' in html
+    assert input_position < context_position
+    assert 'id="chat-context-pills"' not in html
+    assert 'id="chat-context-breakdown"' not in html
+    assert 'role="progressbar"' in source
+    assert 'aria-valuetext="${escapeHtml(title)}"' in source
+    assert "renderContextGaugeHtml(percent, contextGaugeTooltip(info), 'chat')" in source
+    assert ".chat-context .context-gauge { height: 9px;" in source
+    assert "const cachedInfo = sessionContextCache.info;" in source
+    assert "Stream ended before completion" in source
+    assert "if (sawDone)" in source
+
+
+def test_new_command_and_clear_chat_reset_session_contract():
+    source = dashboard_source()
+
+    assert "async function resetCurrentChatRoom(options = {})" in source
+    assert "/^\\/(?:new|mew)$/i.test(message)" in source
+    assert "if (await resetCurrentChatRoom({ freshSession: true }))" in source
+    assert "async function clearChat()" in source
+    assert "return resetCurrentChatRoom();" in source
+    assert "saveMainChatSession(null);" in source
+    assert "await saveBotRoom(roomId, [], null);" in source
+    assert "getActiveRun(roomId) || streamResumeRooms.has(roomId) || sharedRoomRequestInFlight" in source
+    assert "options.freshSession && roomId === 'shared'" in source
+    assert "chatResetInFlight = true;" in source
+    assert "if (!persisted)" in source
+    assert "pendingImageAttachmentGeneration += 1;" in source
+    reset_start = source.index("async function resetCurrentChatRoom(options = {})")
+    reset_source = source[reset_start:source.index("function debounce", reset_start)]
+    assert "clearActiveRun(" not in reset_source
 
 
 def test_chat_stop_routes_are_registered():
@@ -149,6 +203,54 @@ def test_interrupt_session_stop_matches_active_main_run(monkeypatch):
 
     dashboard_app.ACTIVE_RUNS.pop("run-main", None)
     dashboard_app.INTERRUPT_FLAGS.pop("sess-main", None)
+
+
+def test_interrupt_session_hard_stops_active_child_and_closes_stream(monkeypatch):
+    child_id = "child-emergency-stop"
+    captured = {}
+    state = {"done": False, "updated_at": 0, "events": []}
+    monkeypatch.setitem(dashboard_app.ACTIVE_CHILD_STREAMS, child_id, state)
+    dashboard_app.INTERRUPT_FLAGS.pop(child_id, None)
+
+    class FakeResponse:
+        text = ""
+
+        def json(self):
+            return {"status": "stop_queued"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, **kwargs):
+            captured.update(url=url, **kwargs)
+            return FakeResponse()
+
+    monkeypatch.setattr(dashboard_app.httpx, "AsyncClient", FakeAsyncClient)
+    request = FakeRequest(
+        path_params={"session_id": child_id},
+        body=json.dumps({"action": "stop", "mode": "hard"}).encode("utf-8"),
+    )
+
+    response = asyncio.run(dashboard_app.interrupt_session(request))
+    payload = response_json(response)
+
+    assert payload["status"] == "stop_queued"
+    assert payload["mode"] == "hard"
+    assert captured["url"].endswith(f"/api/subagents/{child_id}/control")
+    assert captured["json"] == {"action": "stop", "mode": "hard"}
+    assert state["done"] is True
+    assert state["events"][-1] == {"data": "[DONE]"}
+    assert dashboard_app.INTERRUPT_FLAGS[child_id] is True
+
+    dashboard_app.ACTIVE_CHILD_STREAMS.pop(child_id, None)
+    dashboard_app.INTERRUPT_FLAGS.pop(child_id, None)
 
 
 def test_run_chat_stream_sync_routes_child_events_from_executed_sync_path(monkeypatch):

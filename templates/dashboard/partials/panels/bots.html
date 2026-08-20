@@ -1,0 +1,53 @@
+        <div class="panel" id="bots-panel">
+            <div class="bots-hero">
+                <div>
+                    <div class="bots-kicker">PROFILE REGISTRY</div>
+                    <h2>Hermes Bots</h2>
+                    <p>Each bot is an isolated Hermes profile with its own persona, workspace context, skills, and conversation history.</p>
+                </div>
+                <button class="btn primary" type="button" onclick="toggleCreateBotForm()">Create a Bot</button>
+            </div>
+
+            <form class="bot-create-form" id="bot-create-form" onsubmit="createBot(event)" aria-labelledby="bot-create-title">
+                <div class="bot-create-heading">
+                    <div><strong id="bot-create-title">Commission a profile</strong><span>Persona instructions become this bot's SOUL.</span></div>
+                    <button class="btn" type="button" onclick="toggleCreateBotForm(false)">Close</button>
+                </div>
+                <div class="bot-form-grid">
+                    <label>Profile slug<input id="bot-name" name="name" type="text" required pattern="[a-z0-9][a-z0-9_-]*" placeholder="release-scout" autocomplete="off"><small>Lowercase handle used for the isolated profile.</small></label>
+                    <label>Display name<input id="bot-display-name" name="display_name" type="text" required placeholder="Release Scout"></label>
+                    <label class="bot-form-wide">Role description<input id="bot-description" name="description" type="text" required placeholder="Tracks releases and turns changes into crisp launch notes."></label>
+                    <label class="bot-form-wide">SOUL / persona prompt<textarea id="bot-soul" name="soul" required rows="5" placeholder="You are a precise release analyst. Verify claims, surface risk, and write for operators..."></textarea></label>
+                    <label>Identity color<input id="bot-color" name="color" type="color" value="#60a5fa"></label>
+                    <label>Avatar image<input id="bot-avatar-file" name="avatar" type="file" accept="image/png,image/jpeg,image/webp"><small>Optional PNG, JPEG, or WebP, up to 2 MiB.</small></label>
+                    <div class="bot-avatar-field bot-form-wide"><span class="bot-avatar bot-avatar-preview" id="bot-create-avatar-preview" aria-hidden="true"><span class="bot-avatar-initial">?</span></span><span>Preview stays in this browser only until profile creation.</span></div>
+                </div>
+                <div class="bot-form-actions"><span id="bot-create-status" role="status" aria-live="polite">Profiles can be hidden later without deleting their data.</span><button class="btn primary" id="bot-create-submit" type="submit">Create Profile</button></div>
+            </form>
+
+            <form class="bot-create-form bot-edit-form" id="bot-edit-form" onsubmit="saveBotEditor(event)" aria-labelledby="bot-edit-title" aria-busy="false">
+                <div class="bot-create-heading">
+                    <div><strong id="bot-edit-title">Bot settings</strong><span>Edit the dashboard-owned identity and persona fields.</span></div>
+                    <button class="btn" type="button" onclick="closeBotEditor()">Close</button>
+                </div>
+                <div class="bot-form-grid">
+                    <label>Profile slug<input id="bot-edit-name" name="name" type="text" readonly aria-readonly="true"></label>
+                    <label>Display name<input id="bot-edit-display-name" name="display_name" type="text" required></label>
+                    <label class="bot-form-wide">Role description<input id="bot-edit-description" name="description" type="text"></label>
+                    <label class="bot-form-wide">SOUL / persona prompt<textarea id="bot-edit-soul" name="soul" rows="8"></textarea></label>
+                    <label>Identity color<input id="bot-edit-color" name="color" type="color" value="#60a5fa"></label>
+                    <label class="bot-visibility-field"><input id="bot-edit-hidden" name="hidden" type="checkbox"><span>Hidden from chat room rail</span></label>
+                    <label>Replace avatar<input id="bot-edit-avatar-file" name="avatar" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPEG, or WebP, up to 2 MiB.</small></label>
+                    <div class="bot-avatar-field"><span class="bot-avatar bot-avatar-preview" id="bot-edit-avatar-preview" aria-hidden="true"><span class="bot-avatar-initial">?</span></span><button class="btn" id="bot-avatar-remove" type="button" onclick="removeBotAvatar()">Remove avatar</button></div>
+                </div>
+                <div class="bot-form-actions"><span id="bot-edit-status" role="status" aria-live="polite"></span><button class="btn primary" id="bot-edit-submit" type="submit">Save Settings</button></div>
+            </form>
+
+            <div class="bots-roster-header">
+                <div><span class="bots-roster-rule"></span><strong>Active roster</strong></div>
+                <button class="btn" type="button" onclick="loadBots()">Refresh</button>
+            </div>
+            <div id="bots-roster" class="bots-roster" aria-live="polite">
+                <div class="bots-empty">Loading profile registry...</div>
+            </div>
+        </div>

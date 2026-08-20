@@ -203,6 +203,84 @@ Relevant config keys:
 - `dashboard_chat.ident`
 - `dashboard_chat.realname`
 
+## Browser Terminal
+
+The dashboard includes an optional floating xterm.js terminal backed by a real
+Unix PTY. It is disabled by default. Docker always
+hard-disables the terminal because a container shell is not the host shell.
+
+Native, local-only configuration:
+
+```sh
+DASHBOARD_TERMINAL_ENABLED=true
+DASHBOARD_TERMINAL_ALLOW_REMOTE=false
+```
+
+Local-only access requires both a loopback network peer and a local browser
+origin (`localhost`, `127.0.0.0/8`, or `::1`). This prevents a Tailscale or
+other loopback reverse proxy from turning local-only mode into remote access.
+
+Remote access must be enabled explicitly and requires a separate terminal
+secret. `API_SERVER_KEY` is not accepted as browser terminal authentication.
+
+```sh
+DASHBOARD_TERMINAL_ENABLED=true
+DASHBOARD_TERMINAL_ALLOW_REMOTE=true
+DASHBOARD_TERMINAL_AUTH_TOKEN='use-a-long-random-secret'
+```
+
+The browser sends that secret once as `{"token":"..."}` to
+`POST /api/terminal/auth`. A successful exchange sets a random `HttpOnly`,
+`SameSite=Strict` session cookie; neither the configured secret nor the random
+cookie value is returned in JSON or rendered into a template. Relative
+same-origin requests work behind HTTPS/Tailscale proxies that preserve `Host`
+and provide the forwarded scheme. Additional cross-origin deployments must
+list exact origins, comma-separated, in
+`DASHBOARD_TERMINAL_ALLOWED_ORIGINS`.
+
+Configuration:
+
+- `DASHBOARD_TERMINAL_ENABLED`: defaults to `false`.
+- `DASHBOARD_TERMINAL_ALLOW_REMOTE`: defaults to `false`.
+- `DASHBOARD_TERMINAL_AUTH_TOKEN`: required when remote access is enabled.
+- `DASHBOARD_TERMINAL_ALLOWED_ORIGINS`: optional comma-separated exact origins.
+- `DASHBOARD_TERMINAL_CWD`: fixed server-selected working directory; defaults to `HERMES_HOME`, then the user's home.
+- `DASHBOARD_TERMINAL_DETACH_TTL_SECONDS`: reconnect window, default `60`, bounded to `1..86400` seconds.
+- `DASHBOARD_TERMINAL_AUTH_TTL_SECONDS`: cookie lifetime, default `28800`, bounded to `60..86400` seconds.
+- `DASHBOARD_TERMINAL_MAX_SESSIONS`: process-wide session cap, default `4`, bounded to `1..32`.
+- `DASHBOARD_RUNNING_IN_DOCKER`: a true value hard-disables the feature; `/.dockerenv` is also detected.
+
+Endpoints and WebSocket protocol:
+
+- `GET /api/terminal/status` reports availability and a safe reason without secrets.
+- `POST /api/terminal/auth` performs the remote-token cookie exchange.
+- `WebSocket /api/terminal/ws` creates a terminal. Reconnect during the detach TTL with the opaque terminal ID and separate resume capability returned at creation.
+- The server first sends JSON text `{"type":"ready","terminal_id":"...","resume_token":"...","reconnected":false}`. The browser stores these values locally so terminals can reconnect after a tab or browser window closes. Explicitly terminating a terminal removes its saved capability. Like other browser storage, this capability is readable by scripts running on the dashboard origin.
+- PTY output is sent as binary WebSocket frames. Output produced while detached is buffered up to 1 MiB and replayed on reconnect.
+- Client JSON text messages are `{"type":"input","data":"..."}`, `{"type":"resize","rows":24,"cols":80}`, `{"type":"ping"}`, and `{"type":"close"}`.
+- The server replies to ping with `{"type":"pong"}`, reports malformed messages as JSON errors without dropping the PTY, and sends `{"type":"exit"}` when the shell exits.
+
+The shell and working directory cannot be selected by the client. The backend
+uses the current Unix user's executable login shell, with `/bin/bash` and
+`/bin/sh` fallbacks, and cleans up PTY descriptors and the complete process
+group on explicit close, detach expiry, shell exit expiry, and application
+shutdown.
+
+Browser-close recovery lasts only for the configured detach TTL and preserves
+the live shell plus output generated while detached, not prior browser-side
+scrollback. Dashboard process restarts still terminate all PTYs.
+
+Each PTY starts that shell as a login shell. Its child-only environment begins
+with the dashboard process environment, then overlays `HERMES_HOME/.env`, then
+the dashboard repository's `.env.local`; `TERM=xterm-256color` and
+`COLORTERM=truecolor` are always forced last. `HERMES_HOME` is resolved once
+from the dashboard process (default `~/.hermes`), so a dotenv entry cannot
+redirect which file is read. Dotenv files are size-bounded and parsed as data:
+they are never sourced or evaluated, command substitutions remain literal, and
+malformed entries are ignored. Environment names and values are not included
+in terminal status or WebSocket control messages, though an authorized user can
+naturally inspect the environment from their shell.
+
 ## Dashboard Tab Defaults
 
 Fresh browsers start with a safe default tab set: Chat, Message Board, Config, Secrets, Sessions, Memory, Skills, Cron, Schedule, and Graph.
@@ -343,6 +421,10 @@ The dashboard session experience is designed to be more scannable and more debug
 - the active-run banner can reattach the saved session transcript into Chat without discarding the in-flight run metadata
 - the active-run banner can also explicitly resume the saved live stream from the last cached event offset
 - summary regeneration refreshes both title and summary through dashboard-local metadata recomputation
+
+## Profile Bots
+
+Profile bots expose dashboard-owned presentation metadata and `SOUL.md` through safe, field-limited APIs. Avatars are normalized to metadata-free PNG files under each profile's `assets/avatar.png`; shared rooms use a bounded sequential coordinator and offer both JSON and progressive NDJSON message endpoints.
 
 ## Live Subagent Drawer
 
