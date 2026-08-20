@@ -56,6 +56,24 @@ def test_in_flight_subagent_rail_indicator_reuses_live_windows_and_stop_controls
     assert ".subagent-flight-popover" in css
 
 
+def test_child_sessions_nest_below_room_tabs_in_the_left_rail():
+    html = dashboard_source()
+    css = DASHBOARD_JS.parent.parent.joinpath("css", "dashboard.css").read_text(encoding="utf-8")
+
+    rail = html.split("function renderChatRoomRail()", 1)[1].split("function updateChatRoomChrome()", 1)[0]
+    assert "renderRoomChildSessionEntries('main')" in rail
+    assert "renderRoomChildSessionEntries('shared')" in rail
+    assert "renderRoomChildSessionEntries(roomId)" in rail
+    assert "chat-room-group" in rail
+    assert "function renderRoomChildSessionEntries(roomId)" in html
+    assert "Array.isArray(run?.childSessions)" in html
+    assert ".chat-room-children" in css
+    assert ".chat-room-child-open" in css
+    assert ".chat-room-child-dot" in css
+    assert "chat-room-child-stop subagent-stop-btn" in html
+    assert "live-view-btn" in html.split("function renderRoomChildSessionEntries(roomId)", 1)[1]
+
+
 def test_delegate_live_actions_are_not_nested_inside_the_tool_toggle_button():
     html = dashboard_source()
 

@@ -54,6 +54,19 @@
                         <div class="dashboard-settings-actions"><button class="btn" type="button" onclick="clearApprovalPassphrase()">Clear passphrase</button></div>
                         <div id="approval-passphrase-status">Passphrase gate status unknown.</div>
                     </div>
+                    <h3>System Notifications</h3>
+                    <p id="dashboard-notification-status">Checking browser notification support...</p>
+                    <div class="approval-settings-menu">
+                        <div class="dashboard-settings-actions">
+                            <button class="btn" type="button" id="dashboard-notification-toggle" onclick="toggleDashboardNotifications()">Enable browser notifications</button>
+                            <button class="btn" type="button" onclick="sendDashboardNotificationTest()">Send test</button>
+                        </div>
+                        <label><input type="checkbox" id="dashboard-notification-approvals" onchange="updateDashboardNotificationSetting('approvals', this.checked)"> Approval requests</label>
+                        <label><input type="checkbox" id="dashboard-notification-runs" onchange="updateDashboardNotificationSetting('runs', this.checked)"> Main and bot run completion</label>
+                        <label><input type="checkbox" id="dashboard-notification-subagents" onchange="updateDashboardNotificationSetting('subagents', this.checked)"> Subagent completion</label>
+                        <label><input type="checkbox" id="dashboard-notification-errors" onchange="updateDashboardNotificationSetting('errors', this.checked)"> Errors and failed subagents</label>
+                        <label><input type="checkbox" id="dashboard-notification-visible" onchange="updateDashboardNotificationSetting('whileVisible', this.checked)"> Notify while dashboard is visible</label>
+                    </div>
                     <h3>Visible Tabs</h3>
                     <p>Chat stays visible so there is always a safe fallback tab. Experimental tabs are hidden by default for new installs because they depend on local tooling from the maintainer's own environment.</p>
                     <div class="dashboard-tab-settings" id="dashboard-tab-settings"></div>

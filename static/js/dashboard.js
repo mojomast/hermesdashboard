@@ -596,6 +596,122 @@ const DASHBOARD_TABS = [
     { id: 'graph', label: 'Graph' },
 ];
 const DASHBOARD_TAB_SETTINGS_KEY = 'hermes_dashboard_hidden_tabs_v1';
+const DASHBOARD_NOTIFICATION_SETTINGS_KEY = 'hermes_dashboard_browser_notifications_v1';
+const DEFAULT_DASHBOARD_NOTIFICATION_SETTINGS = Object.freeze({
+    enabled: false,
+    approvals: true,
+    runs: true,
+    subagents: true,
+    errors: true,
+    whileVisible: false,
+});
+const dashboardNotificationKeys = new Set();
+
+function getDashboardNotificationSettings() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(DASHBOARD_NOTIFICATION_SETTINGS_KEY) || '{}');
+        return { ...DEFAULT_DASHBOARD_NOTIFICATION_SETTINGS, ...(stored && typeof stored === 'object' ? stored : {}) };
+    } catch (error) {
+        console.warn('Failed to read browser notification settings:', error);
+        return { ...DEFAULT_DASHBOARD_NOTIFICATION_SETTINGS };
+    }
+}
+
+function saveDashboardNotificationSettings(settings) {
+    localStorage.setItem(DASHBOARD_NOTIFICATION_SETTINGS_KEY, JSON.stringify(settings));
+    renderDashboardNotificationSettings();
+}
+
+function browserNotificationPermission() {
+    return typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
+}
+
+function renderDashboardNotificationSettings() {
+    const settings = getDashboardNotificationSettings();
+    const permission = browserNotificationPermission();
+    const status = document.getElementById('dashboard-notification-status');
+    const toggle = document.getElementById('dashboard-notification-toggle');
+    const labels = {
+        approvals: 'dashboard-notification-approvals',
+        runs: 'dashboard-notification-runs',
+        subagents: 'dashboard-notification-subagents',
+        errors: 'dashboard-notification-errors',
+        whileVisible: 'dashboard-notification-visible',
+    };
+    Object.entries(labels).forEach(([key, id]) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.checked = Boolean(settings[key]);
+            input.disabled = permission === 'unsupported';
+        }
+    });
+    if (toggle) {
+        toggle.disabled = permission === 'unsupported' || permission === 'denied';
+        toggle.textContent = settings.enabled && permission === 'granted'
+            ? 'Disable browser notifications'
+            : 'Enable browser notifications';
+    }
+    if (!status) return;
+    if (permission === 'unsupported') status.textContent = 'Browser notifications are not supported here.';
+    else if (permission === 'denied') status.textContent = 'Notifications are blocked. Allow them in this site\'s browser settings.';
+    else if (settings.enabled && permission === 'granted') status.textContent = 'Browser notifications are enabled.';
+    else status.textContent = 'Notifications are off. Enable them to receive approval and attention alerts.';
+}
+
+async function toggleDashboardNotifications() {
+    const settings = getDashboardNotificationSettings();
+    if (browserNotificationPermission() === 'unsupported') {
+        showToast('Browser notifications are not supported', true);
+        return;
+    }
+    if (settings.enabled && Notification.permission === 'granted') {
+        saveDashboardNotificationSettings({ ...settings, enabled: false });
+        showToast('Browser notifications disabled');
+        return;
+    }
+    const permission = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission();
+    const enabled = permission === 'granted';
+    saveDashboardNotificationSettings({ ...settings, enabled });
+    showToast(enabled ? 'Browser notifications enabled' : 'Notification permission was not granted', !enabled);
+}
+
+function updateDashboardNotificationSetting(name, value) {
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_DASHBOARD_NOTIFICATION_SETTINGS, name) || name === 'enabled') return;
+    const settings = getDashboardNotificationSettings();
+    saveDashboardNotificationSettings({ ...settings, [name]: Boolean(value) });
+}
+
+function sendDashboardNotification(kind, title, body, options = {}) {
+    const settings = getDashboardNotificationSettings();
+    if (!settings.enabled || !settings[kind] || browserNotificationPermission() !== 'granted') return false;
+    if (!settings.whileVisible && document.visibilityState === 'visible' && !options.force) return false;
+    const key = options.key || `${kind}:${title}:${body}`;
+    if (dashboardNotificationKeys.has(key)) return false;
+    dashboardNotificationKeys.add(key);
+    if (dashboardNotificationKeys.size > 250) dashboardNotificationKeys.delete(dashboardNotificationKeys.values().next().value);
+    const notification = new Notification(title, {
+        body: String(body || '').slice(0, 240),
+        tag: options.tag || key,
+    });
+    notification.onclick = () => {
+        window.focus();
+        if (options.panel) navigateTo(options.panel);
+        notification.close();
+    };
+    return true;
+}
+
+function sendDashboardNotificationTest() {
+    const sent = sendDashboardNotification('approvals', 'Hermes Dashboard', 'Browser notifications are working.', {
+        key: `test:${Date.now()}`,
+        tag: 'hermes-dashboard-test',
+        panel: 'chat',
+        force: true,
+    });
+    if (!sent) showToast('Enable notifications first, or allow notifications while the dashboard is visible', true);
+}
 
 // Lazy loading: track which tabs have been loaded
 const tabLoaded = DASHBOARD_TABS.reduce((acc, tab) => {
@@ -1265,7 +1381,15 @@ async function refreshApprovals(userInitiated = false) {
         const ids = new Set(approvals.map(a => a.id || `${a.session_key}:${a.index || 0}`));
         approvals.forEach((approval) => {
             const id = approval.id || `${approval.session_key}:${approval.index || 0}`;
-            if (!lastApprovalIds.has(id)) showToast(`Approval needed: ${approval.description || approval.pattern_key || 'tool command'}`);
+            if (!lastApprovalIds.has(id)) {
+                const description = approval.description || approval.pattern_key || 'Tool command';
+                showToast(`Approval needed: ${description}`);
+                sendDashboardNotification('approvals', 'Hermes approval required', description, {
+                    key: `approval:${id}`,
+                    tag: `hermes-approval-${id}`,
+                    panel: 'chat',
+                });
+            }
         });
         lastApprovalIds = ids;
         updateAutoApprovalStatus();
@@ -3273,6 +3397,7 @@ function restoreActiveRunChildSessions() {
             liveChildSessionMap.set(entry.delegateCallId || '', delegateEntries);
         });
     });
+    renderChatRoomRail();
 }
 
 function renderSubagentFlightRailItem() {
@@ -3284,6 +3409,26 @@ function renderSubagentFlightRailItem() {
         <span class="subagent-flight-count" aria-hidden="true">${count}</span>
         <span class="chat-room-tab-copy"><strong>Subagents working</strong><small>${count} delegated task${count === 1 ? '' : 's'} in flight</small></span>
     </button>`;
+}
+
+function renderRoomChildSessionEntries(roomId) {
+    const run = getActiveRun(roomId);
+    const children = Array.isArray(run?.childSessions) ? run.childSessions : [];
+    if (!children.length) return '';
+    const rows = children.map(child => {
+        if (!child?.childSessionId) return '';
+        const status = child.status || 'LIVE';
+        const label = child.label || 'delegate_task';
+        const id = child.childSessionId;
+        return `<div class="chat-room-child">
+            <button class="chat-room-child-open live-view-btn" type="button" data-child-session-id="${escapeHtml(id)}" data-delegate-call-id="${escapeHtml(child.delegateCallId || '')}" data-label="${escapeHtml(label)}" title="Open live session ${escapeHtml(label)}" aria-label="Open live session ${escapeHtml(label)}">
+                <span class="chat-room-child-dot is-${escapeHtml(String(status).toLowerCase())}"></span>
+                <span class="chat-room-child-copy"><strong>${escapeHtml(label)}</strong><small>${escapeHtml((id || '').slice(0, 12))} · ${escapeHtml(status)}</small></span>
+            </button>
+            <button class="chat-room-child-stop subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(id)}" title="Stop ${escapeHtml(label)}" aria-label="Stop ${escapeHtml(label)}">&times;</button>
+        </div>`;
+    }).join('');
+    return `<div class="chat-room-children" role="list" aria-label="Delegated bot sessions">${rows}</div>`;
 }
 
 function ensureSubagentFlightPopover() {
@@ -3358,18 +3503,7 @@ function toggleSubagentFlightPopover(anchorEl) {
 }
 
 function syncSubagentFlightUi() {
-    const children = getInFlightSubagents();
-    const button = document.querySelector('.subagent-flight-toggle');
-    if (!button || !children.length) {
-        renderChatRoomRail();
-    } else {
-        const count = children.length;
-        button.querySelector('.subagent-flight-count').textContent = String(count);
-        button.querySelector('strong').textContent = 'Subagents working';
-        button.querySelector('small').textContent = `${count} delegated task${count === 1 ? '' : 's'} in flight`;
-        button.title = `${count} delegated subagent${count === 1 ? '' : 's'} working`;
-        button.setAttribute('aria-label', `Watch ${count} delegated subagent${count === 1 ? '' : 's'} working`);
-    }
+    renderChatRoomRail();
     const popover = document.getElementById('subagent-flight-popover');
     if (popover && !popover.hidden) {
         renderSubagentFlightPopover();
@@ -3882,6 +4016,21 @@ function updateDrawerBadge(childSessionId, status) {
         badge.innerHTML = `<span class="live-dot" style="${isLive ? '' : `animation:none;background:${color};`}"></span>${escapeHtml(status)}`;
     });
     if (childSessionId && status && previousStatus !== status) {
+        const entry = childDrawerRegistry.get(childSessionId) || {};
+        const label = entry.label || `Subagent ${childSessionId.slice(0, 8)}`;
+        if (status === 'ERROR') {
+            sendDashboardNotification('errors', 'Hermes subagent failed', label, {
+                key: `subagent:${childSessionId}:error`,
+                tag: `hermes-subagent-${childSessionId}`,
+                panel: 'chat',
+            });
+        } else if (status === 'DONE') {
+            sendDashboardNotification('subagents', 'Hermes subagent finished', label, {
+                key: `subagent:${childSessionId}:done`,
+                tag: `hermes-subagent-${childSessionId}`,
+                panel: 'chat',
+            });
+        }
         let runChanged = false;
         Object.values(activeRuns).forEach(runState => {
             const child = (Array.isArray(runState?.childSessions) ? runState.childSessions : []).find(entry => entry.childSessionId === childSessionId);
@@ -5427,14 +5576,18 @@ function renderChatRoomRail() {
     const roomAvatar = (roomId, identity) => `<span class="chat-room-avatar-wrap${getActiveRun(roomId) ? ' running' : ''}">${avatarHtml(identity, { className: 'bot-avatar-rail', decorative: true })}</span>`;
     const mainIdentity = defaultBotIdentity();
     const sharedIdentity = identityForRoom('shared');
+    const roomTab = (roomId, content) => `<button class="chat-room-tab" type="button" data-room-id="${escapeHtml(roomId)}" title="${escapeHtml(botTooltip(identityForRoom(roomId)))}">${roomAvatar(roomId, identityForRoom(roomId))}<span class="chat-room-tab-copy">${content}</span></button>`;
+    const mainContent = `<strong>Main</strong><small>Default ${escapeHtml(mainIdentity.display_name || 'Hermes')} profile</small>`;
+    const sharedContent = `<strong>All Bots Room</strong><small>Shared profile roundtable</small>`;
     const fixedRooms = `
-        <button class="chat-room-tab" type="button" data-room-id="main" title="${escapeHtml(botTooltip(mainIdentity))}" aria-label="Main: ${escapeHtml(mainIdentity.display_name || 'Hermes')}">${roomAvatar('main', mainIdentity)}<span class="chat-room-tab-copy"><strong>Main</strong><small>Default ${escapeHtml(mainIdentity.display_name || 'Hermes')} profile</small></span></button>
-        <button class="chat-room-tab" type="button" data-room-id="shared" title="${escapeHtml(botTooltip(sharedIdentity))}" aria-label="All Bots Room">${roomAvatar('shared', sharedIdentity)}<span class="chat-room-tab-copy"><strong>All Bots Room</strong><small>Shared profile roundtable</small></span></button>
+        <div class="chat-room-group" data-room-group="main">${roomTab('main', mainContent)}${renderRoomChildSessionEntries('main')}</div>
+        <div class="chat-room-group" data-room-group="shared">${roomTab('shared', sharedContent)}${renderRoomChildSessionEntries('shared')}</div>
         ${renderSubagentFlightRailItem()}`;
-    const botRooms = botRegistry.filter(bot => !bot.hidden).map(bot => `
-        <button class="chat-room-tab" type="button" data-room-id="bot:${escapeHtml(bot.name || '')}" title="${escapeHtml(botTooltip(bot))}" aria-label="Chat with ${escapeHtml(bot.display_name || bot.name)}">
-            ${roomAvatar(`bot:${bot.name || ''}`, bot)}<span class="chat-room-tab-copy"><strong>${escapeHtml(bot.display_name || bot.name)}</strong><small>@${escapeHtml(bot.name || '')}</small></span>
-        </button>`).join('');
+    const botRooms = botRegistry.filter(bot => !bot.hidden).map(bot => {
+        const roomId = `bot:${bot.name || ''}`;
+        const content = `<strong>${escapeHtml(bot.display_name || bot.name)}</strong><small>@${escapeHtml(bot.name || '')}</small>`;
+        return `<div class="chat-room-group" data-room-group="${escapeHtml(roomId)}">${roomTab(roomId, content)}${renderRoomChildSessionEntries(roomId)}</div>`;
+    }).join('');
     chatRoomList.innerHTML = fixedRooms + botRooms;
     chatRoomList.querySelectorAll('[data-room-id]').forEach(button => {
         button.classList.toggle('active', button.dataset.roomId === activeChatRoomId);
@@ -7555,6 +7708,14 @@ async function finalizeActiveRun(assistantState, roomId, roomConversation, runSt
             conversation.push(finalMessage);
         }
     }
+    if (runState.notificationStatus !== 'error') {
+        const identity = identityForRoom(roomId);
+        sendDashboardNotification('runs', 'Hermes finished', `${identity.display_name || identity.name || 'Hermes'} completed its response.`, {
+            key: `run:${runState.runId}:complete`,
+            tag: `hermes-run-${runState.runId}`,
+            panel: 'chat',
+        });
+    }
     clearActiveRun(roomId, runState.runId);
     if (roomId === activeChatRoomId) {
         renderConversation();
@@ -7819,6 +7980,15 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                     if (roomId === activeChatRoomId && (parsed.status === 'complete' || parsed.status === 'error')) {
                         hideInterruptButton();
                     }
+                    if (parsed.status === 'error') {
+                        runState.notificationStatus = 'error';
+                        const identity = identityForRoom(roomId);
+                        sendDashboardNotification('errors', 'Hermes run needs attention', `${identity.display_name || identity.name || 'Hermes'} reported an error.`, {
+                            key: `run:${runId}:error`,
+                            tag: `hermes-run-${runId}`,
+                            panel: 'chat',
+                        });
+                    }
                     // TRACK D: end
                     continue;
                 }
@@ -7849,6 +8019,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                         watchSubagentFlightStatus(childSessionId);
                         appendLiveDrawerEventIfOpen(parsed);
                         renderDirty = true;
+                        renderChatRoomRail();
                         log('tool', `[child_session_started] ${childSessionId.slice(0, 8)}...`, false, { result: parsed });
                         saveActiveRuns();
                     }
@@ -11479,6 +11650,11 @@ async function sendMessage() {
 
     } catch (error) {
         log('err', `Error: ${error.message}`, true);
+        sendDashboardNotification('errors', 'Hermes run needs attention', error.message || 'The chat run failed.', {
+            key: `run:${runState.runId}:transport-error`,
+            tag: `hermes-run-${runState.runId}`,
+            panel: 'chat',
+        });
         const errorMessage = { role: 'assistant', bot: runState.profile || 'default', content: `Error: ${error.message}` };
         roomConversation.push(errorMessage);
         if (roomId === 'main') {
@@ -13679,6 +13855,7 @@ window.addEventListener('beforeunload', () => {
 // Initialize (lazy: only load essentials for chat)
 log('inf', 'Dashboard initialized');
 applyDebugVisibility();
+renderDashboardNotificationSettings();
 startTokenUsagePolling();
 startApprovalPolling();
 loadStatus();

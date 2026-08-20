@@ -5802,6 +5802,62 @@ body.dnd-popout-mode #dnd-panel { display: block !important; min-height: calc(10
 .chat-room-mark.running { animation: chat-room-running-pulse 1.4s ease-in-out infinite; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 20%, transparent); }
 @keyframes chat-room-running-pulse { 50% { opacity: 0.4; } }
 
+.chat-room-group { display: contents; }
+
+.chat-room-children {
+    display: grid;
+    gap: 0.2rem;
+    margin: 0 0 0.2rem 1rem;
+    padding-left: 0.45rem;
+    border-left: 2px solid color-mix(in srgb, var(--purple) 35%, transparent);
+}
+.chat-room-rail:not(.expanded) .chat-room-children { display: none; }
+.chat-room-child {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.3rem;
+}
+.chat-room-child-open {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr);
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 0.28rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+.chat-room-child-open:hover { background: var(--hover-bg); border-color: color-mix(in srgb, var(--purple) 40%, transparent); }
+.chat-room-child-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+.chat-room-child-dot.is-live, .chat-room-child-dot.is-running, .chat-room-child-dot.is-active { background: var(--success); box-shadow: 0 0 6px var(--success); animation: chat-room-running-pulse 1.4s ease-in-out infinite; }
+.chat-room-child-dot.is-done, .chat-room-child-dot.is-complete { background: var(--info); }
+.chat-room-child-dot.is-error, .chat-room-child-dot.is-stopped, .chat-room-child-dot.is-stopping { background: var(--error); }
+.chat-room-child-copy { display: grid; gap: 0.14rem; min-width: 0; }
+.chat-room-child-copy strong,
+.chat-room-child-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-room-child-copy strong { font-size: 0.74rem; }
+.chat-room-child-copy small { color: var(--text-dim); font: 0.62rem/1.2 ui-monospace, monospace; }
+.chat-room-child-stop {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--error) 45%, transparent);
+    border-radius: 6px;
+    color: var(--error);
+    background: transparent;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.chat-room-child-stop:hover { background: color-mix(in srgb, var(--error) 12%, transparent); border-color: var(--error); }
+
 .terminal-dock {
     display: flex;
     flex: 0 0 auto;

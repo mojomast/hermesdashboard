@@ -125,7 +125,7 @@ def test_safe_reusable_avatar_and_direct_identity_contract():
     assert "function botTooltip(identity = {})" in source
     assert "Model: ${model}" in source
     assert "${Number(identity.skill_count)} skills" in source
-    assert "title=\"${escapeHtml(botTooltip(bot))}\"" in source
+    assert "title=\"${escapeHtml(botTooltip(identityForRoom(roomId)))}\"" in source
     assert "const fallbackBot = roomBot || (activeChatRoomId === 'main' ? defaultBotIdentity() : null);" in source
 
 
