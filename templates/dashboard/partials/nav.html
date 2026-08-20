@@ -30,6 +30,22 @@
                         <button class="btn" type="button" onclick="resetDashboardTabs()">Default Tabs</button>
                         <button class="btn" type="button" onclick="showAllDashboardTabs()">Show All Tabs</button>
                     </div>
+                    <h3>Tool Approvals</h3>
+                    <p id="approval-summary">Polling for pending safety approvals…</p>
+                    <div class="approval-settings-menu">
+                        <div class="dashboard-settings-actions">
+                            <button class="btn" type="button" id="approval-refresh-btn" onclick="refreshApprovals(true)">Refresh approvals</button>
+                            <button class="btn" type="button" onclick="stopAutoApproval()">Stop auto</button>
+                        </div>
+                        <label><input type="checkbox" id="approval-auto-toggle" onchange="updateAutoApprovalSettings()"> Auto-approve visible prompts</label>
+                        <label>Duration <input type="range" id="approval-auto-minutes" min="1" max="60" value="5" oninput="updateAutoApprovalSettings(false)"> <span id="approval-auto-minutes-label">5m</span></label>
+                        <label>Scope <select id="approval-auto-decision" onchange="updateAutoApprovalSettings(false)" title="Auto-approval scope"><option value="once">once per prompt</option><option value="session">remember for session</option></select></label>
+                        <div id="approval-auto-status">Auto-approve is off.</div>
+                        <label>Passphrase <input type="password" id="approval-passphrase" autocomplete="current-password" placeholder="required if configured" oninput="cacheApprovalPassphrase(false)"></label>
+                        <label><input type="checkbox" id="approval-passphrase-remember" onchange="cacheApprovalPassphrase(true)"> remember passphrase for this tab</label>
+                        <div class="dashboard-settings-actions"><button class="btn" type="button" onclick="clearApprovalPassphrase()">Clear passphrase</button></div>
+                        <div id="approval-passphrase-status">Passphrase gate status unknown.</div>
+                    </div>
                     <h3>Visible Tabs</h3>
                     <p>Chat stays visible so there is always a safe fallback tab. Experimental tabs are hidden by default for new installs because they depend on local tooling from the maintainer's own environment.</p>
                     <div class="dashboard-tab-settings" id="dashboard-tab-settings"></div>
@@ -46,6 +62,7 @@
         <button class="tab active" data-panel="chat">Chat</button>
         <button class="tab" data-panel="message-board">Message Board</button>
         <button class="tab" data-panel="dashboard-chat">Dashboard Chat</button>
+        <button class="tab" data-panel="parallel-arena">Parallel Arena</button>
         <button class="tab" data-panel="config">Config</button>
         <button class="tab" data-panel="secrets">Secrets</button>
         <button class="tab" data-panel="sessions">Sessions</button>
@@ -58,6 +75,7 @@
         <button class="tab" data-panel="dnd">Campaigns</button>
         <button class="tab" data-panel="self-improvement">Self-Improvement</button>
         <button class="tab" data-panel="autonomous-development">Autonomous Development</button>
+        <button class="tab" data-panel="nexussy">Nexussy</button>
         <button class="tab" data-panel="scrolls">Vesuvius AutoResearch</button>
         <button class="tab" data-panel="cron">Cron</button>
         <button class="tab" data-panel="schedule">Schedule</button>

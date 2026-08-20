@@ -12,6 +12,7 @@ services:
       HERMES_HOME: "/hermes-home"
       HERMES_AGENT_PATH: "/hermes-agent"
       HERMES_API: "${DOCKER_HERMES_API:-http://host.docker.internal:8642}"
+      NEXUSSY_API: "${DOCKER_NEXUSSY_API:-http://host.docker.internal:7771}"
     volumes:
       - "${HERMES_HOME:-$HOME/.hermes}:/hermes-home"
       - "${HERMES_AGENT_PATH:-$HOME/.hermes/hermes-agent}:/hermes-agent:ro"

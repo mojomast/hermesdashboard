@@ -7,7 +7,7 @@ def test_dashboard_template_links_extracted_static_assets():
 
     assert '<link rel="stylesheet" href="/static/css/dashboard.css' in html
     assert '<script src="/static/js/dashboard.js' in html
-    assert 'drawer-dock-20260602' in html
+    assert 'drawer-dock-scale-20260602' in html
     assert '<style>' not in html
     assert 'type="module"' not in html
     assert '{% include' not in html
@@ -106,7 +106,12 @@ def test_live_subagent_drawers_use_persistent_side_by_side_dock():
     assert ".child-session-drawer-dock" in css
     assert "position: fixed" in css
     assert "display: flex" in css
-    assert "flex: 0 0 min(440px" in css
+    assert "flex-wrap: wrap" in css
+    assert "overflow-x: hidden" in css
+    assert "width: clamp(300px, 30vw, 440px)" in css
+    assert "flex: 1 1 clamp(300px, 30vw, 440px)" in css
+    assert "flex-direction: column" in css
+    assert ".drawer-header-actions .btn" in css
 
 
 def test_static_route_is_registered_with_extracted_asset_directory():

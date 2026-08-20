@@ -1,5 +1,8 @@
 import asyncio
+import concurrent.futures
 import datetime
+import hashlib
+import hmac
 import importlib.util
 import inspect
 import json
@@ -332,6 +335,17 @@ except Exception:
 
 
 HERMES_API = os.getenv("HERMES_API", "http://127.0.0.1:8642")
+NEXUSSY_API = os.getenv("NEXUSSY_API", "http://127.0.0.1:7771").rstrip("/")
+NEXUSSY_API_KEY = os.getenv("NEXUSSY_API_KEY", "")
+NEXUSSY_START_CMD_JSON = os.getenv("NEXUSSY_START_CMD_JSON", "").strip()
+NEXUSSY_START_SCRIPT = os.getenv(
+    "NEXUSSY_START_SCRIPT",
+    str(Path.home() / ".hermes" / "scripts" / "start-nexussy-sidecar.sh"),
+)
+NEXUSSY_DEFAULT_STAGE_MODEL = os.getenv(
+    "NEXUSSY_DEFAULT_STAGE_MODEL", "openrouter/openai/gpt-4o-mini"
+)
+NEXUSSY_STAGES = ("interview", "design", "validate", "plan", "review", "develop")
 HERMES_HOME = get_hermes_home()
 DASHBOARD_REPO_ROOT = Path(
     os.getenv("DASHBOARD_UPDATE_ROOT", str(Path(__file__).resolve().parent))
@@ -350,7 +364,7 @@ HERMES_READ_TIMEOUT = (
     else float(HERMES_READ_TIMEOUT_RAW)
 )
 HERMES_USEFUL_EVENT_TIMEOUT = float(
-    os.getenv("DASHBOARD_HERMES_USEFUL_EVENT_TIMEOUT", "120")
+    os.getenv("DASHBOARD_HERMES_USEFUL_EVENT_TIMEOUT", "300")
 )
 
 templates = Jinja2Templates(
@@ -366,6 +380,14 @@ _STARTUP_METADATA_BACKFILL_STARTED = False
 DASHBOARD_STATE_DB_PATH = HERMES_HOME / "dashboard_state.db"
 DASHBOARD_STATE_KEYS = {"conversation", "active_run"}
 DASHBOARD_STATE_LOCK = threading.Lock()
+PARALLEL_ARENA_HOME = Path(
+    os.getenv("PARALLEL_ARENA_HOME", str(SELF_IMPROVEMENT_HOME / "parallel-arena"))
+).expanduser().resolve()
+PARALLEL_ARENA_RUNS_DIR = PARALLEL_ARENA_HOME / "runs"
+PARALLEL_ARENA_WORKER_TIMEOUT_SECONDS = max(1, int(os.getenv("PARALLEL_ARENA_WORKER_TIMEOUT_SECONDS", "20")))
+PARALLEL_ARENA_HERMES_TIMEOUT_SECONDS = max(5, int(os.getenv("PARALLEL_ARENA_HERMES_TIMEOUT_SECONDS", "180")))
+PARALLEL_ARENA_DEFAULT_EXECUTION_MODE = os.getenv("PARALLEL_ARENA_EXECUTION_MODE", "local_worker").strip() or "local_worker"
+PARALLEL_ARENA_LOCK = threading.Lock()
 
 # Track D: Interrupt control for live runs.
 # NOTE: The actual agent (run_agent.py) must check check_interrupt_flag()
@@ -2198,6 +2220,82 @@ async def chat_stream(request):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _configured_approval_passphrase() -> str:
+    """Return dashboard-local approval passphrase, if configured.
+
+    The passphrase gates dashboard approval button clicks before the dashboard
+    proxy forwards the decision to the Hermes API server. It can be changed in
+    ~/.hermes/config.yaml without restarting by setting one of:
+      dashboard.approval_passphrase
+      dashboard.approvals.passphrase
+      approvals.dashboard_passphrase
+    DASHBOARD_APPROVAL_PASSPHRASE is also supported but, like any env var,
+    requires a dashboard service restart to change.
+    """
+    env_value = os.getenv("DASHBOARD_APPROVAL_PASSPHRASE", "").strip()
+    if env_value:
+        return env_value
+    try:
+        config = get_config()
+    except Exception:
+        config = {}
+    if not isinstance(config, dict):
+        return ""
+    dashboard = config.get("dashboard") if isinstance(config.get("dashboard"), dict) else {}
+    dashboard_approvals = dashboard.get("approvals") if isinstance(dashboard.get("approvals"), dict) else {}
+    approvals = config.get("approvals") if isinstance(config.get("approvals"), dict) else {}
+    candidates = (
+        dashboard.get("approval_passphrase"),
+        dashboard_approvals.get("passphrase"),
+        config.get("dashboard_approval_passphrase"),
+        approvals.get("dashboard_passphrase"),
+    )
+    for value in candidates:
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+async def dashboard_approvals_pending_endpoint(request):
+    session_id = request.query_params.get("session_id") or request.query_params.get("session_key") or ""
+    params = {"session_id": session_id} if session_id else {}
+    headers = {"Authorization": f"Bearer {API_KEY}"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{HERMES_API}/v1/approvals/pending", headers=headers, params=params)
+        payload = response.json()
+        if isinstance(payload, dict):
+            payload["passphrase_required"] = bool(_configured_approval_passphrase())
+        return JSONResponse(payload, status_code=response.status_code)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "approvals": []}, status_code=502)
+
+
+async def dashboard_approvals_respond_endpoint(request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    expected_passphrase = _configured_approval_passphrase()
+    if expected_passphrase:
+        supplied_passphrase = str(body.get("passphrase") or body.get("approval_passphrase") or "")
+        if not hmac.compare_digest(supplied_passphrase, expected_passphrase):
+            return JSONResponse({"ok": False, "error": "approval passphrase required"}, status_code=403)
+    body = dict(body)
+    body.pop("passphrase", None)
+    body.pop("approval_passphrase", None)
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(f"{HERMES_API}/v1/approvals/respond", headers=headers, json=body)
+        payload = response.json()
+        return JSONResponse(payload, status_code=response.status_code)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
 
 
 async def health(request):
@@ -4266,17 +4364,33 @@ def _self_improvement_queue_helper_path() -> Path:
     return Path.home() / "scripts" / "self-augment" / "self_improvement_queue.py"
 
 
-def _load_self_improvement_queue_helper():
-    """Load the canonical queue helper used by research/tournament crons."""
-    helper_path = _self_improvement_queue_helper_path()
+def _load_dashboard_helper_module(module_name: str, helper_path: Path):
+    """Load a dashboard helper module safely for Python 3.13 dataclass annotations."""
     if not helper_path.exists():
         return None
-    spec = importlib.util.spec_from_file_location("hermes_self_improvement_queue", helper_path)
+    spec = importlib.util.spec_from_file_location(module_name, helper_path)
     if spec is None or spec.loader is None:
         return None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    previous = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        if previous is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous
+        raise
     return module
+
+
+def _load_self_improvement_queue_helper():
+    """Load the canonical queue helper used by research/tournament crons."""
+    return _load_dashboard_helper_module(
+        "hermes_self_improvement_queue",
+        _self_improvement_queue_helper_path(),
+    )
 
 
 def _normalize_dashboard_candidate_for_strict_queue(candidate: dict) -> dict:
@@ -4919,15 +5033,10 @@ def _becomussy_resume_packet_helper_path() -> Path:
 
 
 def _load_becomussy_resume_packet_helper():
-    helper_path = _becomussy_resume_packet_helper_path()
-    if not helper_path.exists():
-        return None
-    spec = importlib.util.spec_from_file_location("hermes_becomussy_resume_packet", helper_path)
-    if spec is None or spec.loader is None:
-        return None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return _load_dashboard_helper_module(
+        "hermes_becomussy_resume_packet",
+        _becomussy_resume_packet_helper_path(),
+    )
 
 
 def _json_chars(value) -> int:
@@ -5134,7 +5243,158 @@ def get_becomussy_outbox_health(limit_errors: int = 5) -> dict:
     }
 
 
+def _self_improvement_percentiles(values: list[int | float | None]) -> dict:
+    numeric = sorted(int(value) for value in values if value is not None)
+    if not numeric:
+        return {"p50": None, "p95": None, "p99": None}
+
+    def pick(q: float) -> int:
+        index = max(0, min(len(numeric) - 1, int(round((len(numeric) - 1) * q))))
+        return numeric[index]
+
+    return {"p50": pick(0.50), "p95": pick(0.95), "p99": pick(0.99)}
+
+
+def _self_improvement_prompt_budget_telemetry(limit: int = 100) -> dict:
+    """Aggregate-only prompt/API telemetry for the 8082 self-improvement cockpit."""
+    db_path = HERMES_HOME / "state.db"
+    result = {
+        "ok": False,
+        "source": "state_db_aggregate",
+        "sample_limit": limit,
+        "state_db_exists": db_path.exists(),
+        "prompt_budgets": {"sample_count": 0, "total_input_tokens": _self_improvement_percentiles([]), "available_output_budget": _self_improvement_percentiles([])},
+        "api_calls": {"sample_count": 0, "total_latency_ms": _self_improvement_percentiles([]), "failure_count": 0},
+    }
+    if not db_path.exists():
+        result["reason"] = "state.db missing"
+        return result
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        safe_limit = max(1, min(int(limit or 100), 1000))
+        if _sqlite_table_exists(conn, "prompt_budgets"):
+            rows = conn.execute(
+                """
+                SELECT total_input_tokens, available_output_budget
+                FROM prompt_budgets
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+            result["prompt_budgets"] = {
+                "sample_count": len(rows),
+                "total_input_tokens": _self_improvement_percentiles([row["total_input_tokens"] for row in rows]),
+                "available_output_budget": _self_improvement_percentiles([row["available_output_budget"] for row in rows]),
+            }
+        if _sqlite_table_exists(conn, "api_calls"):
+            latency_rows = conn.execute(
+                """
+                SELECT total_latency_ms
+                FROM api_calls
+                WHERE total_latency_ms IS NOT NULL
+                ORDER BY start_time DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+            failure_row = conn.execute(
+                "SELECT COUNT(*) AS count FROM api_calls WHERE status IS NOT NULL AND status != 'completed'"
+            ).fetchone()
+            failure_count = int(failure_row["count"] if failure_row is not None else 0)
+            result["api_calls"] = {
+                "sample_count": len(latency_rows),
+                "total_latency_ms": _self_improvement_percentiles([row["total_latency_ms"] for row in latency_rows]),
+                "failure_count": failure_count,
+            }
+        result["ok"] = True
+        return result
+    except Exception as exc:
+        result["reason"] = str(exc)
+        return result
+    finally:
+        conn.close()
+
+
+def get_self_improvement_control_plane_packet(*, build_ms: float | None = None) -> dict:
+    """Read-only, aggregate-only control-plane packet for the dashboard refactor."""
+    start = time.perf_counter()
+    ledger = get_self_improvement_ledger(limit=25)
+    queue = list_self_improvement_candidates()
+    coverage = _read_self_improvement_candidate_event_coverage()
+    outbox = get_becomussy_outbox_health()
+    cron_mesh = get_self_improvement_cron_mesh()
+    drift = get_self_improvement_drift_status()
+    telemetry = _self_improvement_prompt_budget_telemetry(limit=100)
+
+    runs = ledger.get("runs") or []
+    outcome_counts = Counter(str(run.get("outcome") or "unknown") for run in runs if isinstance(run, dict))
+    queue_status_counts = dict((queue or {}).get("status_counts") or {}) if isinstance(queue, dict) else {}
+    missing = dict((coverage or {}).get("missing_event_coverage") or {})
+    packet_build_ms = round(float(build_ms) if build_ms is not None else (time.perf_counter() - start) * 1000, 2)
+    latency_target_ms = 250
+    next_actions = []
+    if outbox.get("replay_needed"):
+        next_actions.append("Replay Becomussy outbox with preflight before relying on continuity writes.")
+    if coverage.get("coverage_ok") is False:
+        next_actions.append("Review queue event-coverage repair hints before applying any synthetic events.")
+    if cron_mesh.get("blockers"):
+        next_actions.append("Resolve self-improvement cron mesh blockers.")
+    if drift.get("ok") is False:
+        next_actions.append("Review drift findings before enabling promotion gates.")
+
+    return {
+        "schema_version": "hermes.self_improvement_control_plane.v1",
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "ok": bool(cron_mesh.get("ok") and drift.get("ok") is not False and outbox.get("ok") is not False),
+        "privacy": {
+            "mode": "aggregate_only",
+            "raw_prompts": False,
+            "raw_messages": False,
+            "raw_tool_payloads": False,
+            "raw_memory_text": False,
+            "raw_journal_text": False,
+            "local_file_contents": False,
+            "paths": False,
+            "ids": False,
+        },
+        "benchmarks": {
+            "health_packet_build_ms": packet_build_ms,
+            "health_latency_target_ms": latency_target_ms,
+            "health_latency_target_met": packet_build_ms <= latency_target_ms,
+        },
+        "telemetry": telemetry,
+        "metrics": {
+            "recent_run_count": len(runs),
+            "outcome_counts": dict(outcome_counts),
+            "queued_candidate_count": int(queue_status_counts.get("queued", 0) or 0),
+            "selected_candidate_count": int(queue_status_counts.get("selected", 0) or 0),
+            "outbox_pending_count": int(outbox.get("pending_count") or 0),
+            "outbox_invalid_count": int(outbox.get("invalid_count") or 0),
+            "missing_event_coverage_count": missing.get("count"),
+            "cron_blocker_count": len(cron_mesh.get("blockers") or []),
+            "drift_finding_count": drift.get("finding_count"),
+        },
+        "gates": {
+            "cron_mesh": "pass" if cron_mesh.get("ok") else "warn",
+            "drift": "pass" if drift.get("ok") is not False else "warn",
+            "outbox": "pass" if not outbox.get("replay_needed") and not outbox.get("invalid_count") else "warn",
+            "event_coverage": "pass" if coverage.get("coverage_ok") is not False else "warn",
+            "privacy_contract": "pass",
+        },
+        "actions": {
+            "supported": ["pause", "resume", "kill", "clear_stale_lock"],
+            "dangerous": ["kill", "clear_stale_lock"],
+            "requires_confirm": ["clear_stale_lock"],
+        },
+        "next_actions": next_actions,
+    }
+
+
 def get_self_improvement_status() -> dict:
+    start = time.perf_counter()
     cron_mesh = get_self_improvement_cron_mesh()
     drift = get_self_improvement_drift_status()
     return {
@@ -5147,6 +5407,9 @@ def get_self_improvement_status() -> dict:
         "supervisor": get_self_improvement_supervisor(),
         "cron_mesh": cron_mesh,
         "drift": drift,
+        "control_plane_packet": get_self_improvement_control_plane_packet(
+            build_ms=(time.perf_counter() - start) * 1000,
+        ),
         "policy": {
             "allowed_layers": sorted(SELF_IMPROVEMENT_ALLOWED_LAYERS),
             "banned_phrases": sorted(SELF_IMPROVEMENT_BANNED_PHRASES),
@@ -5517,6 +5780,2369 @@ async def control_autonomous_development_pipeline_endpoint(request):
         return JSONResponse({"error": "invalid JSON"}, status_code=400)
     result = apply_autonomous_development_pipeline_control(pipeline_id, data.get("action"), actor=data.get("actor") or "dashboard")
     return JSONResponse(result, status_code=200 if result.get("success") else 400)
+
+
+def _nexussy_headers() -> dict:
+    headers = {"Accept": "application/json"}
+    if NEXUSSY_API_KEY:
+        headers["X-API-Key"] = NEXUSSY_API_KEY
+    return headers
+
+
+async def _nexussy_request(
+    method: str,
+    path: str,
+    *,
+    json_body=None,
+    params=None,
+    timeout: float = 30.0,
+):
+    url = f"{NEXUSSY_API}{path}"
+    headers = _nexussy_headers()
+    if json_body is not None:
+        headers["Content-Type"] = "application/json"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.request(
+                method, url, headers=headers, json=json_body, params=params
+            )
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"ok": resp.is_success, "text": resp.text}
+        return data, resp.status_code
+    except httpx.RequestError as exc:
+        return {
+            "ok": False,
+            "error": f"Nexussy sidecar unavailable: {exc}",
+            "error_code": "nexussy_unavailable",
+            "nexussy_api": NEXUSSY_API,
+            "retryable": True,
+        }, 503
+
+
+def _nexussy_provider_prefix(model: str) -> str:
+    text = str(model or "")
+    return text.split("/", 1)[0] if "/" in text else text
+
+
+def _nexussy_model_guard(config: dict | None, health: dict | None) -> dict:
+    config = config if isinstance(config, dict) else {}
+    health = health if isinstance(health, dict) else {}
+    providers = set(health.get("providers_configured") or [])
+    configured = []
+    missing = []
+    provider_cfg = config.get("providers") if isinstance(config.get("providers"), dict) else {}
+    default_model = str(provider_cfg.get("default_model") or "")
+    stages_cfg = config.get("stages") if isinstance(config.get("stages"), dict) else {}
+    for stage in NEXUSSY_STAGES:
+        stage_cfg = stages_cfg.get(stage) if isinstance(stages_cfg.get(stage), dict) else {}
+        model = str(
+            stage_cfg.get("model")
+            or stage_cfg.get("orchestrator_model")
+            or default_model
+            or ""
+        )
+        prefix = _nexussy_provider_prefix(model)
+        row = {
+            "stage": stage,
+            "model": model,
+            "provider": prefix,
+            "available": bool(prefix and prefix in providers),
+        }
+        configured.append(row)
+        if model and prefix not in providers:
+            missing.append(row)
+    return {
+        "ok": not missing,
+        "providers_configured": sorted(providers),
+        "configured_models": configured,
+        "missing": missing,
+        "recommended_model": NEXUSSY_DEFAULT_STAGE_MODEL,
+        "message": (
+            "All stage models have configured providers."
+            if not missing
+            else "One or more Nexussy stage models use unavailable providers; use stage overrides or configure the provider before launch."
+        ),
+    }
+
+
+def _nexussy_stage_overrides(model: str | None) -> dict:
+    model = str(model or NEXUSSY_DEFAULT_STAGE_MODEL).strip()
+    return {stage: model for stage in NEXUSSY_STAGES} if model else {}
+
+
+async def _nexussy_json_body(request) -> tuple[dict, int | None]:
+    try:
+        data = json.loads((await request.body()) or b"{}")
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "invalid JSON"}, 400
+    if not isinstance(data, dict):
+        return {"ok": False, "error": "JSON body must be an object"}, 400
+    return data, None
+
+
+async def get_nexussy_endpoint(request):
+    health, health_status = await _nexussy_request("GET", "/health", timeout=5.0)
+    config, _ = (
+        await _nexussy_request("GET", "/config", timeout=5.0)
+        if health_status < 500
+        else ({}, 503)
+    )
+    sessions, _ = (
+        await _nexussy_request(
+            "GET", "/sessions", params={"limit": 12, "offset": 0}, timeout=10.0
+        )
+        if health_status < 500
+        else ([], 503)
+    )
+    if not isinstance(sessions, list):
+        sessions = sessions.get("sessions", []) if isinstance(sessions, dict) else []
+    active = None
+    for session in sessions:
+        if not isinstance(session, dict):
+            continue
+        if session.get("last_run_id") or session.get("status") in {"running", "paused", "blocked"}:
+            active = session
+            break
+    latest_status = None
+    artifacts = None
+    workers = None
+    if active and active.get("last_run_id"):
+        run_id = active.get("last_run_id")
+        latest_status, _ = await _nexussy_request(
+            "GET", "/pipeline/status", params={"run_id": run_id}, timeout=10.0
+        )
+        artifacts, _ = await _nexussy_request(
+            "GET",
+            "/pipeline/artifacts",
+            params={"session_id": active.get("session_id"), "run_id": run_id},
+            timeout=10.0,
+        )
+        workers, _ = await _nexussy_request(
+            "GET", "/swarm/workers", params={"run_id": run_id}, timeout=10.0
+        )
+    return JSONResponse(
+        {
+            "ok": bool(isinstance(health, dict) and health.get("ok")),
+            "nexussy_api": NEXUSSY_API,
+            "health": health,
+            "config": config,
+            "model_guard": _nexussy_model_guard(config, health),
+            "sessions": sessions,
+            "active_session": active,
+            "latest_status": latest_status,
+            "artifacts": artifacts,
+            "workers": workers
+            if isinstance(workers, list)
+            else (workers.get("workers", []) if isinstance(workers, dict) else []),
+        },
+        status_code=200 if health_status < 500 else 503,
+    )
+
+
+async def nexussy_health_endpoint(request):
+    data, status = await _nexussy_request("GET", "/health", timeout=5.0)
+    return JSONResponse(data, status_code=status)
+
+
+async def nexussy_config_endpoint(request):
+    data, status = await _nexussy_request("GET", "/config", timeout=5.0)
+    return JSONResponse(data, status_code=status)
+
+
+async def nexussy_tools_endpoint(request):
+    data, status = await _nexussy_request("GET", "/mcp/tools", timeout=10.0)
+    return JSONResponse(data, status_code=status)
+
+
+async def nexussy_start_sidecar_endpoint(request):
+    health, status = await _nexussy_request("GET", "/health", timeout=3.0)
+    if status < 500 and isinstance(health, dict) and health.get("ok"):
+        return JSONResponse({"ok": True, "already_running": True, "health": health})
+    cmd = None
+    if NEXUSSY_START_CMD_JSON:
+        try:
+            parsed = json.loads(NEXUSSY_START_CMD_JSON)
+            if isinstance(parsed, list) and parsed and all(isinstance(x, str) for x in parsed):
+                cmd = parsed
+        except Exception:
+            cmd = None
+    if cmd is None and NEXUSSY_START_SCRIPT and Path(NEXUSSY_START_SCRIPT).exists():
+        cmd = [NEXUSSY_START_SCRIPT]
+    if not cmd:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "No safe Nexussy start command configured",
+                "hint": "Set NEXUSSY_START_CMD_JSON or NEXUSSY_START_SCRIPT.",
+            },
+            status_code=503,
+        )
+    log_dir = HERMES_HOME / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "nexussy-sidecar-dashboard.log"
+    with open(log_path, "ab") as log_file:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    return JSONResponse(
+        {"ok": True, "started": True, "pid": proc.pid, "log_path": str(log_path), "command": cmd}
+    )
+
+
+async def nexussy_sessions_endpoint(request):
+    params = {
+        "limit": request.query_params.get("limit", "25"),
+        "offset": request.query_params.get("offset", "0"),
+    }
+    data, status = await _nexussy_request("GET", "/sessions", params=params, timeout=10.0)
+    return JSONResponse(
+        {
+            "ok": status < 400,
+            "sessions": data if isinstance(data, list) else data.get("sessions", []) if isinstance(data, dict) else [],
+            "raw": data,
+        },
+        status_code=status,
+    )
+
+
+async def nexussy_start_pipeline_endpoint(request):
+    data, error_status = await _nexussy_json_body(request)
+    if error_status:
+        return JSONResponse(data, status_code=error_status)
+    if not str(data.get("project_name") or "").strip() or not str(data.get("description") or "").strip():
+        return JSONResponse({"ok": False, "error": "project_name and description are required"}, status_code=400)
+    allowed = {
+        "project_name",
+        "description",
+        "project_slug",
+        "existing_repo_path",
+        "start_stage",
+        "stop_after_stage",
+        "resume_run_id",
+        "auto_approve_interview",
+        "metadata",
+        "model_overrides",
+    }
+    payload = {k: v for k, v in data.items() if k in allowed and v not in (None, "")}
+    payload.setdefault("start_stage", "interview")
+    payload.setdefault("stop_after_stage", "develop")
+    payload.setdefault("auto_approve_interview", False)
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    metadata.setdefault("source", "hermes_dashboard")
+    metadata.setdefault("operator", "hermes")
+    payload["metadata"] = metadata
+    if data.get("auto_model_override", True):
+        payload["model_overrides"] = _nexussy_stage_overrides(
+            data.get("stage_model") or NEXUSSY_DEFAULT_STAGE_MODEL
+        )
+    result, status = await _nexussy_request("POST", "/pipeline/start", json_body=payload, timeout=60.0)
+    return JSONResponse(result, status_code=status)
+
+
+async def nexussy_run_status_endpoint(request):
+    run_id = request.path_params.get("run_id")
+    data, status = await _nexussy_request("GET", "/pipeline/status", params={"run_id": run_id}, timeout=10.0)
+    return JSONResponse(data, status_code=status)
+
+
+async def nexussy_run_events_endpoint(request):
+    run_id = request.path_params.get("run_id")
+    params = {
+        "run_id": run_id,
+        "after_sequence": request.query_params.get("after_sequence", "0"),
+        "limit": request.query_params.get("limit", "200"),
+    }
+    data, status = await _nexussy_request("GET", "/events", params=params, timeout=10.0)
+    return JSONResponse(
+        {
+            "ok": status < 400,
+            "events": data if isinstance(data, list) else data.get("events", []) if isinstance(data, dict) else [],
+            "raw": data,
+        },
+        status_code=status,
+    )
+
+
+async def nexussy_run_artifacts_endpoint(request):
+    run_id = request.path_params.get("run_id")
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        status_data, status_code = await _nexussy_request(
+            "GET", "/pipeline/status", params={"run_id": run_id}, timeout=10.0
+        )
+        session_id = (status_data.get("run") or {}).get("session_id") if isinstance(status_data, dict) else None
+        if status_code >= 400 or not session_id:
+            return JSONResponse(
+                {"ok": False, "error": "session_id is required when it cannot be inferred from run_id", "status": status_data},
+                status_code=400,
+            )
+    data, status = await _nexussy_request(
+        "GET", "/pipeline/artifacts", params={"session_id": session_id, "run_id": run_id}, timeout=10.0
+    )
+    return JSONResponse(data, status_code=status)
+
+
+async def nexussy_artifact_content_endpoint(request):
+    kind = request.path_params.get("kind")
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        return JSONResponse({"ok": False, "error": "session_id is required"}, status_code=400)
+    params = {"session_id": session_id}
+    if request.query_params.get("phase_number"):
+        params["phase_number"] = request.query_params.get("phase_number")
+    data, status = await _nexussy_request(
+        "GET", f"/pipeline/artifacts/{kind}", params=params, timeout=10.0
+    )
+    return JSONResponse(data, status_code=status)
+
+
+async def nexussy_interview_answer_endpoint(request):
+    session_id = request.path_params.get("session_id")
+    data, error_status = await _nexussy_json_body(request)
+    if error_status:
+        return JSONResponse(data, status_code=error_status)
+    answers = data.get("answers") if isinstance(data.get("answers"), dict) else data
+    result, status = await _nexussy_request(
+        "POST", f"/pipeline/{session_id}/interview/answer", json_body={"answers": answers}, timeout=60.0
+    )
+    return JSONResponse(result, status_code=status)
+
+
+async def nexussy_run_control_endpoint(request):
+    run_id = request.path_params.get("run_id")
+    data, error_status = await _nexussy_json_body(request)
+    if error_status:
+        return JSONResponse(data, status_code=error_status)
+    action = str(data.get("action") or "").strip().lower()
+    if action not in {"pause", "resume", "cancel"}:
+        return JSONResponse({"ok": False, "error": "action must be pause, resume, or cancel"}, status_code=400)
+    payload = {"run_id": run_id}
+    if action in {"pause", "cancel"}:
+        payload["reason"] = str(data.get("reason") or f"{action} from Hermes Dashboard")
+    result, status = await _nexussy_request(
+        "POST", f"/pipeline/{action}", json_body=payload, timeout=30.0
+    )
+    return JSONResponse(result, status_code=status)
+
+
+async def nexussy_inject_endpoint(request):
+    run_id = request.path_params.get("run_id")
+    data, error_status = await _nexussy_json_body(request)
+    if error_status:
+        return JSONResponse(data, status_code=error_status)
+    payload = {"run_id": run_id, "message": str(data.get("message") or "")}
+    if data.get("worker_id"):
+        payload["worker_id"] = data.get("worker_id")
+    if data.get("stage"):
+        payload["stage"] = data.get("stage")
+    result, status = await _nexussy_request("POST", "/pipeline/inject", json_body=payload, timeout=30.0)
+    return JSONResponse(result, status_code=status)
+
+
+async def nexussy_steer_endpoint(request):
+    run_id = request.path_params.get("run_id")
+    data, error_status = await _nexussy_json_body(request)
+    if error_status:
+        return JSONResponse(data, status_code=error_status)
+    message = str(data.get("message") or "").strip()
+    if not message:
+        return JSONResponse({"ok": False, "error": "message is required"}, status_code=400)
+    args = {
+        "target": str(data.get("target") or "orchestrator"),
+        "run_id": run_id,
+        "message": message,
+        "priority": str(data.get("priority") or "normal"),
+    }
+    if data.get("worker_id"):
+        args["worker_id"] = data.get("worker_id")
+    result, status = await _nexussy_request(
+        "POST", "/mcp/call", json_body={"name": "nexussy_steer", "arguments": args}, timeout=30.0
+    )
+    return JSONResponse(result, status_code=status)
+
+
+async def nexussy_workers_endpoint(request):
+    run_id = request.path_params.get("run_id")
+    data, status = await _nexussy_request("GET", "/swarm/workers", params={"run_id": run_id}, timeout=10.0)
+    return JSONResponse(
+        {
+            "ok": status < 400,
+            "workers": data if isinstance(data, list) else data.get("workers", []) if isinstance(data, dict) else [],
+            "raw": data,
+        },
+        status_code=status,
+    )
+
+
+def _parallel_arena_now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _parallel_arena_run_path(run_id: str) -> Path:
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "", str(run_id or ""))
+    return PARALLEL_ARENA_RUNS_DIR / f"{safe_id}.json"
+
+
+def _parallel_arena_read_run(path: Path) -> Optional[dict]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _parallel_arena_write_run(run: dict) -> None:
+    PARALLEL_ARENA_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    _parallel_arena_run_path(str(run["run_id"])).write_text(
+        json.dumps(run, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _parallel_arena_list_runs(limit: int = 12) -> list[dict]:
+    if not PARALLEL_ARENA_RUNS_DIR.exists():
+        return []
+    runs: list[dict] = []
+    for path in sorted(PARALLEL_ARENA_RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        run = _parallel_arena_read_run(path)
+        if run:
+            runs.append(run)
+        if len(runs) >= limit:
+            break
+    return runs
+
+
+def _parallel_arena_summarize_run(run: dict) -> dict:
+    lanes = run.get("lanes") if isinstance(run.get("lanes"), list) else []
+    completed = [lane for lane in lanes if lane.get("status") == "completed"]
+    _parallel_arena_hydrate_artifact_manifests(run)
+    return {
+        "run_id": run.get("run_id"),
+        "title": run.get("title"),
+        "task": run.get("task"),
+        "status": run.get("status"),
+        "created_at": run.get("created_at"),
+        "updated_at": run.get("updated_at"),
+        "lane_count": len(lanes),
+        "completed_lanes": len(completed),
+        "duration_ms": run.get("duration_ms", 0),
+        "execution_mode": run.get("execution_mode", "simulated"),
+        "artifact_dir": run.get("artifact_dir") or run.get("run_dir"),
+        "run_dir": run.get("run_dir") or run.get("artifact_dir"),
+        "failed_lanes": run.get("failed_lanes", 0),
+        "synthesis": run.get("synthesis"),
+        "skill_forge": run.get("skill_forge"),
+        "mission_plan": run.get("mission_plan"),
+        "workflow_replay": run.get("workflow_replay"),
+        "canary_harness": run.get("canary_harness"),
+        "demo_reel": run.get("demo_reel"),
+        "impact_plan": run.get("impact_plan"),
+        "provider_advisor": run.get("provider_advisor"),
+    }
+
+
+def get_parallel_arena_status() -> dict:
+    runs = _parallel_arena_list_runs()
+    current = runs[0] if runs else None
+    return {
+        "ok": True,
+        "storage_dir": str(PARALLEL_ARENA_RUNS_DIR),
+        "execution_modes": ["simulated", "local_worker", "hermes_cli"],
+        "default_execution_mode": PARALLEL_ARENA_DEFAULT_EXECUTION_MODE,
+        "worker_timeout_seconds": PARALLEL_ARENA_WORKER_TIMEOUT_SECONDS,
+        "hermes_timeout_seconds": PARALLEL_ARENA_HERMES_TIMEOUT_SECONDS,
+        "current": current,
+        "runs": [_parallel_arena_summarize_run(run) for run in runs],
+        "best_practices": [
+            "Bound lane count and persist structured run/lane artifacts.",
+            "Prefer local deterministic MVP execution before spending model tokens.",
+            "Expose cancellation and stable run IDs so future subagent/model traces can attach evidence.",
+            "Score lanes by evidence, testability, elapsed time, and synthesis usefulness rather than vibes.",
+        ],
+    }
+
+
+def _parallel_arena_configured_secret_names(env: Optional[dict] = None) -> set[str]:
+    """Return configured provider secret names without exposing secret values."""
+    env_map = env if isinstance(env, dict) else {}
+    if not env_map:
+        try:
+            loaded = load_hermes_env()
+            env_map = loaded if isinstance(loaded, dict) else {}
+        except Exception:
+            env_map = {}
+    configured: set[str] = set()
+    for name, value in env_map.items():
+        if name.endswith("_API_KEY") or name.endswith("_TOKEN"):
+            if str(value or "").strip():
+                configured.add(name)
+    for name in (
+        "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY",
+        "XAI_API_KEY", "DEEPSEEK_API_KEY", "NOUS_API_KEY", "KIMI_API_KEY", "GLM_API_KEY",
+    ):
+        if os.getenv(name):
+            configured.add(name)
+    return configured
+
+
+def build_parallel_arena_provider_advisor(
+    task: str,
+    execution_mode: Optional[str] = None,
+    lane_count: int = 3,
+    config: Optional[dict] = None,
+    env: Optional[dict] = None,
+) -> dict:
+    """Create a deterministic pre-run provider/model/lane advisor for Parallel Arena.
+
+    The advisor is intentionally read-only and secret-safe: it inspects local config/env presence,
+    never returns key values, and defaults to local execution unless provider spend is explicitly enabled.
+    """
+    task_text = str(task or "").strip()
+    lowered = task_text.lower()
+    cfg = config if isinstance(config, dict) else None
+    if cfg is None:
+        try:
+            loaded_cfg = load_hermes_config()
+            cfg = loaded_cfg if isinstance(loaded_cfg, dict) else {}
+        except Exception:
+            cfg = {}
+    model_cfg = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
+    delegation_cfg = cfg.get("delegation") if isinstance(cfg.get("delegation"), dict) else {}
+    configured_secrets = _parallel_arena_configured_secret_names(env)
+    spend_enabled = os.getenv("PARALLEL_ARENA_ALLOW_PROVIDER_SPEND", "").strip().lower() in {"1", "true", "yes", "on"}
+    requested_mode = str(execution_mode or PARALLEL_ARENA_DEFAULT_EXECUTION_MODE or "local_worker").strip().lower()
+    lane_count = max(1, min(8, int(lane_count or 1)))
+    provider_specs = [
+        {"id": "local_worker", "label": "Local Worker", "secret_names": [], "base": 74, "cost": "zero", "latency": "low"},
+        {"id": "hermes_cli", "label": "Hermes CLI Adapter", "secret_names": [], "base": 72, "cost": "operator-gated", "latency": "high"},
+        {"id": "openrouter", "label": "OpenRouter", "secret_names": ["OPENROUTER_API_KEY"], "base": 68, "cost": "metered", "latency": "medium"},
+        {"id": "anthropic", "label": "Anthropic", "secret_names": ["ANTHROPIC_API_KEY"], "base": 70, "cost": "metered", "latency": "medium"},
+        {"id": "openai", "label": "OpenAI", "secret_names": ["OPENAI_API_KEY"], "base": 66, "cost": "metered", "latency": "medium"},
+        {"id": "google", "label": "Google Gemini", "secret_names": ["GOOGLE_API_KEY", "GEMINI_API_KEY"], "base": 64, "cost": "metered", "latency": "medium"},
+        {"id": "deepseek", "label": "DeepSeek", "secret_names": ["DEEPSEEK_API_KEY"], "base": 62, "cost": "metered", "latency": "medium"},
+        {"id": "xai", "label": "xAI", "secret_names": ["XAI_API_KEY"], "base": 60, "cost": "metered", "latency": "medium"},
+        {"id": "nous", "label": "Nous", "secret_names": ["NOUS_API_KEY"], "base": 58, "cost": "metered", "latency": "medium"},
+    ]
+    current_provider = str(model_cfg.get("provider") or cfg.get("provider") or "").lower()
+    delegation_provider = str(delegation_cfg.get("provider") or "").lower()
+    task_bonuses = {
+        "research": {"openrouter": 8, "google": 8, "anthropic": 5},
+        "code": {"anthropic": 8, "openai": 7, "deepseek": 7, "local_worker": 3},
+        "dashboard": {"local_worker": 8, "anthropic": 5, "openai": 4},
+        "test": {"local_worker": 8, "deepseek": 4, "anthropic": 4},
+        "vision": {"openai": 8, "google": 8},
+        "cheap": {"local_worker": 10, "deepseek": 5, "google": 4},
+        "fast": {"local_worker": 8, "openai": 4, "google": 4},
+    }
+    candidates = []
+    for spec in provider_specs:
+        provider_id = spec["id"]
+        configured = provider_id in {"local_worker", "hermes_cli"} or any(name in configured_secrets for name in spec["secret_names"])
+        score = int(spec["base"])
+        reasons = []
+        if configured:
+            score += 14
+            reasons.append("configured locally" if provider_id != "local_worker" else "no provider spend")
+        else:
+            score -= 24
+            reasons.append("missing local credential")
+        if provider_id in {current_provider, delegation_provider}:
+            score += 8
+            reasons.append("matches Hermes config")
+        if provider_id == "local_worker" and requested_mode in {"local_worker", "simulated"}:
+            score += 6
+            reasons.append("matches selected execution mode")
+        if provider_id == "hermes_cli" and requested_mode == "hermes_cli":
+            score += 12
+            reasons.append("selected real Hermes CLI lane adapter")
+        for keyword, bonuses in task_bonuses.items():
+            if keyword in lowered and provider_id in bonuses:
+                score += bonuses[provider_id]
+                reasons.append(f"task mentions {keyword}")
+        if provider_id not in {"local_worker"} and not spend_enabled:
+            score -= 18
+            reasons.append("provider spend gate is off")
+        if lane_count >= 4 and provider_id != "local_worker":
+            score -= 5
+            reasons.append("many lanes amplify token spend")
+        candidates.append({
+            "provider": provider_id,
+            "label": spec["label"],
+            "score": max(0, min(100, score)),
+            "configured": configured,
+            "credential_names": list(spec["secret_names"]),
+            "cost_class": spec["cost"],
+            "latency_class": spec["latency"],
+            "reasons": reasons[:6],
+        })
+    candidates.sort(key=lambda item: (-int(item["score"]), item["provider"]))
+    winner = candidates[0]
+    model_hint = str(delegation_cfg.get("model") or model_cfg.get("default") or model_cfg.get("model") or cfg.get("model") or "local_worker")
+    recommended_execution_mode = "local_worker" if winner["provider"] == "local_worker" else "hermes_cli"
+    adapter_status = "ready" if winner["provider"] == "local_worker" else ("ready" if spend_enabled else "spend_gate_required")
+    return {
+        "schema_version": "parallel_arena.provider_advisor.v1",
+        "created_at": _parallel_arena_now(),
+        "task_digest": task_text[:240],
+        "lane_count": lane_count,
+        "spend_enabled": spend_enabled,
+        "recommended_provider": winner["provider"],
+        "recommended_execution_mode": recommended_execution_mode,
+        "model_hint": model_hint,
+        "adapter_status": adapter_status,
+        "candidates": candidates,
+        "launch_policy": {
+            "provider_spend": "enabled by PARALLEL_ARENA_ALLOW_PROVIDER_SPEND" if spend_enabled else "disabled until operator opt-in",
+            "secret_values_returned": False,
+            "network_required": winner["provider"] != "local_worker",
+        },
+        "next_action": (
+            "Launch local_worker now, or set PARALLEL_ARENA_ALLOW_PROVIDER_SPEND=1 and choose Hermes CLI Adapter for real model-backed lanes."
+            if winner["provider"] == "local_worker" else
+            f"Use {winner['label']} for provider-backed lanes after confirming spend and adapter wiring."
+        ),
+    }
+
+
+def _parallel_arena_score_lane(strategy: str, task: str, index: int) -> int:
+    lowered = f"{strategy} {task}".lower()
+    score = 40 + max(0, 20 - index * 3)
+    for keyword, bonus in {
+        "test": 10,
+        "verify": 10,
+        "research": 8,
+        "implement": 8,
+        "critic": 7,
+        "review": 7,
+        "benchmark": 10,
+        "dashboard": 6,
+        "parallel": 5,
+    }.items():
+        if keyword in lowered:
+            score += bonus
+    return min(score, 99)
+
+
+def _parallel_arena_safe_slug(value: str, fallback: str = "item") -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")[:48] or fallback
+
+
+def _parallel_arena_run_dir(run_id: str) -> Path:
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "", str(run_id or ""))
+    return PARALLEL_ARENA_RUNS_DIR / safe_id
+
+
+def _parallel_arena_worker_script_path() -> Path:
+    return Path(__file__).resolve().parent / "scripts" / "parallel_arena_worker.py"
+
+
+def _parallel_arena_build_simulated_lane(
+    task: str,
+    strategy: str,
+    index: int,
+    started_at: str,
+    run_dir: Optional[Path] = None,
+    fallback_reason: Optional[str] = None,
+) -> dict:
+    lane_id = f"lane-{index + 1}-{_parallel_arena_safe_slug(strategy, 'strategy')[:32]}"
+    score = _parallel_arena_score_lane(strategy, task, index)
+    artifacts: dict[str, Any] = {
+        "task_digest": task[:280],
+        "strategy": strategy,
+        "evidence_contract": ["status", "summary", "artifacts", "score", "duration_ms"],
+        "next_adapter": "delegate_task or provider-specific worker can replace this deterministic simulator",
+    }
+    if fallback_reason:
+        artifacts["fallback_reason"] = fallback_reason
+    if run_dir:
+        lane_dir = run_dir / lane_id
+        lane_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = lane_dir / "simulated_artifact.json"
+        artifact_path.write_text(json.dumps(artifacts, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        artifacts["artifact_paths"] = {"simulated_artifact": str(artifact_path)}
+    return {
+        "lane_id": lane_id,
+        "name": strategy,
+        "strategy": strategy,
+        "execution_mode": "simulated",
+        "status": "completed",
+        "started_at": started_at,
+        "completed_at": _parallel_arena_now(),
+        "duration_ms": 120 + index * 47 + len(task) % 83,
+        "score": score,
+        "summary": (
+            f"Deterministic fallback lane for '{strategy}' completed. It produced a structured artifact shell "
+            "without spending model tokens."
+        ),
+        "artifacts": artifacts,
+        "safety_notes": ["bounded local simulation", "no shell execution", "no external provider spend"],
+    }
+
+
+
+def _parallel_arena_build_hermes_lane_prompt(task: str, strategy: str, lane_id: str, impact_plan: Optional[dict] = None) -> str:
+    """Build the prompt used by the real Hermes CLI lane adapter."""
+    impact_files = []
+    if isinstance(impact_plan, dict):
+        for item in impact_plan.get("candidate_files", [])[:8]:
+            if isinstance(item, dict) and item.get("path"):
+                impact_files.append(f"- {item.get('path')} (score {item.get('score', 'n/a')})")
+    return "\n".join([
+        "You are a Parallel Run Arena lane running as an isolated Hermes CLI worker.",
+        f"Lane id: {lane_id}",
+        f"Strategy: {strategy}",
+        "",
+        "Task:",
+        task,
+        "",
+        "Use the named strategy, produce concrete findings or patch guidance, and keep the response concise.",
+        "Do not spend money outside this single Hermes invocation. Do not start long-running services.",
+        "Return: (1) summary, (2) artifacts/patch ideas, (3) verification commands, (4) risks.",
+        "",
+        "Impact-plan candidate files:",
+        "\n".join(impact_files) if impact_files else "- No impact-plan candidates available.",
+    ])
+
+
+def _parallel_arena_run_hermes_cli_lane(
+    task: str,
+    strategy: str,
+    index: int,
+    run_id: str,
+    run_dir: Path,
+    impact_plan: Optional[dict] = None,
+) -> dict:
+    """Run a real model-backed lane through `hermes chat -q` when the spend gate is explicitly enabled."""
+    started_at = _parallel_arena_now()
+    start_monotonic = time.monotonic()
+    lane_id = f"lane-{index + 1}-{_parallel_arena_safe_slug(strategy, 'strategy')[:32]}"
+    lane_dir = run_dir / lane_id
+    lane_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = lane_dir / "hermes_prompt.md"
+    stdout_path = lane_dir / "hermes_stdout.md"
+    stderr_path = lane_dir / "hermes_stderr.txt"
+    result_path = lane_dir / "hermes_result.json"
+    prompt = _parallel_arena_build_hermes_lane_prompt(task, strategy, lane_id, impact_plan)
+    prompt_path.write_text(prompt, encoding="utf-8")
+    artifact_paths = {
+        "hermes_prompt": str(prompt_path),
+        "hermes_stdout": str(stdout_path),
+        "hermes_stderr": str(stderr_path),
+        "hermes_result": str(result_path),
+    }
+    spend_enabled = os.getenv("PARALLEL_ARENA_ALLOW_PROVIDER_SPEND", "").strip().lower() in {"1", "true", "yes", "on"}
+    adapter_enabled = os.getenv("PARALLEL_ARENA_ENABLE_HERMES_ADAPTER", "").strip().lower() in {"1", "true", "yes", "on"}
+    if not (spend_enabled and adapter_enabled):
+        reason = "Hermes CLI adapter requires PARALLEL_ARENA_ALLOW_PROVIDER_SPEND=1 and PARALLEL_ARENA_ENABLE_HERMES_ADAPTER=1"
+        stdout_path.write_text("", encoding="utf-8")
+        stderr_path.write_text(reason + "\n", encoding="utf-8")
+        result = {
+            "status": "blocked",
+            "reason": reason,
+            "adapter": "hermes_cli",
+            "prompt_path": str(prompt_path),
+            "safety": {"secret_values_returned": False, "operator_spend_gate_required": True},
+        }
+        result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return {
+            "lane_id": lane_id,
+            "name": strategy,
+            "strategy": strategy,
+            "execution_mode": "hermes_cli",
+            "status": "failed",
+            "started_at": started_at,
+            "completed_at": _parallel_arena_now(),
+            "duration_ms": int((time.monotonic() - start_monotonic) * 1000),
+            "score": 0,
+            "summary": f"Hermes CLI lane '{strategy}' was blocked by the explicit provider-spend adapter gate.",
+            "error": reason,
+            "artifact_dir": str(lane_dir),
+            "artifacts": {"artifact_paths": artifact_paths, "adapter": "hermes_cli", "gate_required": True},
+            "safety_notes": ["provider/model spend gate required", "prompt persisted for review", "no secret values returned"],
+        }
+    hermes_bin = os.getenv("PARALLEL_ARENA_HERMES_BIN", "hermes").strip() or "hermes"
+    command = [hermes_bin, "chat", "-q", prompt, "--quiet", "--toolsets", "file,terminal"]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(Path(__file__).resolve().parent),
+            env={**os.environ, "PARALLEL_ARENA_CHILD_LANE": lane_id},
+            capture_output=True,
+            text=True,
+            timeout=PARALLEL_ARENA_HERMES_TIMEOUT_SECONDS,
+            check=False,
+        )
+        stdout_path.write_text(completed.stdout or "", encoding="utf-8")
+        stderr_path.write_text(completed.stderr or "", encoding="utf-8")
+        duration_ms = int((time.monotonic() - start_monotonic) * 1000)
+        ok = completed.returncode == 0
+        score = 0 if not ok else min(99, 60 + min(25, len(completed.stdout or "") // 800) + (8 if "test" in (completed.stdout or "").lower() else 0))
+        result = {
+            "status": "completed" if ok else "failed",
+            "return_code": completed.returncode,
+            "score": score,
+            "stdout_chars": len(completed.stdout or ""),
+            "stderr_chars": len(completed.stderr or ""),
+            "adapter": "hermes_cli",
+            "command_shape": ["hermes", "chat", "-q", "<prompt>", "--quiet", "--toolsets", "file,terminal"],
+            "timeout_seconds": PARALLEL_ARENA_HERMES_TIMEOUT_SECONDS,
+        }
+        result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        summary = (completed.stdout or "").strip().splitlines()[0][:240] if ok and (completed.stdout or "").strip() else f"Hermes CLI exited {completed.returncode}."
+        return {
+            "lane_id": lane_id,
+            "name": strategy,
+            "strategy": strategy,
+            "execution_mode": "hermes_cli",
+            "status": "completed" if ok else "failed",
+            "started_at": started_at,
+            "completed_at": _parallel_arena_now(),
+            "duration_ms": duration_ms,
+            "score": score,
+            "summary": summary,
+            "error": None if ok else (completed.stderr or completed.stdout or "hermes CLI failed")[:2000],
+            "artifact_dir": str(lane_dir),
+            "artifacts": {"artifact_paths": artifact_paths, "return_code": completed.returncode, "adapter": "hermes_cli"},
+            "safety_notes": ["explicit spend gate enabled", "bounded Hermes CLI subprocess", "stdout/stderr persisted"],
+        }
+    except subprocess.TimeoutExpired as exc:
+        timeout_stdout = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        timeout_stderr = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        stdout_path.write_text(timeout_stdout, encoding="utf-8")
+        stderr_path.write_text(timeout_stderr + "\nTIMEOUT\n", encoding="utf-8")
+        result_path.write_text(json.dumps({"status": "timeout", "adapter": "hermes_cli"}, indent=2) + "\n", encoding="utf-8")
+        return {
+            "lane_id": lane_id,
+            "name": strategy,
+            "strategy": strategy,
+            "execution_mode": "hermes_cli",
+            "status": "failed",
+            "started_at": started_at,
+            "completed_at": _parallel_arena_now(),
+            "duration_ms": int((time.monotonic() - start_monotonic) * 1000),
+            "score": 0,
+            "summary": f"Hermes CLI lane timed out for '{strategy}'.",
+            "error": f"timeout after {PARALLEL_ARENA_HERMES_TIMEOUT_SECONDS}s",
+            "artifact_dir": str(lane_dir),
+            "artifacts": {"artifact_paths": artifact_paths, "adapter": "hermes_cli"},
+            "safety_notes": ["timeout enforced", "stdout/stderr persisted"],
+        }
+
+
+def _parallel_arena_run_local_worker_lane(task: str, strategy: str, index: int, run_id: str, run_dir: Path) -> dict:
+    started_at = _parallel_arena_now()
+    start_monotonic = time.monotonic()
+    lane_id = f"lane-{index + 1}-{_parallel_arena_safe_slug(strategy, 'strategy')[:32]}"
+    lane_dir = run_dir / lane_id
+    lane_dir.mkdir(parents=True, exist_ok=True)
+    input_path = lane_dir / "input.json"
+    output_path = lane_dir / "result.json"
+    stdout_path = lane_dir / "stdout.txt"
+    stderr_path = lane_dir / "stderr.txt"
+    input_payload = {
+        "run_id": run_id,
+        "lane_id": lane_id,
+        "task": task,
+        "strategy": strategy,
+        "index": index,
+        "lane_dir": str(lane_dir),
+        "safety_policy": {
+            "provider_spend": "disabled",
+            "network": "not used by worker",
+            "shell": "not used inside worker",
+            "timeout_seconds": PARALLEL_ARENA_WORKER_TIMEOUT_SECONDS,
+        },
+    }
+    input_path.write_text(json.dumps(input_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    base_artifact_paths = {
+        "input": str(input_path),
+        "result": str(output_path),
+        "stdout": str(stdout_path),
+        "stderr": str(stderr_path),
+    }
+    worker_script = _parallel_arena_worker_script_path()
+    if not worker_script.exists():
+        return _parallel_arena_build_simulated_lane(
+            task, strategy, index, started_at, run_dir, fallback_reason=f"worker script missing: {worker_script}"
+        )
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(worker_script), str(input_path), str(output_path)],
+            cwd=str(Path(__file__).resolve().parent),
+            env={
+                **os.environ,
+                "PARALLEL_ARENA_PROVIDER_SPEND": "0",
+                "PARALLEL_ARENA_NETWORK": "0",
+            },
+            capture_output=True,
+            text=True,
+            timeout=PARALLEL_ARENA_WORKER_TIMEOUT_SECONDS,
+            check=False,
+        )
+        stdout_path.write_text(completed.stdout or "", encoding="utf-8")
+        stderr_path.write_text(completed.stderr or "", encoding="utf-8")
+        duration_ms = int((time.monotonic() - start_monotonic) * 1000)
+        if completed.returncode != 0:
+            return {
+                "lane_id": lane_id,
+                "name": strategy,
+                "strategy": strategy,
+                "execution_mode": "local_worker",
+                "status": "failed",
+                "started_at": started_at,
+                "completed_at": _parallel_arena_now(),
+                "duration_ms": duration_ms,
+                "score": 0,
+                "summary": f"Local worker failed for '{strategy}' with exit code {completed.returncode}.",
+                "error": (completed.stderr or completed.stdout or "worker exited non-zero")[:2000],
+                "artifact_dir": str(lane_dir),
+                "artifacts": {"artifact_paths": base_artifact_paths, "return_code": completed.returncode},
+                "safety_notes": ["bounded local subprocess", "provider spend disabled", "network not used by worker"],
+            }
+        result = json.loads(output_path.read_text(encoding="utf-8")) if output_path.exists() else {}
+        artifact_paths = {**base_artifact_paths, **(result.get("artifact_paths") if isinstance(result.get("artifact_paths"), dict) else {})}
+        return {
+            "lane_id": lane_id,
+            "name": strategy,
+            "strategy": strategy,
+            "execution_mode": "local_worker",
+            "status": result.get("status") or "completed",
+            "started_at": started_at,
+            "completed_at": _parallel_arena_now(),
+            "duration_ms": duration_ms,
+            "score": int(result.get("score") or _parallel_arena_score_lane(strategy, task, index)),
+            "summary": result.get("summary") or f"Local worker completed for '{strategy}'.",
+            "artifact_dir": str(lane_dir),
+            "artifacts": {
+                **(result.get("artifacts") if isinstance(result.get("artifacts"), dict) else {}),
+                "artifact_paths": artifact_paths,
+                "return_code": completed.returncode,
+            },
+            "safety_notes": result.get("safety_notes") or [
+                "bounded local subprocess",
+                "provider spend disabled",
+                "network not used by worker",
+            ],
+        }
+    except subprocess.TimeoutExpired as exc:
+        timeout_stdout = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        timeout_stderr = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        stdout_path.write_text(timeout_stdout, encoding="utf-8")
+        stderr_path.write_text(timeout_stderr + "\nTIMEOUT\n", encoding="utf-8")
+        return {
+            "lane_id": lane_id,
+            "name": strategy,
+            "strategy": strategy,
+            "execution_mode": "local_worker",
+            "status": "failed",
+            "started_at": started_at,
+            "completed_at": _parallel_arena_now(),
+            "duration_ms": int((time.monotonic() - start_monotonic) * 1000),
+            "score": 0,
+            "summary": f"Local worker timed out for '{strategy}'.",
+            "error": f"timeout after {PARALLEL_ARENA_WORKER_TIMEOUT_SECONDS}s",
+            "artifact_dir": str(lane_dir),
+            "artifacts": {"artifact_paths": base_artifact_paths},
+            "safety_notes": ["bounded local subprocess", "timeout enforced", "provider spend disabled"],
+        }
+    except Exception as exc:
+        stderr_path.write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
+        return _parallel_arena_build_simulated_lane(
+            task, strategy, index, started_at, run_dir, fallback_reason=f"local_worker exception: {type(exc).__name__}: {exc}"
+        )
+
+
+
+
+def _parallel_arena_artifact_manifest(run: dict, lane: dict) -> list[dict]:
+    """Return safe, dashboard-browsable artifact metadata for a lane."""
+    run_dir = Path(str(run.get("run_dir") or run.get("artifact_dir") or "")).expanduser()
+    try:
+        run_root = run_dir.resolve()
+    except Exception:
+        run_root = run_dir
+    raw_paths = lane.get("artifacts", {}).get("artifact_paths") if isinstance(lane.get("artifacts"), dict) else {}
+    if not isinstance(raw_paths, dict):
+        raw_paths = {}
+    manifest: list[dict] = []
+    for name, raw_path in sorted(raw_paths.items()):
+        safe_name = _parallel_arena_safe_slug(str(name), "artifact")
+        path = Path(str(raw_path)).expanduser()
+        try:
+            resolved = path.resolve()
+        except Exception:
+            continue
+        try:
+            resolved.relative_to(run_root)
+        except Exception:
+            continue
+        if not resolved.exists() or not resolved.is_file():
+            continue
+        suffix = resolved.suffix.lower()
+        kind = "json" if suffix == ".json" else "markdown" if suffix in {".md", ".markdown"} else "text"
+        manifest.append(
+            {
+                "name": safe_name,
+                "label": str(name).replace("_", " ").title(),
+                "file_name": resolved.name,
+                "size_bytes": resolved.stat().st_size,
+                "kind": kind,
+                "path": str(resolved),
+                "url": f"/api/parallel-arena/runs/{run.get('run_id')}/artifacts/{lane.get('lane_id')}/{safe_name}",
+            }
+        )
+    return manifest
+
+
+def _parallel_arena_hydrate_artifact_manifests(run: dict) -> dict:
+    """Attach browsable artifact manifests to each lane without mutating callers' nested structures unexpectedly."""
+    if not isinstance(run, dict):
+        return run
+    lanes = run.get("lanes") if isinstance(run.get("lanes"), list) else []
+    for lane in lanes:
+        if isinstance(lane, dict):
+            lane["artifact_manifest"] = _parallel_arena_artifact_manifest(run, lane)
+    return run
+
+
+def _parallel_arena_extract_impact_terms(task: str) -> list[str]:
+    """Extract bounded search terms for local semantic impact planning."""
+    stop = {
+        "about", "after", "again", "against", "arena", "before", "build", "change", "code", "cooler",
+        "could", "dashboard", "feature", "from", "have", "hermes", "into", "make", "more", "that",
+        "their", "there", "this", "tool", "tools", "with", "would", "your",
+    }
+    terms: list[str] = []
+    for raw in re.findall(r"[A-Za-z_][A-Za-z0-9_-]{2,}", str(task or "").lower()):
+        term = raw.replace("-", "_").strip("_")
+        if term and term not in stop and term not in terms:
+            terms.append(term)
+        if len(terms) >= 18:
+            break
+    return terms
+
+
+def _parallel_arena_candidate_repo_files(root: Path, max_files: int = 700) -> list[Path]:
+    allowed = {".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".css", ".md", ".json", ".yaml", ".yml"}
+    skip_parts = {".git", "__pycache__", ".pytest_cache", "node_modules", "runs", "parallel_arena", "self-improvement"}
+    files: list[Path] = []
+    try:
+        iterator = root.rglob("*")
+    except Exception:
+        return files
+    for path in iterator:
+        try:
+            rel = path.relative_to(root)
+        except Exception:
+            continue
+        if any(part in skip_parts for part in rel.parts):
+            continue
+        if path.is_file() and path.suffix.lower() in allowed and path.stat().st_size <= 220_000:
+            files.append(path)
+        if len(files) >= max_files:
+            break
+    return files
+
+
+def _parallel_arena_score_impact_file(path: Path, root: Path, terms: list[str]) -> Optional[dict]:
+    try:
+        rel = path.relative_to(root).as_posix()
+        content = path.read_text(encoding="utf-8", errors="ignore")[:80_000]
+    except Exception:
+        return None
+    haystack_path = rel.lower().replace("-", "_")
+    haystack_content = content.lower().replace("-", "_")
+    matched: list[str] = []
+    score = 0
+    for term in terms:
+        if term in haystack_path:
+            score += 12
+            matched.append(term)
+        count = haystack_content.count(term)
+        if count:
+            score += min(18, count * 3)
+            if term not in matched:
+                matched.append(term)
+    if not matched:
+        return None
+    symbols: list[str] = []
+    if path.suffix == ".py":
+        symbols.extend(re.findall(r"^(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)", content, flags=re.M)[:12])
+    elif path.suffix in {".js", ".ts", ".tsx", ".jsx"}:
+        symbols.extend(re.findall(r"(?:function\s+|const\s+|let\s+|class\s+)([A-Za-z_$][A-Za-z0-9_$]*)", content)[:12])
+    if "/tests/" in f"/{rel}" or rel.startswith("tests/") or "test_" in path.name:
+        score += 8
+    if rel in {"app.py", "static/js/dashboard.js", "templates/index.html"}:
+        score += 6
+    return {
+        "path": rel,
+        "score": score,
+        "matched_terms": matched[:8],
+        "symbols": symbols[:10],
+        "kind": _infer_file_category(rel) if "_infer_file_category" in globals() else path.suffix.lstrip(".") or "file",
+    }
+
+
+def _parallel_arena_impact_plan_artifact_manifest(run: dict, impact_dir: Path) -> list[dict]:
+    manifest = []
+    for name, file_name, label in [
+        ("impact-plan", "impact_plan.json", "Impact Plan JSON"),
+        ("impact-brief", "IMPACT_PLAN.md", "Impact Brief"),
+    ]:
+        path = impact_dir / file_name
+        if not path.exists() or not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        kind = "json" if suffix == ".json" else "markdown" if suffix in {".md", ".markdown"} else "text"
+        manifest.append({
+            "name": name,
+            "label": label,
+            "file_name": file_name,
+            "size_bytes": path.stat().st_size,
+            "kind": kind,
+            "path": str(path),
+            "url": f"/api/parallel-arena/runs/{run.get('run_id')}/impact-plan/{name}",
+        })
+    return manifest
+
+
+def build_parallel_arena_impact_plan(task: str, run_id: str, run_dir: Path, repo_root: Optional[Path] = None) -> dict:
+    """Create a local semantic patch-impact plan that points lanes at likely files/tests before execution."""
+    root = (repo_root or Path(__file__).resolve().parent).resolve()
+    impact_dir = run_dir / "impact_plan"
+    impact_dir.mkdir(parents=True, exist_ok=True)
+    terms = _parallel_arena_extract_impact_terms(task)
+    scored = []
+    for path in _parallel_arena_candidate_repo_files(root):
+        item = _parallel_arena_score_impact_file(path, root, terms)
+        if item:
+            scored.append(item)
+    scored.sort(key=lambda item: (-int(item.get("score") or 0), item.get("path") or ""))
+    files = scored[:18]
+    tests = [item for item in files if item.get("path", "").startswith("tests/") or "/test_" in item.get("path", "")]
+    if not tests:
+        tests = [item for item in scored if item.get("path", "").startswith("tests/") or "/test_" in item.get("path", "")][:8]
+    commands: list[str] = []
+    paths = {item.get("path") for item in files}
+    if "app.py" in paths or any(str(path).endswith(".py") for path in paths):
+        commands.append("python -m py_compile app.py")
+    if "static/js/dashboard.js" in paths or any(str(path).endswith(('.js', '.ts', '.tsx')) for path in paths):
+        commands.append("node --check static/js/dashboard.js")
+    if tests:
+        commands.append("python -m pytest -q " + " ".join(item["path"] for item in tests[:4]))
+    else:
+        commands.append("python -m pytest -q tests/test_parallel_arena_panel.py")
+    commands = list(dict.fromkeys(commands))[:6]
+    plan = {
+        "schema_version": "parallel_arena.impact_plan.v1",
+        "status": "ready",
+        "created_at": _parallel_arena_now(),
+        "source_run_id": run_id,
+        "repo_root": str(root),
+        "task": task,
+        "terms": terms,
+        "candidate_files": files,
+        "candidate_tests": tests[:8],
+        "verification_commands": commands,
+        "lane_prompt_prefix": (
+            "Start by checking the Impact Plan candidate files/tests. Cite which file/test evidence changed your approach before implementing."
+        ),
+        "next_action": "Use this impact map to aim arena lanes at concrete source surfaces before editing.",
+    }
+    (impact_dir / "impact_plan.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    brief = [
+        f"# Parallel Arena Impact Plan for `{run_id}`", "", "## Task", "", task or "No task recorded.", "",
+        "## Search Terms", "", ", ".join(terms) or "No strong terms extracted.", "", "## Candidate Files", "",
+    ]
+    for item in files[:12]:
+        brief.append(f"- `{item['path']}` score={item['score']} terms={', '.join(item.get('matched_terms') or [])}")
+    brief.extend(["", "## Candidate Tests", ""])
+    for item in tests[:8]:
+        brief.append(f"- `{item['path']}` score={item['score']}")
+    brief.extend(["", "## Verification Commands", ""])
+    for command in commands:
+        brief.append(f"```bash\n{command}\n```")
+    (impact_dir / "IMPACT_PLAN.md").write_text("\n".join(brief) + "\n", encoding="utf-8")
+    plan["artifact_dir"] = str(impact_dir)
+    plan["artifacts"] = _parallel_arena_impact_plan_artifact_manifest({"run_id": run_id}, impact_dir)
+    return plan
+
+
+def _parallel_arena_build_lane(task: str, strategy: str, index: int, started_at: str) -> dict:
+    return _parallel_arena_build_simulated_lane(task, strategy, index, started_at)
+
+
+def create_parallel_arena_run(
+    task: str,
+    strategies: list[str],
+    max_lanes: int = 3,
+    execution_mode: Optional[str] = None,
+) -> dict:
+    task = str(task or "").strip()
+    if not task:
+        raise ValueError("task is required")
+    clean_strategies = [str(s).strip() for s in strategies if str(s).strip()]
+    if not clean_strategies:
+        clean_strategies = ["planner-researcher", "implementation-first", "critic-synthesizer"]
+    max_lanes = max(1, min(8, int(max_lanes or len(clean_strategies))))
+    clean_strategies = clean_strategies[:max_lanes]
+    requested_mode = str(execution_mode or PARALLEL_ARENA_DEFAULT_EXECUTION_MODE or "local_worker").strip().lower()
+    if requested_mode not in {"local_worker", "simulated", "hermes_cli"}:
+        requested_mode = "simulated"
+    started_at = _parallel_arena_now()
+    run_id = f"arena-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    run_dir = _parallel_arena_run_dir(run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run_start = time.monotonic()
+    run = {
+        "run_id": run_id,
+        "title": task[:72] + ("…" if len(task) > 72 else ""),
+        "task": task,
+        "execution_mode": requested_mode,
+        "status": "running",
+        "created_at": started_at,
+        "updated_at": started_at,
+        "duration_ms": 0,
+        "run_dir": str(run_dir),
+        "artifact_dir": str(run_dir),
+        "worker_timeout_seconds": PARALLEL_ARENA_WORKER_TIMEOUT_SECONDS,
+        "lanes": [],
+        "lane_count": len(clean_strategies),
+        "completed_lanes": 0,
+        "synthesis": None,
+    }
+    run["provider_advisor"] = build_parallel_arena_provider_advisor(task, requested_mode, len(clean_strategies))
+    run["impact_plan"] = build_parallel_arena_impact_plan(task, run_id, run_dir)
+    with PARALLEL_ARENA_LOCK:
+        _parallel_arena_write_run(run)
+
+    if requested_mode == "simulated":
+        lanes = [
+            _parallel_arena_build_simulated_lane(task, strategy, idx, started_at, run_dir)
+            for idx, strategy in enumerate(clean_strategies)
+        ]
+    else:
+        lane_runner = _parallel_arena_run_hermes_cli_lane if requested_mode == "hermes_cli" else _parallel_arena_run_local_worker_lane
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(clean_strategies)) as executor:
+            futures = [
+                (executor.submit(lane_runner, task, strategy, idx, run_id, run_dir, run.get("impact_plan"))
+                 if requested_mode == "hermes_cli" else
+                 executor.submit(lane_runner, task, strategy, idx, run_id, run_dir))
+                for idx, strategy in enumerate(clean_strategies)
+            ]
+            lanes = [future.result() for future in futures]
+
+    completed_lanes = [lane for lane in lanes if lane.get("status") == "completed"]
+    winner = max(completed_lanes, key=lambda lane: lane.get("score", 0)) if completed_lanes else None
+    failed_count = len([lane for lane in lanes if lane.get("status") == "failed"])
+    run.update(
+        {
+            "status": "completed" if completed_lanes else "failed",
+            "updated_at": _parallel_arena_now(),
+            "duration_ms": int((time.monotonic() - run_start) * 1000),
+            "lanes": lanes,
+            "completed_lanes": len(completed_lanes),
+            "failed_lanes": failed_count,
+            "synthesis": {
+                "winner_lane_id": winner.get("lane_id") if winner else None,
+                "rationale": (
+                    f"{winner.get('name')} scored highest on the local {requested_mode} evidence rubric. "
+                    "Artifacts were persisted under the run directory for inspection."
+                ) if winner else "No lanes completed successfully.",
+                "recommended_next_step": (
+                    "Review the Impact Plan plus persisted lane artifacts, then opt into provider-backed/delegate adapters only when spend is explicitly enabled."
+                ),
+            },
+        }
+    )
+    _parallel_arena_hydrate_artifact_manifests(run)
+    with PARALLEL_ARENA_LOCK:
+        _parallel_arena_write_run(run)
+    return run
+
+
+async def get_parallel_arena_endpoint(request):
+    return JSONResponse(get_parallel_arena_status())
+
+
+async def get_parallel_arena_provider_advisor_endpoint(request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    advisor = build_parallel_arena_provider_advisor(
+        str(payload.get("task") or ""),
+        execution_mode=payload.get("execution_mode"),
+        lane_count=int(payload.get("max_lanes") or payload.get("lane_count") or 3),
+    )
+    return JSONResponse({"ok": True, "advisor": advisor})
+
+
+async def get_parallel_arena_run_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    _parallel_arena_hydrate_artifact_manifests(run)
+    return JSONResponse({"ok": True, "run": run, "runs": [_parallel_arena_summarize_run(r) for r in _parallel_arena_list_runs()]})
+
+
+async def get_parallel_arena_artifact_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    lane_id = request.path_params.get("lane_id", "")
+    artifact_name = _parallel_arena_safe_slug(request.path_params.get("artifact_name", ""), "artifact")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    _parallel_arena_hydrate_artifact_manifests(run)
+    lane = next((item for item in run.get("lanes", []) if item.get("lane_id") == lane_id), None)
+    if not lane:
+        return JSONResponse({"ok": False, "error": "Parallel Arena lane not found"}, status_code=404)
+    artifact = next((item for item in lane.get("artifact_manifest", []) if item.get("name") == artifact_name), None)
+    if not artifact:
+        return JSONResponse({"ok": False, "error": "Parallel Arena artifact not found"}, status_code=404)
+    path = Path(str(artifact.get("path") or ""))
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"Could not read artifact: {type(exc).__name__}"}, status_code=500)
+    max_chars = 120_000
+    truncated = len(content) > max_chars
+    if truncated:
+        content = content[:max_chars]
+    parsed = None
+    if artifact.get("kind") == "json":
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            parsed = None
+    return JSONResponse({
+        "ok": True,
+        "run_id": run.get("run_id"),
+        "lane_id": lane_id,
+        "artifact": {k: v for k, v in artifact.items() if k != "path"},
+        "content": content,
+        "json": parsed,
+        "truncated": truncated,
+    })
+
+
+def _parallel_arena_winner_lane(run: dict) -> Optional[dict]:
+    """Return the synthesized winner lane, falling back to highest completed score."""
+    lanes = run.get("lanes") if isinstance(run.get("lanes"), list) else []
+    winner_id = (run.get("synthesis") or {}).get("winner_lane_id") if isinstance(run.get("synthesis"), dict) else None
+    if winner_id:
+        for lane in lanes:
+            if isinstance(lane, dict) and lane.get("lane_id") == winner_id:
+                return lane
+    completed = [lane for lane in lanes if isinstance(lane, dict) and lane.get("status") == "completed"]
+    if not completed:
+        return None
+    return max(completed, key=lambda lane: int(lane.get("score") or 0))
+
+
+def _parallel_arena_skill_forge_artifact_manifest(run: dict, forge_dir: Path) -> list[dict]:
+    manifest = []
+    for name, file_name, label in [
+        ("skill-draft", "SKILL.md", "Skill Draft"),
+        ("test-plan", "TEST_PLAN.md", "Test Plan"),
+        ("promotion-manifest", "promotion_manifest.json", "Promotion Manifest"),
+    ]:
+        path = forge_dir / file_name
+        if not path.exists() or not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        kind = "json" if suffix == ".json" else "markdown" if suffix in {".md", ".markdown"} else "text"
+        manifest.append({
+            "name": name,
+            "label": label,
+            "file_name": file_name,
+            "size_bytes": path.stat().st_size,
+            "kind": kind,
+            "path": str(path),
+            "url": f"/api/parallel-arena/runs/{run.get('run_id')}/skill-forge/{name}",
+        })
+    return manifest
+
+
+def forge_parallel_arena_winner_skill(run: dict) -> dict:
+    """Forge the winning lane into a reviewable executable Hermes skill draft."""
+    if not isinstance(run, dict) or not run.get("run_id"):
+        raise ValueError("run is required")
+    winner = _parallel_arena_winner_lane(run)
+    if not winner:
+        raise ValueError("no completed winning lane is available to forge")
+    run_dir = _parallel_arena_run_dir(str(run.get("run_id")))
+    forge_root = run_dir / "skill_forge"
+    skill_slug = _parallel_arena_safe_slug(f"arena-{winner.get('strategy') or winner.get('name') or 'winner'}", "arena-winner-skill")[:64]
+    forge_dir = forge_root / skill_slug
+    forge_dir.mkdir(parents=True, exist_ok=True)
+    task = str(run.get("task") or "").strip()
+    strategy = str(winner.get("strategy") or winner.get("name") or "winning lane").strip()
+    summary = str(winner.get("summary") or "Winning lane completed with persisted evidence.").strip()
+    score = int(winner.get("score") or 0)
+    artifact_manifest = winner.get("artifact_manifest") if isinstance(winner.get("artifact_manifest"), list) else []
+    evidence_lines = [
+        f"- `{item.get('label') or item.get('name')}` ({item.get('kind')}, {item.get('size_bytes')} bytes): `{item.get('file_name')}`"
+        for item in artifact_manifest[:12]
+    ] or ["- No lane artifacts were listed; inspect the run JSON before promotion."]
+    escaped_description = (f"Forged from Parallel Arena winner for: {task[:96]}" if task else "Forged from a Parallel Arena winning lane").replace('"', "'")
+    safe_strategy = strategy.replace('"', "'")
+    skill_md = f"""---
+name: {skill_slug}
+description: "{escaped_description}"
+version: 0.1.0
+tags: [parallel-arena, forged-skill, draft]
+source:
+  run_id: {run.get('run_id')}
+  lane_id: {winner.get('lane_id')}
+  strategy: "{safe_strategy}"
+  score: {score}
+---
+
+# {strategy.title()} Arena Skill Draft
+
+## Origin
+
+- Parallel Arena run: `{run.get('run_id')}`
+- Winning lane: `{winner.get('lane_id')}`
+- Score: `{score}`
+- Execution mode: `{winner.get('execution_mode') or run.get('execution_mode')}`
+
+## Capability Intent
+
+Task this skill was forged from:
+
+> {task or 'No task text recorded.'}
+
+Winner summary:
+
+> {summary}
+
+## When to Use
+
+Use this draft when a future Hermes task resembles the origin task and benefits from the `{strategy}` approach. Before installation, review the evidence and fill in any project-specific commands.
+
+## Procedure
+
+1. Restate the task outcome and success criteria.
+2. Follow the `{strategy}` strategy used by the winning arena lane.
+3. Produce or update concrete artifacts, not just analysis.
+4. Run the verification commands from the test plan below.
+5. If verification fails, revise the procedure and rerun the arena or forge a new draft.
+
+## Evidence From Winning Lane
+
+{chr(10).join(evidence_lines)}
+
+## Promotion Checklist
+
+- [ ] Procedure has concrete commands or deterministic actions.
+- [ ] At least one regression test or smoke check exists.
+- [ ] The skill avoids secrets and bulky generated artifacts.
+- [ ] A human or future promotion gate reviewed the source lane artifacts.
+"""
+    test_plan = f"""# Promotion Test Plan for `{skill_slug}`
+
+1. Re-run the source task in a scratch workspace or with deterministic fixtures.
+2. Confirm the skill procedure produces the expected artifact shape.
+3. Run focused tests/smokes relevant to the target repo.
+4. Check that no generated run folders, databases, model weights, or bulky logs are committed.
+5. If promoted, install under `~/.hermes/skills/software-development/{skill_slug}/SKILL.md` and rerun `hermes skills list`.
+
+Source run: `{run.get('run_id')}`
+Winner lane: `{winner.get('lane_id')}`
+"""
+    (forge_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
+    (forge_dir / "TEST_PLAN.md").write_text(test_plan, encoding="utf-8")
+    promotion = {
+        "status": "drafted",
+        "created_at": _parallel_arena_now(),
+        "skill_name": skill_slug,
+        "source_run_id": run.get("run_id"),
+        "source_lane_id": winner.get("lane_id"),
+        "source_strategy": strategy,
+        "source_score": score,
+        "artifact_dir": str(forge_dir),
+        "promotion_ready": True,
+        "install_hint": f"Review then copy {forge_dir / 'SKILL.md'} into ~/.hermes/skills/software-development/{skill_slug}/SKILL.md",
+    }
+    (forge_dir / "promotion_manifest.json").write_text(json.dumps(promotion, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    promotion["artifacts"] = _parallel_arena_skill_forge_artifact_manifest(run, forge_dir)
+    run["skill_forge"] = promotion
+    run["updated_at"] = _parallel_arena_now()
+    return promotion
+
+
+def _parallel_arena_mission_plan_artifact_manifest(run: dict, plan_dir: Path) -> list[dict]:
+    manifest = []
+    for name, file_name, label in [
+        ("mission-plan", "mission_plan.json", "Mission Plan JSON"),
+        ("mission-brief", "MISSION_BRIEF.md", "Mission Brief"),
+    ]:
+        path = plan_dir / file_name
+        if not path.exists() or not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        kind = "json" if suffix == ".json" else "markdown" if suffix in {".md", ".markdown"} else "text"
+        manifest.append({
+            "name": name,
+            "label": label,
+            "file_name": file_name,
+            "size_bytes": path.stat().st_size,
+            "kind": kind,
+            "path": str(path),
+            "url": f"/api/parallel-arena/runs/{run.get('run_id')}/mission-plan/{name}",
+        })
+    return manifest
+
+
+def build_parallel_arena_mission_plan(run: dict) -> dict:
+    """Compile the winning arena lane into a replayable campaign DAG artifact."""
+    if not isinstance(run, dict) or not run.get("run_id"):
+        raise ValueError("run is required")
+    winner = _parallel_arena_winner_lane(run)
+    if not winner:
+        raise ValueError("no completed winning lane is available for mission planning")
+    run_dir = _parallel_arena_run_dir(str(run.get("run_id")))
+    plan_dir = run_dir / "mission_plan"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    task = str(run.get("task") or "").strip()
+    strategy = str(winner.get("strategy") or winner.get("name") or "winning lane").strip()
+    lane_id = str(winner.get("lane_id") or "winner")
+    now = _parallel_arena_now()
+    nodes = [
+        {
+            "id": "intake",
+            "label": "Clarify mission contract",
+            "kind": "analysis",
+            "depends_on": [],
+            "success_metric": "Task, constraints, non-goals, and verification target are explicit.",
+            "launch_prompt": f"Restate the mission contract for: {task}",
+        },
+        {
+            "id": "impact-map",
+            "label": "Map files/tools/tests affected",
+            "kind": "diagnostic",
+            "depends_on": ["intake"],
+            "success_metric": "At least one concrete source surface and one verification command are identified.",
+            "launch_prompt": f"Using the {strategy} approach, map the implementation surfaces and tests before editing.",
+        },
+        {
+            "id": "implement-slice",
+            "label": "Implement smallest capability slice",
+            "kind": "build",
+            "depends_on": ["impact-map"],
+            "success_metric": "A tangible source change exists with generated artifacts excluded from commits.",
+            "launch_prompt": f"Implement the smallest useful capability slice from lane {lane_id}; keep changes bounded and test-backed.",
+        },
+        {
+            "id": "verify",
+            "label": "Run regression and smoke checks",
+            "kind": "verification",
+            "depends_on": ["implement-slice"],
+            "success_metric": "Targeted tests, syntax checks, and dashboard smoke pass or produce actionable evidence.",
+            "launch_prompt": "Run focused tests/smokes and summarize exact commands plus results.",
+        },
+        {
+            "id": "promote-or-retry",
+            "label": "Promote, forge skill, or retry lane",
+            "kind": "decision",
+            "depends_on": ["verify"],
+            "success_metric": "Operator has a concrete promote/retry decision and persisted artifacts.",
+            "launch_prompt": "Decide whether to promote, forge a skill, open a follow-up arena, or retry failed checks.",
+        },
+    ]
+    mission = {
+        "schema_version": "parallel_arena.mission_plan.v1",
+        "status": "drafted",
+        "created_at": now,
+        "source_run_id": run.get("run_id"),
+        "source_lane_id": lane_id,
+        "source_strategy": strategy,
+        "source_score": int(winner.get("score") or 0),
+        "mission_title": f"Mission plan for {run.get('title') or task[:72] or lane_id}",
+        "task": task,
+        "execution_policy": {
+            "provider_spend": "operator opt-in",
+            "network": "disabled unless mission node explicitly requires it",
+            "mutation": "source edits only after impact-map node",
+            "artifacts_root": str(plan_dir),
+        },
+        "nodes": nodes,
+        "edges": [{"from": dep, "to": node["id"]} for node in nodes for dep in node["depends_on"]],
+        "replay_command_hint": f"hermes chat --worktree -q @'{plan_dir / 'MISSION_BRIEF.md'}'",
+        "next_action": "Review the DAG, then launch nodes sequentially or copy prompts into subagent lanes.",
+    }
+    brief_lines = [
+        f"# Parallel Arena Mission Plan: {mission['mission_title']}",
+        "",
+        f"- Source run: `{run.get('run_id')}`",
+        f"- Winning lane: `{lane_id}`",
+        f"- Strategy: `{strategy}`",
+        f"- Score: `{mission['source_score']}`",
+        "",
+        "## Mission Task",
+        "",
+        task or "No task text recorded.",
+        "",
+        "## Campaign DAG",
+        "",
+    ]
+    for node in nodes:
+        deps = ", ".join(node["depends_on"]) or "start"
+        brief_lines.extend([
+            f"### {node['id']}: {node['label']}",
+            f"- Kind: `{node['kind']}`",
+            f"- Depends on: `{deps}`",
+            f"- Success metric: {node['success_metric']}",
+            f"- Launch prompt: {node['launch_prompt']}",
+            "",
+        ])
+    brief_lines.extend([
+        "## Replay Command Hint",
+        "",
+        f"`{mission['replay_command_hint']}`",
+        "",
+    ])
+    (plan_dir / "mission_plan.json").write_text(json.dumps(mission, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (plan_dir / "MISSION_BRIEF.md").write_text("\n".join(brief_lines), encoding="utf-8")
+    mission["artifact_dir"] = str(plan_dir)
+    mission["artifacts"] = _parallel_arena_mission_plan_artifact_manifest(run, plan_dir)
+    run["mission_plan"] = mission
+    run["updated_at"] = _parallel_arena_now()
+    return mission
+
+
+def _parallel_arena_workflow_replay_artifact_manifest(run: dict, replay_dir: Path) -> list[dict]:
+    manifest = []
+    for name, file_name, label in [
+        ("workflow-replay", "workflow_replay.json", "Workflow Replay JSON"),
+        ("replay-driver", "replay_driver.py", "Replay Driver"),
+        ("replay-readme", "README.md", "Replay README"),
+    ]:
+        path = replay_dir / file_name
+        if not path.exists() or not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        kind = "json" if suffix == ".json" else "python" if suffix == ".py" else "markdown" if suffix in {".md", ".markdown"} else "text"
+        manifest.append({
+            "name": name,
+            "label": label,
+            "file_name": file_name,
+            "size_bytes": path.stat().st_size,
+            "kind": kind,
+            "path": str(path),
+            "url": f"/api/parallel-arena/runs/{run.get('run_id')}/workflow-replay/{name}",
+        })
+    return manifest
+
+
+def export_parallel_arena_workflow_replay(run: dict) -> dict:
+    """Export a completed arena/mission plan as a deterministic replay bundle."""
+    if not isinstance(run, dict) or not run.get("run_id"):
+        raise ValueError("run is required")
+    mission = run.get("mission_plan") if isinstance(run.get("mission_plan"), dict) else None
+    if not mission:
+        mission = build_parallel_arena_mission_plan(run)
+    nodes = mission.get("nodes") if isinstance(mission.get("nodes"), list) else []
+    if not nodes:
+        raise ValueError("mission plan has no replayable nodes")
+    run_dir = _parallel_arena_run_dir(str(run.get("run_id")))
+    replay_dir = run_dir / "workflow_replay"
+    replay_dir.mkdir(parents=True, exist_ok=True)
+    winner = _parallel_arena_winner_lane(run) or {}
+    now = _parallel_arena_now()
+    replay_nodes = []
+    for index, node in enumerate(nodes):
+        node_id = str(node.get("id") or f"node-{index + 1}")
+        replay_nodes.append({
+            "id": node_id,
+            "order": index + 1,
+            "label": node.get("label") or node_id,
+            "kind": node.get("kind") or "task",
+            "depends_on": node.get("depends_on") if isinstance(node.get("depends_on"), list) else [],
+            "success_metric": node.get("success_metric") or "Node produces reviewable evidence.",
+            "launch_prompt": node.get("launch_prompt") or f"Execute replay node {node_id} for {run.get('title') or run.get('run_id')}",
+            "status": "ready" if index == 0 else "blocked",
+            "evidence_expected": ["step_journal entry", "artifact diff or smoke output", "verification result"],
+        })
+    replay = {
+        "schema_version": "parallel_arena.workflow_replay.v1",
+        "status": "ready",
+        "created_at": now,
+        "source_run_id": run.get("run_id"),
+        "source_lane_id": winner.get("lane_id"),
+        "source_strategy": winner.get("strategy") or winner.get("name"),
+        "mission_plan_status": mission.get("status"),
+        "task": run.get("task"),
+        "nodes": replay_nodes,
+        "lane_evidence": [
+            {
+                "lane_id": lane.get("lane_id"),
+                "status": lane.get("status"),
+                "score": lane.get("score"),
+                "summary": lane.get("summary"),
+                "artifact_names": [item.get("name") for item in lane.get("artifact_manifest", []) if isinstance(item, dict)],
+            }
+            for lane in run.get("lanes", []) if isinstance(lane, dict)
+        ],
+        "operator_commands": {
+            "list_nodes": f"python3 {replay_dir / 'replay_driver.py'} --list",
+            "next_node": f"python3 {replay_dir / 'replay_driver.py'} --next",
+            "show_node": f"python3 {replay_dir / 'replay_driver.py'} --show intake",
+        },
+        "replay_policy": {
+            "provider_spend": "disabled by default; copy launch prompts into Hermes only after operator review",
+            "mutation": "replay driver is read-only; source edits happen in the launched Hermes/subagent session",
+            "artifact_root": str(replay_dir),
+        },
+    }
+    (replay_dir / "workflow_replay.json").write_text(json.dumps(replay, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    driver = '''#!/usr/bin/env python3
+"""Read-only replay driver for a Parallel Arena workflow bundle."""
+import argparse
+import json
+from pathlib import Path
+
+DATA = Path(__file__).with_name("workflow_replay.json")
+
+def load():
+    return json.loads(DATA.read_text(encoding="utf-8"))
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--list", action="store_true", help="list replay nodes")
+    parser.add_argument("--next", action="store_true", help="print first ready node")
+    parser.add_argument("--show", metavar="NODE_ID", help="print one node as JSON")
+    args = parser.parse_args()
+    data = load()
+    nodes = data.get("nodes", [])
+    if args.show:
+        for node in nodes:
+            if node.get("id") == args.show:
+                print(json.dumps(node, indent=2, sort_keys=True))
+                return 0
+        print(f"node not found: {args.show}")
+        return 1
+    if args.next:
+        ready = next((node for node in nodes if node.get("status") == "ready"), None)
+        print(json.dumps(ready or {}, indent=2, sort_keys=True))
+        return 0 if ready else 1
+    for node in nodes:
+        deps = ",".join(node.get("depends_on") or []) or "start"
+        print(f"{node.get('order')}. {node.get('id')} [{node.get('status')}] deps={deps} :: {node.get('label')}")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+    driver_path = replay_dir / "replay_driver.py"
+    driver_path.write_text(driver, encoding="utf-8")
+    try:
+        driver_path.chmod(0o755)
+    except OSError:
+        pass
+    readme = f"""# Parallel Arena Workflow Replay Bundle
+
+Source run: `{run.get('run_id')}`<br>
+Source winner: `{winner.get('lane_id') or 'unknown'}`<br>
+Task: {run.get('task') or 'No task recorded.'}
+
+This bundle turns the arena winner and Mission Control DAG into a read-only, replayable workflow contract.
+It does not spend provider tokens or mutate source code by itself. Use the driver to inspect nodes, then copy
+node launch prompts into Hermes/delegate lanes when ready.
+
+## Commands
+
+```bash
+python3 replay_driver.py --list
+python3 replay_driver.py --next
+python3 replay_driver.py --show intake
+```
+"""
+    (replay_dir / "README.md").write_text(readme, encoding="utf-8")
+    replay["artifact_dir"] = str(replay_dir)
+    replay["artifacts"] = _parallel_arena_workflow_replay_artifact_manifest(run, replay_dir)
+    run["workflow_replay"] = replay
+    run["updated_at"] = _parallel_arena_now()
+    return replay
+
+
+async def forge_parallel_arena_winner_skill_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    _parallel_arena_hydrate_artifact_manifests(run)
+    try:
+        promotion = forge_parallel_arena_winner_skill(run)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    with PARALLEL_ARENA_LOCK:
+        _parallel_arena_write_run(run)
+    public_promotion = {k: v for k, v in promotion.items() if k != "artifacts"}
+    public_promotion["artifacts"] = [{ak: av for ak, av in item.items() if ak != "path"} for item in promotion.get("artifacts", [])]
+    return JSONResponse({"ok": True, "run": run, "promotion": public_promotion})
+
+
+async def get_parallel_arena_skill_forge_artifact_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    artifact_name = _parallel_arena_safe_slug(request.path_params.get("artifact_name", ""), "artifact")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    promotion = run.get("skill_forge") if isinstance(run.get("skill_forge"), dict) else {}
+    artifact = next((item for item in promotion.get("artifacts", []) if item.get("name") == artifact_name), None)
+    if not artifact:
+        return JSONResponse({"ok": False, "error": "Skill Forge artifact not found"}, status_code=404)
+    path = Path(str(artifact.get("path") or ""))
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(_parallel_arena_run_dir(str(run.get("run_id"))).resolve())
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Skill Forge artifact path is outside the run directory"}, status_code=400)
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"Could not read artifact: {type(exc).__name__}"}, status_code=500)
+    parsed = None
+    if artifact.get("kind") == "json":
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            parsed = None
+    return JSONResponse({
+        "ok": True,
+        "run_id": run.get("run_id"),
+        "artifact": {k: v for k, v in artifact.items() if k != "path"},
+        "content": content[:120_000],
+        "json": parsed,
+        "truncated": len(content) > 120_000,
+    })
+
+
+async def build_parallel_arena_mission_plan_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    _parallel_arena_hydrate_artifact_manifests(run)
+    try:
+        mission = build_parallel_arena_mission_plan(run)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    with PARALLEL_ARENA_LOCK:
+        _parallel_arena_write_run(run)
+    public_mission = {k: v for k, v in mission.items() if k != "artifacts"}
+    public_mission["artifacts"] = [{ak: av for ak, av in item.items() if ak != "path"} for item in mission.get("artifacts", [])]
+    return JSONResponse({"ok": True, "run": run, "mission_plan": public_mission})
+
+
+async def get_parallel_arena_mission_plan_artifact_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    artifact_name = _parallel_arena_safe_slug(request.path_params.get("artifact_name", ""), "artifact")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    mission = run.get("mission_plan") if isinstance(run.get("mission_plan"), dict) else {}
+    artifact = next((item for item in mission.get("artifacts", []) if item.get("name") == artifact_name), None)
+    if not artifact:
+        return JSONResponse({"ok": False, "error": "Mission Plan artifact not found"}, status_code=404)
+    path = Path(str(artifact.get("path") or ""))
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(_parallel_arena_run_dir(str(run.get("run_id"))).resolve())
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Mission Plan artifact path is outside the run directory"}, status_code=400)
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"Could not read artifact: {type(exc).__name__}"}, status_code=500)
+    parsed = None
+    if artifact.get("kind") == "json":
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            parsed = None
+    return JSONResponse({
+        "ok": True,
+        "run_id": run.get("run_id"),
+        "artifact": {k: v for k, v in artifact.items() if k != "path"},
+        "content": content[:120_000],
+        "json": parsed,
+        "truncated": len(content) > 120_000,
+    })
+
+
+async def export_parallel_arena_workflow_replay_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    _parallel_arena_hydrate_artifact_manifests(run)
+    try:
+        replay = export_parallel_arena_workflow_replay(run)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    with PARALLEL_ARENA_LOCK:
+        _parallel_arena_write_run(run)
+    public_replay = {k: v for k, v in replay.items() if k != "artifacts"}
+    public_replay["artifacts"] = [{ak: av for ak, av in item.items() if ak != "path"} for item in replay.get("artifacts", [])]
+    return JSONResponse({"ok": True, "run": run, "workflow_replay": public_replay})
+
+
+async def get_parallel_arena_workflow_replay_artifact_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    artifact_name = _parallel_arena_safe_slug(request.path_params.get("artifact_name", ""), "artifact")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    replay = run.get("workflow_replay") if isinstance(run.get("workflow_replay"), dict) else {}
+    artifact = next((item for item in replay.get("artifacts", []) if item.get("name") == artifact_name), None)
+    if not artifact:
+        return JSONResponse({"ok": False, "error": "Workflow replay artifact not found"}, status_code=404)
+    path = Path(str(artifact.get("path") or ""))
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(_parallel_arena_run_dir(str(run.get("run_id"))).resolve())
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Workflow replay artifact path is outside the run directory"}, status_code=400)
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"Could not read artifact: {type(exc).__name__}"}, status_code=500)
+    parsed = None
+    if artifact.get("kind") == "json":
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            parsed = None
+    return JSONResponse({
+        "ok": True,
+        "run_id": run.get("run_id"),
+        "artifact": {k: v for k, v in artifact.items() if k != "path"},
+        "content": content[:120_000],
+        "json": parsed,
+        "truncated": len(content) > 120_000,
+    })
+
+
+def _parallel_arena_canary_artifact_manifest(run: dict, canary_dir: Path) -> list[dict]:
+    manifest = []
+    for name, file_name, label in [
+        ("canary-suite", "canary_suite.json", "Canary Suite JSON"),
+        ("canary-driver", "canary_driver.py", "Canary Driver"),
+        ("canary-readme", "README.md", "Canary README"),
+    ]:
+        path = canary_dir / file_name
+        if not path.exists() or not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        kind = "json" if suffix == ".json" else "python" if suffix == ".py" else "markdown" if suffix in {".md", ".markdown"} else "text"
+        manifest.append({
+            "name": name,
+            "label": label,
+            "file_name": file_name,
+            "size_bytes": path.stat().st_size,
+            "kind": kind,
+            "path": str(path),
+            "url": f"/api/parallel-arena/runs/{run.get('run_id')}/canary-harness/{name}",
+        })
+    return manifest
+
+
+def build_parallel_arena_canary_harness(run: dict) -> dict:
+    """Compile the replay bundle into a privacy-safe promotion canary harness."""
+    if not isinstance(run, dict) or not run.get("run_id"):
+        raise ValueError("run is required")
+    replay = run.get("workflow_replay") if isinstance(run.get("workflow_replay"), dict) else None
+    if not replay:
+        replay = export_parallel_arena_workflow_replay(run)
+    nodes = replay.get("nodes") if isinstance(replay.get("nodes"), list) else []
+    if not nodes:
+        raise ValueError("workflow replay has no canaryable nodes")
+    run_dir = _parallel_arena_run_dir(str(run.get("run_id")))
+    canary_dir = run_dir / "canary_harness"
+    canary_dir.mkdir(parents=True, exist_ok=True)
+    now = _parallel_arena_now()
+    checks = [
+        {"id": "schema-present", "label": "Replay schema and source are present", "kind": "static-contract", "assertion": "workflow_replay.json has schema_version, source_run_id, and source_lane_id fields", "severity": "blocker"},
+        {"id": "node-chain-ready", "label": "Replay node chain has an entrypoint and dependencies", "kind": "static-contract", "assertion": "at least one node is ready and every dependency references an existing node id", "severity": "blocker"},
+        {"id": "evidence-policy", "label": "Nodes declare expected evidence", "kind": "promotion-safety", "assertion": "every node lists evidence_expected so future promotion is testable", "severity": "warn"},
+        {"id": "privacy-safe", "label": "Canary bundle avoids raw prompts/tool payloads", "kind": "privacy", "assertion": "suite stores node labels, metrics, ids, and launch prompt hashes only", "severity": "blocker"},
+    ]
+    suite_nodes = []
+    for node in nodes:
+        prompt = str(node.get("launch_prompt") or "")
+        suite_nodes.append({
+            "id": node.get("id"),
+            "order": node.get("order"),
+            "kind": node.get("kind"),
+            "status": node.get("status"),
+            "depends_on": node.get("depends_on") if isinstance(node.get("depends_on"), list) else [],
+            "evidence_expected_count": len(node.get("evidence_expected") or []),
+            "launch_prompt_sha256": hashlib.sha256(prompt.encode("utf-8", errors="ignore")).hexdigest() if prompt else None,
+        })
+    canary = {
+        "schema_version": "parallel_arena.canary_harness.v1",
+        "status": "ready",
+        "created_at": now,
+        "source_run_id": run.get("run_id"),
+        "source_lane_id": replay.get("source_lane_id"),
+        "source_replay_schema": replay.get("schema_version"),
+        "node_count": len(suite_nodes),
+        "checks": checks,
+        "nodes": suite_nodes,
+        "promotion_gate": {
+            "required_passes": [check["id"] for check in checks if check.get("severity") == "blocker"],
+            "warn_only": [check["id"] for check in checks if check.get("severity") == "warn"],
+            "pass_command": f"python3 {canary_dir / 'canary_driver.py'} --json",
+        },
+        "privacy": {"raw_prompts": False, "raw_messages": False, "tool_args_results": False, "launch_prompt_hashes_only": True},
+    }
+    (canary_dir / "canary_suite.json").write_text(json.dumps(canary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    driver = """#!/usr/bin/env python3
+\"\"\"Run privacy-safe canaries for a Parallel Arena workflow replay bundle.\"\"\"
+import argparse
+import json
+from pathlib import Path
+
+DATA = Path(__file__).with_name(\"canary_suite.json\")
+
+def load():
+    return json.loads(DATA.read_text(encoding=\"utf-8\"))
+
+def evaluate(data):
+    nodes = data.get(\"nodes\") if isinstance(data.get(\"nodes\"), list) else []
+    node_ids = {node.get(\"id\") for node in nodes}
+    results = []
+    results.append({\"id\": \"schema-present\", \"passed\": bool(data.get(\"schema_version\") and data.get(\"source_run_id\") and data.get(\"source_lane_id\"))})
+    deps_valid = all(dep in node_ids for node in nodes for dep in (node.get(\"depends_on\") or []))
+    has_ready = any(node.get(\"status\") == \"ready\" for node in nodes)
+    results.append({\"id\": \"node-chain-ready\", \"passed\": bool(nodes and deps_valid and has_ready)})
+    results.append({\"id\": \"evidence-policy\", \"passed\": all((node.get(\"evidence_expected_count\") or 0) > 0 for node in nodes)})
+    privacy = data.get(\"privacy\") if isinstance(data.get(\"privacy\"), dict) else {}
+    results.append({\"id\": \"privacy-safe\", \"passed\": privacy.get(\"raw_prompts\") is False and privacy.get(\"raw_messages\") is False and privacy.get(\"tool_args_results\") is False and privacy.get(\"launch_prompt_hashes_only\") is True})
+    required = set((data.get(\"promotion_gate\") or {}).get(\"required_passes\") or [])
+    failed_required = [item[\"id\"] for item in results if item[\"id\"] in required and not item[\"passed\"]]
+    return {\"ok\": not failed_required, \"failed_required\": failed_required, \"results\": results, \"node_count\": len(nodes)}
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(\"--json\", action=\"store_true\", help=\"emit JSON result\")
+    args = parser.parse_args()
+    result = evaluate(load())
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(\"PASS\" if result[\"ok\"] else \"FAIL\")
+        for item in result[\"results\"]:
+            print(f\"{item['id']}: {'pass' if item['passed'] else 'fail'}\")
+    return 0 if result[\"ok\"] else 1
+
+if __name__ == \"__main__\":
+    raise SystemExit(main())
+"""
+    driver_path = canary_dir / "canary_driver.py"
+    driver_path.write_text(driver, encoding="utf-8")
+    try:
+        driver_path.chmod(0o755)
+    except OSError:
+        pass
+    readme = f"""# Parallel Arena Training Episode Canary Harness
+
+Source run: `{run.get('run_id')}`<br>
+Source replay: `{replay.get('schema_version')}`<br>
+Nodes: `{len(suite_nodes)}`
+
+This harness turns a winning arena workflow into a privacy-safe promotion gate. It checks that replay bundles have stable schema, dependency integrity, evidence expectations, and no raw prompt/message/tool payload leakage before they are used as training or promotion episodes.
+
+```bash
+python3 canary_driver.py
+python3 canary_driver.py --json
+```
+"""
+    (canary_dir / "README.md").write_text(readme, encoding="utf-8")
+    canary["artifact_dir"] = str(canary_dir)
+    canary["artifacts"] = _parallel_arena_canary_artifact_manifest(run, canary_dir)
+    run["canary_harness"] = canary
+    run["updated_at"] = _parallel_arena_now()
+    return canary
+
+
+async def build_parallel_arena_canary_harness_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    _parallel_arena_hydrate_artifact_manifests(run)
+    try:
+        canary = build_parallel_arena_canary_harness(run)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    with PARALLEL_ARENA_LOCK:
+        _parallel_arena_write_run(run)
+    public_canary = {k: v for k, v in canary.items() if k != "artifacts"}
+    public_canary["artifacts"] = [{ak: av for ak, av in item.items() if ak != "path"} for item in canary.get("artifacts", [])]
+    return JSONResponse({"ok": True, "run": run, "canary_harness": public_canary})
+
+
+async def get_parallel_arena_canary_harness_artifact_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    artifact_name = _parallel_arena_safe_slug(request.path_params.get("artifact_name", ""), "artifact")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    canary = run.get("canary_harness") if isinstance(run.get("canary_harness"), dict) else {}
+    artifact = next((item for item in canary.get("artifacts", []) if item.get("name") == artifact_name), None)
+    if not artifact:
+        return JSONResponse({"ok": False, "error": "Canary harness artifact not found"}, status_code=404)
+    path = Path(str(artifact.get("path") or ""))
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(_parallel_arena_run_dir(str(run.get("run_id"))).resolve())
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Canary harness artifact path is outside the run directory"}, status_code=400)
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"Could not read artifact: {type(exc).__name__}"}, status_code=500)
+    parsed = None
+    if artifact.get("kind") == "json":
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            parsed = None
+    return JSONResponse({"ok": True, "run_id": run.get("run_id"), "artifact": {k: v for k, v in artifact.items() if k != "path"}, "content": content[:120_000], "json": parsed, "truncated": len(content) > 120_000})
+
+
+def _parallel_arena_demo_reel_artifact_manifest(run: dict, demo_dir: Path) -> list[dict]:
+    manifest = []
+    for name, file_name, label in [
+        ("demo-reel", "DEMO_REEL.md", "Demo Reel Markdown"),
+        ("demo-json", "demo_reel.json", "Demo Reel JSON"),
+    ]:
+        path = demo_dir / file_name
+        if not path.exists() or not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        kind = "json" if suffix == ".json" else "markdown" if suffix in {".md", ".markdown"} else "text"
+        manifest.append({
+            "name": name,
+            "label": label,
+            "file_name": file_name,
+            "size_bytes": path.stat().st_size,
+            "kind": kind,
+            "path": str(path),
+            "url": f"/api/parallel-arena/runs/{run.get('run_id')}/demo-reel/{name}",
+        })
+    return manifest
+
+
+def build_parallel_arena_demo_reel(run: dict) -> dict:
+    """Package a completed arena chain into a shareable, evidence-backed demo reel."""
+    if not isinstance(run, dict) or not run.get("run_id"):
+        raise ValueError("run is required")
+    if run.get("status") != "completed":
+        raise ValueError("demo reel requires a completed Parallel Arena run")
+    canary = run.get("canary_harness") if isinstance(run.get("canary_harness"), dict) else None
+    if not canary:
+        canary = build_parallel_arena_canary_harness(run)
+    winner = _parallel_arena_winner_lane(run) or {}
+    lanes = run.get("lanes") if isinstance(run.get("lanes"), list) else []
+    run_dir = _parallel_arena_run_dir(str(run.get("run_id")))
+    demo_dir = run_dir / "demo_reel"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+    now = _parallel_arena_now()
+    cards = [
+        {"label": "Parallel lanes", "value": len(lanes), "detail": "bounded competing approaches"},
+        {"label": "Winner", "value": winner.get("lane_id") or "unknown", "detail": winner.get("strategy") or winner.get("name") or "selected by score/evidence"},
+        {"label": "Mission nodes", "value": len((run.get("mission_plan") or {}).get("nodes") or []), "detail": "replayable DAG steps"},
+        {"label": "Replay nodes", "value": len((run.get("workflow_replay") or {}).get("nodes") or []), "detail": "deterministic workflow bundle"},
+        {"label": "Canary checks", "value": len(canary.get("checks") or []), "detail": "privacy-safe promotion gates"},
+    ]
+    artifacts_by_stage = {
+        "impact_plan": [item.get("name") for item in (run.get("impact_plan") or {}).get("artifacts", []) if isinstance(item, dict)],
+        "skill_forge": [item.get("name") for item in (run.get("skill_forge") or {}).get("artifacts", []) if isinstance(item, dict)],
+        "mission_plan": [item.get("name") for item in (run.get("mission_plan") or {}).get("artifacts", []) if isinstance(item, dict)],
+        "workflow_replay": [item.get("name") for item in (run.get("workflow_replay") or {}).get("artifacts", []) if isinstance(item, dict)],
+        "canary_harness": [item.get("name") for item in canary.get("artifacts", []) if isinstance(item, dict)],
+    }
+    demo = {
+        "schema_version": "parallel_arena.demo_reel.v1",
+        "status": "ready",
+        "created_at": now,
+        "source_run_id": run.get("run_id"),
+        "title": f"Demo reel for {run.get('title') or run.get('task') or run.get('run_id')}",
+        "task": run.get("task"),
+        "headline": "Parallel Arena converted competing lanes into a replayable, canary-gated capability package.",
+        "source_lane_id": winner.get("lane_id"),
+        "source_strategy": winner.get("strategy") or winner.get("name"),
+        "score": winner.get("score"),
+        "cards": cards,
+        "artifact_stages": artifacts_by_stage,
+        "operator_pitch": [
+            "Launch bounded parallel lanes instead of betting on one draft.",
+            "Promote the winner into artifacts, mission DAG, replay bundle, and canary gate.",
+            "Review everything through safe dashboard artifact endpoints before making it reusable.",
+        ],
+        "privacy": {
+            "raw_prompts_included": False,
+            "raw_tool_payloads_included": False,
+            "artifact_paths_exposed_in_api": False,
+        },
+        "next_action": "Open DEMO_REEL.md, review the pitch, then decide whether to promote the canary-gated workflow into a real Hermes skill or follow-up arena.",
+    }
+    (demo_dir / "demo_reel.json").write_text(json.dumps(demo, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    md = [
+        f"# {demo['title']}",
+        "",
+        f"**Headline:** {demo['headline']}",
+        "",
+        f"- Run: `{run.get('run_id')}`",
+        f"- Winner: `{demo.get('source_lane_id')}` via `{demo.get('source_strategy')}`",
+        f"- Score: `{demo.get('score')}`",
+        "",
+        "## Scoreboard",
+        "",
+    ]
+    for card in cards:
+        md.append(f"- **{card['label']}**: `{card['value']}` — {card['detail']}")
+    md.extend(["", "## Why this is cool", ""])
+    for item in demo["operator_pitch"]:
+        md.append(f"- {item}")
+    md.extend(["", "## Artifact trail", ""])
+    for stage, names in artifacts_by_stage.items():
+        md.append(f"- **{stage}**: {', '.join(names) if names else 'not generated'}")
+    md.extend(["", "## Privacy posture", "", "No raw prompts, messages, tool payloads, or server paths are included in this demo reel API surface.", "", f"## Next action", "", demo["next_action"], ""])
+    (demo_dir / "DEMO_REEL.md").write_text("\n".join(md), encoding="utf-8")
+    demo["artifact_dir"] = str(demo_dir)
+    demo["artifacts"] = _parallel_arena_demo_reel_artifact_manifest(run, demo_dir)
+    run["demo_reel"] = demo
+    run["updated_at"] = _parallel_arena_now()
+    return demo
+
+
+async def build_parallel_arena_demo_reel_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    _parallel_arena_hydrate_artifact_manifests(run)
+    try:
+        demo = build_parallel_arena_demo_reel(run)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    with PARALLEL_ARENA_LOCK:
+        _parallel_arena_write_run(run)
+    public_demo = {k: v for k, v in demo.items() if k != "artifacts"}
+    public_demo["artifacts"] = [{ak: av for ak, av in item.items() if ak != "path"} for item in demo.get("artifacts", [])]
+    return JSONResponse({"ok": True, "run": run, "demo_reel": public_demo})
+
+
+async def get_parallel_arena_demo_reel_artifact_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    artifact_name = _parallel_arena_safe_slug(request.path_params.get("artifact_name", ""), "artifact")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    demo = run.get("demo_reel") if isinstance(run.get("demo_reel"), dict) else {}
+    artifact = next((item for item in demo.get("artifacts", []) if item.get("name") == artifact_name), None)
+    if not artifact:
+        return JSONResponse({"ok": False, "error": "Demo reel artifact not found"}, status_code=404)
+    path = Path(str(artifact.get("path") or ""))
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(_parallel_arena_run_dir(str(run.get("run_id"))).resolve())
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Demo reel artifact path is outside the run directory"}, status_code=400)
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"Could not read artifact: {type(exc).__name__}"}, status_code=500)
+    parsed = None
+    if artifact.get("kind") == "json":
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            parsed = None
+    return JSONResponse({"ok": True, "run_id": run.get("run_id"), "artifact": {k: v for k, v in artifact.items() if k != "path"}, "content": content[:120_000], "json": parsed, "truncated": len(content) > 120_000})
+
+
+async def get_parallel_arena_impact_plan_artifact_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    artifact_name = _parallel_arena_safe_slug(request.path_params.get("artifact_name", ""), "artifact")
+    run = _parallel_arena_read_run(_parallel_arena_run_path(run_id))
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    impact = run.get("impact_plan") if isinstance(run.get("impact_plan"), dict) else {}
+    artifact = next((item for item in impact.get("artifacts", []) if item.get("name") == artifact_name), None)
+    if not artifact:
+        return JSONResponse({"ok": False, "error": "Impact Plan artifact not found"}, status_code=404)
+    path = Path(str(artifact.get("path") or ""))
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(_parallel_arena_run_dir(str(run.get("run_id"))).resolve())
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Impact Plan artifact path is outside the run directory"}, status_code=400)
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"Could not read artifact: {type(exc).__name__}"}, status_code=500)
+    parsed = None
+    if artifact.get("kind") == "json":
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            parsed = None
+    return JSONResponse({
+        "ok": True,
+        "run_id": run.get("run_id"),
+        "artifact": {k: v for k, v in artifact.items() if k != "path"},
+        "content": content[:120_000],
+        "json": parsed,
+        "truncated": len(content) > 120_000,
+    })
+
+
+async def create_parallel_arena_run_endpoint(request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    try:
+        run = create_parallel_arena_run(
+            payload.get("task", ""),
+            payload.get("strategies") if isinstance(payload.get("strategies"), list) else [],
+            payload.get("max_lanes", 3),
+            payload.get("execution_mode"),
+        )
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "run": run, "runs": [_parallel_arena_summarize_run(r) for r in _parallel_arena_list_runs()]})
+
+
+async def cancel_parallel_arena_run_endpoint(request):
+    run_id = request.path_params.get("run_id", "")
+    path = _parallel_arena_run_path(run_id)
+    run = _parallel_arena_read_run(path)
+    if not run:
+        return JSONResponse({"ok": False, "error": "Parallel Arena run not found"}, status_code=404)
+    if run.get("status") in {"queued", "running"}:
+        run["status"] = "cancelled"
+        run["updated_at"] = _parallel_arena_now()
+        for lane in run.get("lanes", []):
+            if lane.get("status") in {"queued", "running"}:
+                lane["status"] = "cancelled"
+        with PARALLEL_ARENA_LOCK:
+            _parallel_arena_write_run(run)
+    return JSONResponse({"ok": True, "run": run, "runs": [_parallel_arena_summarize_run(r) for r in _parallel_arena_list_runs()]})
 
 
 async def get_self_improvement_endpoint(request):
@@ -9559,6 +12185,8 @@ routes = [
     Route("/api/dashboard-state/{key}", set_dashboard_state, methods=["PUT"]),
     Route("/api/dashboard-state/{key}", delete_dashboard_state, methods=["DELETE"]),
     Route("/api/dashboard/update", dashboard_auto_update_endpoint, methods=["POST"]),
+    Route("/api/approvals/pending", dashboard_approvals_pending_endpoint),
+    Route("/api/approvals/respond", dashboard_approvals_respond_endpoint, methods=["POST"]),
     Route("/health", health),
     Route("/api/status", get_status),
     Route("/api/dashboard-chat/status", dashboard_chat_status_endpoint),
@@ -9636,7 +12264,40 @@ routes = [
     Route("/pokemon/", pokemon_proxy_endpoint, methods=["GET", "POST"]),
     Route("/pokemon/{path:path}", pokemon_proxy_endpoint, methods=["GET", "POST"]),
     Route("/api/self-improvement", get_self_improvement_endpoint),
+    Route("/api/parallel-arena", get_parallel_arena_endpoint),
+    Route("/api/parallel-arena/provider-advisor", get_parallel_arena_provider_advisor_endpoint, methods=["POST"]),
+    Route("/api/parallel-arena/runs", create_parallel_arena_run_endpoint, methods=["POST"]),
+    Route("/api/parallel-arena/runs/{run_id}", get_parallel_arena_run_endpoint),
+    Route("/api/parallel-arena/runs/{run_id}/artifacts/{lane_id}/{artifact_name}", get_parallel_arena_artifact_endpoint),
+    Route("/api/parallel-arena/runs/{run_id}/skill-forge", forge_parallel_arena_winner_skill_endpoint, methods=["POST"]),
+    Route("/api/parallel-arena/runs/{run_id}/skill-forge/{artifact_name}", get_parallel_arena_skill_forge_artifact_endpoint),
+    Route("/api/parallel-arena/runs/{run_id}/mission-plan", build_parallel_arena_mission_plan_endpoint, methods=["POST"]),
+    Route("/api/parallel-arena/runs/{run_id}/mission-plan/{artifact_name}", get_parallel_arena_mission_plan_artifact_endpoint),
+    Route("/api/parallel-arena/runs/{run_id}/workflow-replay", export_parallel_arena_workflow_replay_endpoint, methods=["POST"]),
+    Route("/api/parallel-arena/runs/{run_id}/workflow-replay/{artifact_name}", get_parallel_arena_workflow_replay_artifact_endpoint),
+    Route("/api/parallel-arena/runs/{run_id}/canary-harness", build_parallel_arena_canary_harness_endpoint, methods=["POST"]),
+    Route("/api/parallel-arena/runs/{run_id}/canary-harness/{artifact_name}", get_parallel_arena_canary_harness_artifact_endpoint),
+    Route("/api/parallel-arena/runs/{run_id}/demo-reel", build_parallel_arena_demo_reel_endpoint, methods=["POST"]),
+    Route("/api/parallel-arena/runs/{run_id}/demo-reel/{artifact_name}", get_parallel_arena_demo_reel_artifact_endpoint),
+    Route("/api/parallel-arena/runs/{run_id}/impact-plan/{artifact_name}", get_parallel_arena_impact_plan_artifact_endpoint),
+    Route("/api/parallel-arena/runs/{run_id}/cancel", cancel_parallel_arena_run_endpoint, methods=["POST"]),
     Route("/api/autonomous-development", get_autonomous_development_endpoint),
+    Route("/api/nexussy", get_nexussy_endpoint),
+    Route("/api/nexussy/health", nexussy_health_endpoint),
+    Route("/api/nexussy/config", nexussy_config_endpoint),
+    Route("/api/nexussy/tools", nexussy_tools_endpoint),
+    Route("/api/nexussy/sidecar/start", nexussy_start_sidecar_endpoint, methods=["POST"]),
+    Route("/api/nexussy/sessions", nexussy_sessions_endpoint),
+    Route("/api/nexussy/pipelines", nexussy_start_pipeline_endpoint, methods=["POST"]),
+    Route("/api/nexussy/runs/{run_id}/status", nexussy_run_status_endpoint),
+    Route("/api/nexussy/runs/{run_id}/events", nexussy_run_events_endpoint),
+    Route("/api/nexussy/runs/{run_id}/artifacts", nexussy_run_artifacts_endpoint),
+    Route("/api/nexussy/artifacts/{kind}", nexussy_artifact_content_endpoint),
+    Route("/api/nexussy/sessions/{session_id}/interview-answer", nexussy_interview_answer_endpoint, methods=["POST"]),
+    Route("/api/nexussy/runs/{run_id}/control", nexussy_run_control_endpoint, methods=["POST"]),
+    Route("/api/nexussy/runs/{run_id}/inject", nexussy_inject_endpoint, methods=["POST"]),
+    Route("/api/nexussy/runs/{run_id}/steer", nexussy_steer_endpoint, methods=["POST"]),
+    Route("/api/nexussy/runs/{run_id}/workers", nexussy_workers_endpoint),
     Route("/api/scrolls/research", get_scrolls_research_endpoint),
     Route("/api/scrolls/console", get_scrolls_console_endpoint),
     Route("/api/scrolls/loop/status", get_scrolls_loop_status_endpoint),

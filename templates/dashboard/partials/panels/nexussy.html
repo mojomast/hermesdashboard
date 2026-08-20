@@ -1,0 +1,62 @@
+        <!-- Nexussy Control Plane Panel -->
+        <div class="panel" id="nexussy-panel">
+            <div class="sessions-toolbar" style="align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                <div>
+                    <h3 style="margin-bottom:0.35rem;">Nexussy × Hermes Control Plane</h3>
+                    <p style="color:var(--text-dim);font-size:0.86rem;margin:0;">Fire up Nexussy, run the interview, guide staged progress, inspect artifacts, steer workers, and keep the whole project pipeline inside Hermes.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn" onclick="loadNexussy()">Refresh</button>
+                    <button class="btn" onclick="startNexussySidecar()">Fire Up Sidecar</button>
+                    <button class="btn primary" onclick="launchNexussy()">Launch Pipeline</button>
+                    <button class="btn" onclick="nexussyControl('pause')">Pause</button>
+                    <button class="btn" onclick="nexussyControl('resume')">Resume</button>
+                    <button class="btn danger" onclick="nexussyControl('cancel', true)">Cancel</button>
+                </div>
+            </div>
+            <div class="stats" id="nexussy-stats">Loading Nexussy...</div>
+            <div style="display:grid;grid-template-columns:minmax(280px,0.85fr) minmax(0,1.15fr);gap:1rem;margin-top:1rem;align-items:start;">
+                <div style="display:flex;flex-direction:column;gap:1rem;min-height:0;">
+                    <div class="card">
+                        <h4>Project Launcher</h4>
+                        <form class="message-board-form" id="nexussy-launch-form" onsubmit="launchNexussy(event)">
+                            <input id="nexussy-project-name" type="text" placeholder="Project name" required>
+                            <input id="nexussy-project-slug" type="text" placeholder="Optional project slug">
+                            <textarea id="nexussy-description" placeholder="What should Nexussy build? Hermes will guide interview/progress from here." required></textarea>
+                            <input id="nexussy-repo-path" type="text" placeholder="Optional existing repo path">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                                <select id="nexussy-start-stage"><option value="interview">start: interview</option><option value="design">start: design</option><option value="validate">start: validate</option><option value="plan">start: plan</option><option value="review">start: review</option><option value="develop">start: develop</option></select>
+                                <select id="nexussy-stop-stage"><option value="develop">stop: develop</option><option value="interview">stop: interview</option><option value="design">stop: design</option><option value="validate">stop: validate</option><option value="plan">stop: plan</option><option value="review">stop: review</option></select>
+                            </div>
+                            <label style="display:flex;gap:0.5rem;align-items:center;color:var(--text-dim);font-size:0.84rem;"><input id="nexussy-auto-model-override" type="checkbox" checked> Override all stages to available OpenRouter model</label>
+                            <input id="nexussy-stage-model" type="text" value="openrouter/openai/gpt-4o-mini" placeholder="Stage model override">
+                            <label style="display:flex;gap:0.5rem;align-items:center;color:var(--text-dim);font-size:0.84rem;"><input id="nexussy-auto-approve" type="checkbox"> Auto-approve interview from description</label>
+                            <button class="btn primary" type="submit">Launch A→Z Pipeline</button>
+                        </form>
+                    </div>
+                    <div class="card" id="nexussy-health"><h4>Health & Model Guard</h4><p style="color:var(--text-dim);">Loading...</p></div>
+                    <div class="card" id="nexussy-interview"><h4>Interview</h4><p style="color:var(--text-dim);">Launch or select a run to answer Nexussy interview questions.</p></div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:1rem;min-height:0;">
+                    <div class="card" id="nexussy-progress"><h4>Pipeline Progress</h4><p style="color:var(--text-dim);">Loading...</p></div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;">
+                        <div class="card" id="nexussy-artifacts" style="overflow:auto;max-height:420px;"><h4>Artifacts</h4><p style="color:var(--text-dim);">Loading...</p></div>
+                        <div class="card" id="nexussy-workers" style="overflow:auto;max-height:420px;"><h4>Workers</h4><p style="color:var(--text-dim);">Loading...</p></div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;">
+                        <div class="card">
+                            <h4>Steering Console</h4>
+                            <select id="nexussy-steer-target"><option value="orchestrator">orchestrator</option><option value="worker">worker</option></select>
+                            <input id="nexussy-steer-worker" type="text" placeholder="worker id for worker target">
+                            <select id="nexussy-steer-priority"><option value="normal">normal</option><option value="high">high</option><option value="urgent">urgent</option><option value="low">low</option></select>
+                            <textarea id="nexussy-steer-message" placeholder="Guide Nexussy: refine scope, prioritize tests, unblock stage, etc." style="width:100%;min-height:110px;margin-top:0.5rem;"></textarea>
+                            <button class="btn primary" onclick="sendNexussySteering()">Send Steering</button>
+                            <button class="btn" onclick="sendNexussyInject()">Inject Context</button>
+                            <div id="nexussy-steering-status" style="color:var(--text-dim);font-size:0.84rem;margin-top:0.5rem;"></div>
+                        </div>
+                        <div class="card" id="nexussy-safety"><h4>Safety / Merge Gate</h4><p style="color:var(--text-dim);">Preview artifacts and changed files before applying generated work. Destructive operations stay behind explicit controls.</p></div>
+                    </div>
+                    <div class="card" id="nexussy-events" style="overflow:auto;max-height:360px;"><h4>Recent Events</h4><p style="color:var(--text-dim);">Loading event stream snapshot...</p></div>
+                </div>
+            </div>
+        </div>
