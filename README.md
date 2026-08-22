@@ -148,7 +148,7 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - persisted graph display settings for labels, spacing, edges, motion, and panel sizing
 - delegated task streaming inside expanded `delegate_task` blocks
 - **live subagent drawer** — click "Live view" on any `delegate_task` block to open a real-time floating panel showing the child session's activity
-- **automatic background-subagent handoff** — background delegations release the main chat immediately; when a child finishes, Hermes resumes the parent session and the dashboard posts its summary without requiring a follow-up prompt
+- **automatic background-subagent handoff** — background delegations release the main chat immediately; when a child finishes, Hermes resumes the parent session and the dashboard posts its summary without requiring a follow-up prompt, including after a tab disconnect or reload
 - session summaries in sessions, graph, and session detail
 - **token & cost accounting** — per-session token usage badge and step-by-step cost breakdown
 - **session search & filter** — full-text search across sessions with status, date range, and real-time filtering

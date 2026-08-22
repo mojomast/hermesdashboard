@@ -3627,6 +3627,43 @@ function findBackgroundCompletionResponse(data, label = '') {
     return null;
 }
 
+function chatConversationFingerprint(messages) {
+    return JSON.stringify((Array.isArray(messages) ? messages : []).map(message => ({
+        role: message?.role || '',
+        content: message?.content ?? '',
+    })));
+}
+
+async function reconcilePersistedBackgroundCompletion(options = {}) {
+    const parentSessionId = String(activeChatSessionId || '').trim();
+    if (!parentSessionId || activeChatRoomId !== 'main' || getActiveRun('main') || streamResumeRooms.has('main') || chatResetInFlight) return false;
+    try {
+        const data = await fetchJsonOrThrow(`/api/sessions/${encodeURIComponent(parentSessionId)}`);
+        const completionResponse = findBackgroundCompletionResponse(data);
+        if (!completionResponse) return false;
+        const completionContent = String(completionResponse.content || '').trim();
+        if (conversation.some(message => message?.role === 'assistant' && String(message.content || '').trim() === completionContent)) return false;
+        const projectedConversation = buildConversationFromSessionData(data);
+        if (chatConversationFingerprint(projectedConversation) === chatConversationFingerprint(conversation)) return false;
+        const completionKey = `${parentSessionId}:${completionResponse.id ?? completionResponse.timestamp ?? completionResponse.content}`;
+        reconciledParentCompletionMessages.add(completionKey);
+        conversation = projectedConversation;
+        saveConversation();
+        if (options.render !== false) {
+            renderConversation();
+            const lastAssistant = [...conversation].reverse().find(message => message.role === 'assistant');
+            updateContextDisplay(lastAssistant ? normalizeAssistantMessage(lastAssistant) : { usage: null, last_prompt_tokens: 0 });
+            refreshTokenUsageSoon();
+            void refreshSessionContextInfo(parentSessionId);
+        }
+        if (options.notify !== false) showToast('Hermes restored a completed background-subagent summary.');
+        return true;
+    } catch (error) {
+        log('warn', `Could not restore persisted background completion for ${parentSessionId}: ${error.message || error}`);
+        return false;
+    }
+}
+
 function stopParentCompletionReconcile(childSessionId) {
     const state = parentCompletionReconcileTimers.get(childSessionId);
     if (state?.timer) clearTimeout(state.timer);
@@ -14605,6 +14642,10 @@ window.addEventListener('beforeunload', () => {
     revokeAvatarPreview('create');
     revokeAvatarPreview('edit');
 });
+window.addEventListener('focus', () => void reconcilePersistedBackgroundCompletion());
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void reconcilePersistedBackgroundCompletion();
+});
 
 // Initialize (lazy: only load essentials for chat)
 log('inf', 'Dashboard initialized');
@@ -14631,6 +14672,7 @@ async function initializeDashboardChatState() {
     if (desiredRoomId === 'main') {
         loadActiveChatSession();
         await loadConversation();
+        await reconcilePersistedBackgroundCompletion({ render: false });
     } else {
         try {
             await loadChatRoom(desiredRoomId);
@@ -14639,6 +14681,7 @@ async function initializeDashboardChatState() {
             activeChatRoomId = 'main';
             loadActiveChatSession();
             await loadConversation();
+            await reconcilePersistedBackgroundCompletion({ render: false });
             showToast(`Could not restore ${desiredRoomId}; opened Main instead`, true);
         }
     }

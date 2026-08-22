@@ -330,6 +330,11 @@ console.log(JSON.stringify({{
     assert "getActiveRun('main')" in helpers
     assert "findBackgroundCompletionResponse(data, entry.label)" in helpers
     assert "buildConversationFromSessionData(data)" in helpers
+    assert "function reconcilePersistedBackgroundCompletion" in helpers
+    assert "conversation.some(message => message?.role === 'assistant'" in helpers
+    assert "chatConversationFingerprint(projectedConversation)" in helpers
+    assert "reconcilePersistedBackgroundCompletion({ render: false })" in source
+    assert "document.visibilityState === 'visible'" in source
 
 
 def test_mobile_slot_cycle_and_explicit_close_lifecycle_run_in_javascript():
