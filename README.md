@@ -137,6 +137,7 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 ## What You Get
 
 - streaming Hermes chat UI
+- safe one-click compaction for the active chat session, including automatic continuation when Hermes rotates the session id
 - compact single-line tool activity rows with on-demand drill-down panels
 - asynchronous terminal and code intent descriptions through the existing Hermes Codex authentication; file and todo descriptions stay local
 - load-time chat banner that shows when Hermes still has an in-flight run after refresh

@@ -1987,6 +1987,11 @@ body {
     flex: 0 0 auto;
 }
 
+.chat-input-actions .compact-chat-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 
 .chat-image-btn {
     min-width: 44px;

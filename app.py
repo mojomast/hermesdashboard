@@ -3285,13 +3285,18 @@ async def get_session(request):
             "summary"
         )
 
+    active_filter = (
+        " AND active = 1"
+        if "active" in _sqlite_table_columns(conn, "messages")
+        else ""
+    )
     cursor = conn.execute(
-        """
+        f"""
         SELECT id, role, content, timestamp, tool_call_id, tool_calls, tool_name,
                token_count, finish_reason, reasoning, reasoning_details,
                codex_reasoning_items
         FROM messages
-        WHERE session_id = ?
+        WHERE session_id = ?{active_filter}
         ORDER BY timestamp, id
     """,
         (session_id,),
@@ -9659,6 +9664,87 @@ async def interrupt_session(request):
     return JSONResponse({"status": "stop_queued" if action == "stop" else "interrupt_queued", "session_id": session_id})
 
 
+async def compress_session(request):
+    session_id = str(request.path_params.get("session_id") or "").strip()
+    if not session_id or len(session_id) > 200 or not re.fullmatch(r"[A-Za-z0-9_.:-]+", session_id):
+        return JSONResponse({"error": "Invalid session id"}, status_code=400)
+    try:
+        raw = await request.body()
+        data = json.loads(raw) if raw else {}
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    if not isinstance(data, dict):
+        return JSONResponse({"error": "Request body must be an object"}, status_code=400)
+
+    profile = str(data.get("profile") or "default").strip()
+    if not BOT_PROFILE_RE.fullmatch(profile):
+        return JSONResponse({"error": "Invalid bot profile"}, status_code=400)
+    if any(
+        state.get("session_id") == session_id and not state.get("done")
+        for state in ACTIVE_RUNS.values()
+    ):
+        return JSONResponse(
+            {"error": "Stop or finish the active run before compacting this session"},
+            status_code=409,
+        )
+
+    profile_prefix = "" if profile == "default" else f"/p/{quote(profile, safe='')}"
+    upstream_body = {key: data[key] for key in ("focus_topic",) if key in data}
+    try:
+        api_key = _api_key_for_profile(profile)
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=15.0,
+                read=300.0,
+                write=30.0,
+                pool=15.0,
+            )
+        ) as client:
+            response = await client.post(
+                (
+                    f"{HERMES_API.rstrip('/')}{profile_prefix}"
+                    f"/api/sessions/{quote(session_id, safe='')}/compress"
+                ),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=upstream_body,
+            )
+    except (httpx.RequestError, RuntimeError) as exc:
+        return JSONResponse(
+            {"error": f"Hermes session compaction is unavailable: {exc}"},
+            status_code=502,
+        )
+
+    try:
+        payload = response.json()
+    except Exception:
+        payload = {"error": response.text or "Invalid Hermes response"}
+    if not isinstance(payload, dict):
+        return JSONResponse(
+            {"error": "Invalid Hermes session compaction response"},
+            status_code=502,
+        )
+    if response.status_code >= 400:
+        detail = payload.get("error")
+        if isinstance(detail, dict):
+            detail = detail.get("message")
+        return JSONResponse(
+            {"error": str(detail or f"Hermes returned HTTP {response.status_code}")},
+            status_code=response.status_code,
+        )
+
+    headers = {}
+    continuation = str(response.headers.get("X-Hermes-Session-Id") or "").strip()
+    if continuation:
+        headers["X-Hermes-Session-Id"] = continuation
+    result = JSONResponse(payload, status_code=response.status_code)
+    if continuation and hasattr(result, "headers"):
+        result.headers["X-Hermes-Session-Id"] = continuation
+    return result
+
+
 async def steer_session(request):
     session_id = request.path_params["session_id"]
     try:
@@ -12855,6 +12941,11 @@ routes = [
     Route(
         "/api/sessions/{session_id}/summary",
         regenerate_session_summary_endpoint,
+        methods=["POST"],
+    ),
+    Route(
+        "/api/sessions/{session_id}/compress",
+        compress_session,
         methods=["POST"],
     ),
     Route("/api/sessions/{session_id}", get_session),

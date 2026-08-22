@@ -208,7 +208,8 @@ def _create_state_db(root: Path) -> Path:
             finish_reason TEXT,
             reasoning TEXT,
             reasoning_details TEXT,
-            codex_reasoning_items TEXT
+            codex_reasoning_items TEXT,
+            active INTEGER NOT NULL DEFAULT 1
         )
         """
     )
@@ -465,6 +466,32 @@ class ExecutionTracePayloadTests(unittest.TestCase):
             payload["skill_events"][0]["target"], {"kind": "tool", "id": "call-skill-1"}
         )
         self.assertEqual(payload["related_artifacts"][0]["kind"], "request_dump")
+
+    def test_get_session_excludes_archived_compression_messages(self):
+        conn = sqlite3.connect(str(self.root / "state.db"))
+        try:
+            conn.execute(
+                "INSERT INTO messages (session_id, role, content, timestamp, active) VALUES (?, ?, ?, ?, ?)",
+                (
+                    "parent-session",
+                    "user",
+                    "superseded before compaction",
+                    "2026-04-13T15:53:39",
+                    0,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        request = SimpleNamespace(path_params={"session_id": "parent-session"})
+        response = asyncio.run(dashboard_app.get_session(request))
+        payload = json.loads(response.body)
+
+        self.assertNotIn(
+            "superseded before compaction",
+            [message.get("content") for message in payload["messages"]],
+        )
 
     def test_get_sessions_survives_unique_title_collision_during_backfill(self):
         conn = sqlite3.connect(str(self.root / "state.db"))

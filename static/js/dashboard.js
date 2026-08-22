@@ -732,6 +732,7 @@ const sessionsPerPage = 50;
 const chat = document.getElementById('chat');
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
+const compactChatBtn = document.getElementById('compact-chat-btn');
 const chatImageInput = document.getElementById('chat-image-input');
 const chatImageBtn = document.getElementById('chat-image-btn');
 const chatAttachmentPreviewBar = document.getElementById('chat-attachment-preview-bar');
@@ -772,6 +773,7 @@ let botRegistry = [];
 let chatRoomSwitchInFlight = false;
 let sharedRoomRequestInFlight = false;
 let chatResetInFlight = false;
+let chatCompactInFlight = false;
 const streamResumeRooms = new Set();
 const connectedChatRunRooms = new Set();
 let tokenUsagePollTimer = null;
@@ -2833,12 +2835,16 @@ function renderFloatingSessionTranscript(traceContext) {
 }
 
 async function hydrateChatFromSession(sessionId, options = {}) {
-    if (!options.preserveActiveRun && activeChatRoomId !== 'main') {
+    if (!options.preserveActiveRun && !options.preserveRoom && activeChatRoomId !== 'main') {
         const switched = await switchChatRoom('main');
         if (!switched) return;
     }
-    log('req', `GET /api/sessions/${sessionId} for chat hydration`);
-    const data = await fetchJsonOrThrow(`/api/sessions/${sessionId}`);
+    const profile = profileForRoom();
+    const sessionPath = profile === 'default'
+        ? `/api/sessions/${encodeURIComponent(sessionId)}`
+        : `/api/bots/${encodeURIComponent(profile)}/sessions/${encodeURIComponent(sessionId)}`;
+    log('req', `GET ${sessionPath} for chat hydration`);
+    const data = await fetchJsonOrThrow(sessionPath);
     activeChatSessionId = sessionId;
     void refreshSessionContextInfo(sessionId);
     if (!options.preserveActiveRun) {
@@ -2856,7 +2862,7 @@ async function hydrateChatFromSession(sessionId, options = {}) {
     refreshTokenUsageSoon();
     updateActiveChatBanner();
     updateActiveRunBanner();
-    showToast(`Loaded session ${sessionId.slice(0, 8)} into chat`);
+    if (!options.silent) showToast(`Loaded session ${sessionId.slice(0, 8)} into chat`);
     navigateTo('chat');
 }
 
@@ -6323,12 +6329,17 @@ async function loadChatRoom(roomId) {
 
 async function switchChatRoom(roomId, options = {}) {
     if (!roomId || roomId === activeChatRoomId || chatRoomSwitchInFlight) return roomId === activeChatRoomId;
+    if (chatCompactInFlight) {
+        showToast('Wait for session compaction to finish before switching rooms', true);
+        return false;
+    }
     if (!options.allowActiveRun && sharedRoomRequestInFlight) {
         showToast('Wait for the shared room response before switching rooms', true);
         return false;
     }
     const previous = { roomId: activeChatRoomId, conversation, sessionId: activeChatSessionId };
     chatRoomSwitchInFlight = true;
+    syncChatInputState();
     if (chatRoomList) chatRoomList.classList.add('is-switching');
     try {
         await saveCurrentChatRoom();
@@ -6360,6 +6371,7 @@ async function switchChatRoom(roomId, options = {}) {
     } finally {
         chatRoomSwitchInFlight = false;
         if (chatRoomList) chatRoomList.classList.remove('is-switching');
+        syncChatInputState();
     }
 }
 
@@ -12276,8 +12288,24 @@ async function handleChatImageInputChange(event) {
 }
 
 function syncChatInputState() {
-    if (!sendBtn) return;
-    sendBtn.disabled = Boolean(getActiveRun() || streamResumeRooms.has(activeChatRoomId) || sharedRoomRequestInFlight || chatResetInFlight);
+    const busy = Boolean(
+        getActiveRun()
+        || streamResumeRooms.has(activeChatRoomId)
+        || sharedRoomRequestInFlight
+        || chatResetInFlight
+        || chatCompactInFlight
+        || chatRoomSwitchInFlight
+    );
+    if (sendBtn) sendBtn.disabled = busy;
+    if (compactChatBtn) {
+        compactChatBtn.disabled = Boolean(
+            busy
+            || !activeChatSessionId
+            || activeChatRoomId === 'shared'
+        );
+        compactChatBtn.textContent = chatCompactInFlight ? 'Compacting...' : 'Compact';
+        compactChatBtn.setAttribute('aria-busy', String(chatCompactInFlight));
+    }
 }
 
 async function consumeSharedRoomNdjson(response, onEvent) {
@@ -12395,6 +12423,7 @@ async function sendMessage() {
         }
         return;
     }
+    if (chatCompactInFlight) return;
     if (getActiveRun() || streamResumeRooms.has(activeChatRoomId) || sharedRoomRequestInFlight || chatResetInFlight) return;
     if (activeChatRoomId === 'shared') {
         if (imageAttachments.length) {
@@ -12476,14 +12505,97 @@ async function sendMessage() {
     if (roomId === activeChatRoomId) userInput.focus();
 }
 
+async function compactCurrentChat() {
+    const roomId = activeChatRoomId;
+    const sessionId = activeChatSessionId;
+    const profile = profileForRoom(roomId);
+    if (!sessionId || roomId === 'shared') {
+        showToast('No single active session is available to compact', true);
+        return false;
+    }
+    if (
+        getActiveRun(roomId)
+        || streamResumeRooms.has(roomId)
+        || sharedRoomRequestInFlight
+        || chatResetInFlight
+        || chatCompactInFlight
+        || chatRoomSwitchInFlight
+    ) {
+        showToast('Wait for the active chat operation to finish', true);
+        return false;
+    }
+
+    chatCompactInFlight = true;
+    syncChatInputState();
+    showToast('Compacting active session...');
+    log('req', `POST /api/sessions/${sessionId}/compress`);
+    let upstreamCompleted = false;
+
+    try {
+        const data = await fetchJsonOrThrow(
+            `/api/sessions/${encodeURIComponent(sessionId)}/compress`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profile }),
+            },
+        );
+        upstreamCompleted = true;
+        const nextSessionId = String(data?.session_id || sessionId).trim() || sessionId;
+
+        // Persist the continuation before hydration so a refresh failure cannot
+        // leave the next message attached to a closed compression parent.
+        activeChatSessionId = nextSessionId;
+        if (roomId === 'main') {
+            saveMainChatSession(nextSessionId);
+        } else if (!await saveBotRoom(roomId, conversation, nextSessionId)) {
+            throw new Error('Could not persist the compacted bot session');
+        }
+
+        invalidateCache('/api/sessions');
+        await hydrateChatFromSession(nextSessionId, {
+            preserveRoom: true,
+            silent: true,
+        });
+        refreshTokenUsageSoon();
+
+        const status = String(data?.status || 'compressed');
+        if (status === 'aborted') {
+            showToast(data?.summary?.note || 'Session compaction was aborted; history was preserved', true);
+            log('warn', `Session compaction aborted: ${sessionId}`);
+            return false;
+        }
+        const result = status === 'skipped'
+            ? 'Session did not need compaction'
+            : Number.isFinite(data?.before_messages) && Number.isFinite(data?.after_messages)
+                ? `Session compacted from ${data.before_messages} to ${data.after_messages} messages`
+                : 'Session compacted';
+        showToast(nextSessionId !== sessionId
+            ? `${result}; continuing as ${nextSessionId.slice(0, 8)}`
+            : result);
+        log('res', `${result}: ${sessionId} -> ${nextSessionId}`);
+        return true;
+    } catch (error) {
+        const prefix = upstreamCompleted
+            ? 'Session compacted, but transcript refresh failed'
+            : 'Compaction failed';
+        showToast(`${prefix}: ${error.message || error}`, true);
+        log('err', `${prefix}: ${error.message || error}`, true);
+        return false;
+    } finally {
+        chatCompactInFlight = false;
+        syncChatInputState();
+    }
+}
+
 async function resetCurrentChatRoom(options = {}) {
     const roomId = activeChatRoomId;
-    if (chatResetInFlight) return false;
+    if (chatResetInFlight || chatCompactInFlight) return false;
     if (options.freshSession && roomId === 'shared') {
         showToast('Start a direct bot chat to create a fresh bot session', true);
         return false;
     }
-    if (getActiveRun(roomId) || streamResumeRooms.has(roomId) || sharedRoomRequestInFlight) {
+    if (getActiveRun(roomId) || streamResumeRooms.has(roomId) || sharedRoomRequestInFlight || chatCompactInFlight) {
         showToast('Stop or finish the active run before starting a new session', true);
         return false;
     }
