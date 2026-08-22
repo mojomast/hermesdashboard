@@ -125,6 +125,8 @@ The API server now also emits periodic heartbeat-style `meta` chunks during idle
 
 Terminal and `execute_code` cards request a short intent description from `/api/tool-intent`. The backend uses the fixed `openai-codex` / `gpt-5.6-luna` route through Hermes' existing authentication. Never expose those credentials to the browser or substitute another authentication flow. File and todo descriptions are deterministic and local, and description generation must never block tool rendering.
 
+User-facing setup and troubleshooting for this feature live in `docs/tool-intent-descriptions.md`. Keep that guide synchronized with route limits, runtime requirements, provider/model routing, accounting behavior, and Docker support.
+
 The frontend must buffer SSE reads by blank-line event boundaries and handle both LF and CRLF line endings. Do not assume each `reader.read()` returns complete lines or complete JSON payloads.
 
 The dashboard frontend now reduces both live SSE events and historical session rows through the same assistant-step trace model.

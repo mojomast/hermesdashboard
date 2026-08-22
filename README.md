@@ -158,6 +158,8 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 - **optional Dashboard Chat / IRC bridge** — hidden-by-default IRC panel that users can enable explicitly; defaults avoid local usernames/hostnames and jail traffic to `#hermesdashboard`
 - hardened dashboard-to-Hermes streaming bridge for long tool-heavy runs, including tool progress forwarding, heartbeats, clean disconnect handling, and sanitized chat history
 
+See [Tool Intent Descriptions](docs/tool-intent-descriptions.md) for Codex OAuth prerequisites, Hermes path configuration, fixed model and safety limits, Docker notes, verification, usage, privacy, and troubleshooting.
+
 ## Message Board
 
 The Message Board tab provides forum-style threads for working with Hermes outside the main chat transcript.

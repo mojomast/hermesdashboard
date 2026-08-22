@@ -171,6 +171,12 @@ curl -s http://127.0.0.1:8642/health
 curl -s http://127.0.0.1:8081/api/status
 ```
 
+## Tool Intent Descriptions
+
+Terminal and `execute_code` cards can request short descriptions through Hermes' existing OpenAI Codex OAuth login. Configure `HERMES_HOME`, `HERMES_AGENT_PATH`, and `HERMES_VENV` to reference the same Hermes installation, then authenticate with `hermes auth add openai-codex` if Hermes is not already authenticated.
+
+The description route is fixed to `openai-codex` / `gpt-5.6-luna`; it does not follow the main chat model and does not fall back to another provider. File, patch, and todo descriptions are generated locally without model usage. See [Tool Intent Descriptions](docs/tool-intent-descriptions.md) for complete setup, Docker limitations, verification, privacy, limits, and troubleshooting.
+
 ## Docker Dashboard Runtime
 
 Docker support is built into the repo for users who want the dashboard web app in a container.
