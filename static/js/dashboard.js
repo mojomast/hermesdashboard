@@ -2841,6 +2841,9 @@ async function hydrateChatFromSession(sessionId, options = {}) {
     const data = await fetchJsonOrThrow(`/api/sessions/${sessionId}`);
     activeChatSessionId = sessionId;
     void refreshSessionContextInfo(sessionId);
+    if (!options.preserveActiveRun) {
+        chatRoomIntentEpochs.set(activeChatRoomId, (chatRoomIntentEpochs.get(activeChatRoomId) || 0) + 1);
+    }
     conversation = buildConversationFromSessionData(data);
     saveConversation();
     if (!options.preserveActiveRun) {
@@ -3009,6 +3012,48 @@ function toolVerbPhrase(toolName) {
         mcp_becomussy_thread_list: 'Listing project threads',
     };
     return map[toolName] || `Running ${toolName || 'tool'}`;
+}
+
+function toolFileTargets(args) {
+    if (!args || typeof args !== 'object') return [];
+    const direct = [args.path, args.file_path, args.target_file, ...(Array.isArray(args.paths) ? args.paths : [])]
+        .filter(value => typeof value === 'string' && value.trim())
+        .map(value => value.trim());
+    const patchText = typeof args.patch === 'string' ? args.patch : '';
+    const patched = Array.from(patchText.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm), match => match[1].trim());
+    return Array.from(new Set([...direct, ...patched]));
+}
+
+function describeTodoChange(args) {
+    const todos = Array.isArray(args?.todos) ? args.todos : null;
+    if (!todos) return 'Reading task list';
+    const verb = args?.merge ? 'Updating' : 'Replacing';
+    if (todos.length === 1) {
+        const item = todos[0] || {};
+        const content = typeof item.content === 'string' ? item.content.trim() : '';
+        const status = typeof item.status === 'string' ? item.status.replace(/_/g, ' ') : '';
+        if (content) return `${verb} task "${content}"${status ? ` as ${status}` : ''}`;
+    }
+    const counts = todos.reduce((result, item) => {
+        const status = typeof item?.status === 'string' ? item.status.replace(/_/g, ' ') : '';
+        if (status) result[status] = (result[status] || 0) + 1;
+        return result;
+    }, {});
+    const statusText = Object.entries(counts).map(([status, count]) => `${count} ${status}`).join(', ');
+    return `${verb} ${todos.length} task${todos.length === 1 ? '' : 's'}${statusText ? `: ${statusText}` : ''}`;
+}
+
+function getLocalToolDescription(toolName, parsedArgs, targetDetail = '', descriptionPending = false) {
+    if (toolName === 'terminal') return descriptionPending ? 'Analyzing terminal command...' : 'Running terminal command';
+    if (toolName === 'execute_code') return descriptionPending ? 'Analyzing code execution...' : 'Executing code';
+    if (toolName === 'todo') return describeTodoChange(parsedArgs);
+    if (['read_file', 'write_file', 'patch'].includes(toolName)) {
+        const targets = toolFileTargets(parsedArgs);
+        const verbs = { read_file: 'Reading', write_file: 'Writing', patch: 'Updating' };
+        return `${verbs[toolName]} ${targets.length ? targets.join(', ') : 'file'}`;
+    }
+    const verb = toolVerbPhrase(toolName);
+    return targetDetail ? `${verb}: ${targetDetail}` : verb;
 }
 
 function summarizeToolArgs(toolName, args) {
@@ -4263,6 +4308,9 @@ function ensureAssistantTracePendingDelegateChildren(state) {
 const toolCallUiState = new Map();
 const executionHistoryUiState = new Map();
 const toolCallData = new Map();
+const toolIntentRequests = new Map();
+const toolIntentRunOwners = new Map();
+const chatRoomIntentEpochs = new Map();
 const assistantRenderScopes = new WeakMap();
 let assistantRenderScopeSequence = 0;
 
@@ -4528,6 +4576,7 @@ function getToolActionLabel(toolName, parsedArgs, parsedOutput) {
         parsedOutput?.action,
     ].filter((value) => typeof value === 'string' && value.trim());
     if (candidates.length) return candidates[0].trim();
+    if (toolName === 'todo') return Array.isArray(parsedArgs?.todos) ? 'update' : 'read';
     const defaults = {
         skill_manage: 'patch',
         memory_write: 'replace',
@@ -4540,8 +4589,86 @@ function getToolActionLabel(toolName, parsedArgs, parsedOutput) {
         fetch_url: 'fetch',
         delegate_task: 'delegate',
         terminal: 'run',
+        execute_code: 'run',
     };
     return defaults[toolName] || 'run';
+}
+
+function setToolIntentDescription(state, callId, description) {
+    const normalized = String(description || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return false;
+    const node = findAssistantToolNode(state, callId);
+    if (!node?.payload?.tool) return false;
+    node.payload.tool.intent_description = normalized;
+    syncAssistantTraceDerivedFields(state);
+    return true;
+}
+
+function setToolIntentDescriptionPending(state, callId, pending) {
+    const node = findAssistantToolNode(state, callId);
+    if (!node?.payload?.tool) return false;
+    node.payload.tool.intent_description_pending = pending === true;
+    syncAssistantTraceDerivedFields(state);
+    return true;
+}
+
+function requestToolIntentDescription(tool, options = {}) {
+    if (!['terminal', 'execute_code'].includes(tool?.name) || !tool?.call_id || tool.intent_description) return null;
+    const requestKey = `${options.runId || 'run'}:${tool.call_id}`;
+    const existing = toolIntentRequests.get(requestKey);
+    if (existing) {
+        tool.intent_description_pending = true;
+        existing.tools.add(tool);
+        existing.listeners.push(options);
+        return existing.promise;
+    }
+    const parsedArgs = parseToolPayload(tool.arguments);
+    const fetchImpl = options.fetchImpl || fetch;
+    tool.intent_description_pending = true;
+    const entry = {
+        promise: null,
+        tools: new Set([tool]),
+        listeners: [options],
+    };
+    const notify = (callback, ...args) => {
+        entry.listeners.forEach((listener) => {
+            if (typeof listener.isCurrent === 'function' && !listener.isCurrent()) return;
+            try {
+                if (typeof listener[callback] === 'function') listener[callback](...args);
+            } catch (error) {
+                log('warn', `Tool intent ${callback} callback failed: ${error.message || error}`);
+            }
+        });
+    };
+    let responsePromise;
+    try {
+        responsePromise = fetchImpl('/api/tool-intent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tool: tool.name,
+                arguments: parsedArgs.parsed ?? parsedArgs.raw,
+            }),
+        });
+    } catch (error) {
+        responsePromise = Promise.reject(error);
+    }
+    const request = Promise.resolve(responsePromise)
+        .then(response => response.ok && response.status !== 204 ? response.text() : '')
+        .then(description => {
+            const normalized = String(description || '').replace(/\s+/g, ' ').trim();
+            if (normalized) notify('onReady', normalized);
+            return normalized;
+        })
+        .catch(() => '')
+        .finally(() => {
+            entry.tools.forEach(item => { item.intent_description_pending = false; });
+            if (toolIntentRequests.get(requestKey) === entry) toolIntentRequests.delete(requestKey);
+            notify('onSettled');
+        });
+    entry.promise = request;
+    toolIntentRequests.set(requestKey, entry);
+    return request;
 }
 
 function hasCapturedToolOutput(tool) {
@@ -4826,6 +4953,12 @@ function renderToolBlock(tool, idx, options = {}) {
     const actionLabel = getToolActionLabel(toolName, parsedArgs.parsed, parsedOutput.parsed);
     const targetSummary = getToolTargetSummary(toolName, parsedArgs.parsed, parsedArgs.raw);
     const targetDetail = getToolTargetDetail(toolName, parsedArgs.parsed, parsedArgs.raw) || targetSummary;
+    const headerDescription = tool.intent_description || getLocalToolDescription(
+        toolName,
+        parsedArgs.parsed,
+        targetDetail,
+        tool.intent_description_pending === true,
+    );
     const visibleDetail = getToolVisibleDetail(toolName, parsedArgs.parsed, parsedArgs.raw, targetDetail);
     const collapsedSummary = getToolCollapsedSummary(tool, parsedArgs.parsed, parsedOutput.parsed);
     const durationLabel = getToolDurationLabel(tool);
@@ -4854,7 +4987,7 @@ function renderToolBlock(tool, idx, options = {}) {
                 <span class="tool-call-status-dot ${statusClass}"></span>
                 <span class="tool-call-name">${escapeHtml(toolName)}</span>
                 <span class="tool-call-action-badge">${escapeHtml(actionLabel)}</span>
-                <span class="tool-call-summary-text" title="${escapeHtml(targetDetail || collapsedSummary || '')}">${escapeHtml(targetSummary || collapsedSummary || '-')}</span>
+                <span class="tool-call-summary-text" title="${escapeHtml(headerDescription)}">${escapeHtml(headerDescription || collapsedSummary || '-')}</span>
                 <span class="tool-call-meta">
                     <span class="tool-call-timer" data-call-id="${escapeHtml(tool.call_id || '')}">${escapeHtml(durationLabel || '')}</span>
                     <span class="tool-call-chevron">▶</span>
@@ -6029,16 +6162,24 @@ async function saveCurrentChatRoom() {
 }
 
 async function loadChatRoom(roomId) {
-    if (roomId === 'main') {
-        conversation = [];
-        await loadConversation();
-        loadActiveChatSession();
-        return;
+    const previousIntentEpoch = chatRoomIntentEpochs.get(roomId) || 0;
+    const invalidateLateIntents = !getActiveRun(roomId);
+    if (invalidateLateIntents) chatRoomIntentEpochs.set(roomId, previousIntentEpoch + 1);
+    try {
+        if (roomId === 'main') {
+            conversation = [];
+            await loadConversation();
+            loadActiveChatSession();
+            return;
+        }
+        const data = await fetchJsonOrThrow(`/api/bot-rooms/${encodeURIComponent(roomId)}`);
+        const room = data?.room || data;
+        conversation = Array.isArray(room?.conversation) ? room.conversation : [];
+        activeChatSessionId = room?.session_id || null;
+    } catch (error) {
+        if (invalidateLateIntents) chatRoomIntentEpochs.set(roomId, previousIntentEpoch);
+        throw error;
     }
-    const data = await fetchJsonOrThrow(`/api/bot-rooms/${encodeURIComponent(roomId)}`);
-    const room = data?.room || data;
-    conversation = Array.isArray(room?.conversation) ? room.conversation : [];
-    activeChatSessionId = room?.session_id || null;
 }
 
 async function switchChatRoom(roomId, options = {}) {
@@ -8118,21 +8259,62 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
         ? normalizeAssistantMessage(assistantSeed)
         : createAssistantTraceState({ sessionId });
     assistantState.bot = assistantSeed?.bot || profile || 'default';
+    const intentOwner = {};
+    const intentEpoch = chatRoomIntentEpochs.get(roomId) || 0;
+    toolIntentRunOwners.set(runId, intentOwner);
     let assistantDiv = null;
     let chunkCount = 0;
     let streamBuffer = '';
     let sawDone = false;
 
+    // Render batching system for streaming performance
+    let renderDirty = false;
+    let persistDirty = false;
+    let lastPersistTime = 0;
+    let intentStreamOpen = true;
+
+    function persistToolIntentUpdate() {
+        if ((chatRoomIntentEpochs.get(roomId) || 0) !== intentEpoch) return;
+        const currentRun = getActiveRun(roomId);
+        const finalMessageExists = roomConversation.some(message => (
+            message?.role === 'assistant'
+            && (message.trace === assistantState.trace || message.tools === assistantState.tools)
+        ));
+        if (currentRun?.runId === runId && !finalMessageExists) {
+            persistActiveAssistantState(assistantState, roomId, currentRun);
+            if (intentStreamOpen) renderDirty = true;
+            else if (roomId === activeChatRoomId) renderConversation();
+            return;
+        }
+        if (roomId === 'main') {
+            void saveDashboardState('conversation', roomConversation, { immediate: true });
+        } else {
+            void saveBotRoom(roomId, roomConversation, runState.sessionId);
+        }
+        if (roomId === activeChatRoomId) renderConversation();
+    }
+
+    function queueToolIntentDescription(tool) {
+        return requestToolIntentDescription(tool, {
+            runId,
+            isCurrent: () => toolIntentRunOwners.get(runId) === intentOwner,
+            onReady(description) {
+                if (!setToolIntentDescription(assistantState, tool.call_id, description)) return;
+                persistToolIntentUpdate();
+            },
+            onSettled() {
+                if (!setToolIntentDescriptionPending(assistantState, tool.call_id, false)) return;
+                persistToolIntentUpdate();
+            },
+        });
+    }
+
+    assistantState.tools.forEach(tool => void queueToolIntentDescription(tool));
     if (roomId === activeChatRoomId && (assistantState.content || assistantState.tools.length || assistantState.events.length)) {
         assistantDiv = renderActiveRunProjection() || addMessage('assistant', assistantState, false);
         assistantDiv.dataset.chatRunId = runId;
         bindToolCardInteractions(assistantDiv);
     }
-
-    // Render batching system for streaming performance
-    let renderDirty = false;
-    let persistDirty = false;
-    let lastPersistTime = 0;
 
     function scheduleRender() {
         if (!renderDirty) return;
@@ -8297,6 +8479,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                     startToolTimer(tool.call_id);
                     startToolTimerUpdates();
                     renderDirty = true;
+                    void queueToolIntentDescription(tool);
                     if (tool.name === 'delegate_task') {
                         log('tool', describeToolLog(tool.name, 'delegated', tool.arguments), false, { args: tool.arguments });
                     } else {
@@ -8354,6 +8537,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
             if (roomId === activeChatRoomId) updateActiveRunBanner();
         }
     } finally {
+        intentStreamOpen = false;
         connectedChatRunRooms.delete(roomId);
         if (roomId === activeChatRoomId) updateActiveRunBanner();
         clearInterval(renderLoop);
@@ -8361,6 +8545,11 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
         if (renderDirty) scheduleRender();
         if (assistantDiv) highlightToolCode(assistantDiv);
         if (persistDirty) persistActiveAssistantState(assistantState, roomId, runState);
+        const hasPendingIntentRequest = Array.from(toolIntentRequests.keys())
+            .some(key => key.startsWith(`${runId}:`));
+        if (!hasPendingIntentRequest && toolIntentRunOwners.get(runId) === intentOwner) {
+            toolIntentRunOwners.delete(runId);
+        }
         const hasOtherRun = Object.values(activeRuns).some(run => run.runId !== runId);
         if (!hasOtherRun) {
             toolCallTimers.clear();
@@ -12162,14 +12351,19 @@ async function resetCurrentChatRoom(options = {}) {
 
     chatResetInFlight = true;
     syncChatInputState();
+    const previousIntentEpoch = chatRoomIntentEpochs.get(roomId) || 0;
+    let resetPersisted = false;
+    chatRoomIntentEpochs.set(roomId, previousIntentEpoch + 1);
     try {
         const persisted = roomId === 'main'
             ? await saveDashboardState('conversation', null, { immediate: true })
             : await saveBotRoom(roomId, [], null);
         if (!persisted) {
+            chatRoomIntentEpochs.set(roomId, previousIntentEpoch);
             showToast('Could not persist the new session reset', true);
             return false;
         }
+        resetPersisted = true;
 
         conversation = [];
         clearPendingImageAttachments();
@@ -12190,6 +12384,9 @@ async function resetCurrentChatRoom(options = {}) {
         showToast(roomId === 'shared' ? 'Shared room cleared; bot sessions retained' : 'New session ready');
         log('inf', `Chat room ${roomId} reset for a new session`);
         return true;
+    } catch (error) {
+        if (!resetPersisted) chatRoomIntentEpochs.set(roomId, previousIntentEpoch);
+        throw error;
     } finally {
         chatResetInFlight = false;
         syncChatInputState();

@@ -82,6 +82,9 @@ from dashboard_backend.routes.terminal import (
     terminal_status_endpoint as _terminal_status_endpoint_impl,
     terminal_websocket_endpoint as _terminal_websocket_endpoint_impl,
 )
+from dashboard_backend.routes.tool_intent import (
+    tool_intent_endpoint as _tool_intent_endpoint_impl,
+)
 from dashboard_backend.routes.bot_rooms import (
     get_bot_room_endpoint as _get_bot_room_endpoint_impl,
     list_bot_rooms_endpoint as _list_bot_rooms_endpoint_impl,
@@ -174,6 +177,7 @@ from dashboard_backend.services.token_usage import (
     get_token_usage_summary as _get_token_usage_summary_impl,
 )
 from dashboard_backend.services.terminal import terminal_manager
+from dashboard_backend.services.tool_intent import ToolIntentService
 from dashboard_backend.services.capabilities import inventory_capabilities
 from dashboard_backend.services.files import FileService, PathSecurityError
 
@@ -430,6 +434,7 @@ HERMES_USEFUL_EVENT_TIMEOUT = float(
 templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "templates")
 )
+tool_intent_service = ToolIntentService()
 
 
 ACTIVE_RUN_TTL_SECONDS = 1800
@@ -794,6 +799,13 @@ async def terminal_auth_endpoint(request):
 
 async def terminal_websocket_endpoint(websocket):
     return await _terminal_websocket_endpoint_impl(websocket, manager=terminal_manager)
+
+
+async def tool_intent_endpoint(request):
+    return await _tool_intent_endpoint_impl(
+        request,
+        describe=tool_intent_service.describe,
+    )
 
 
 def _log_stream(run_id: str, message: str) -> None:
@@ -12821,6 +12833,7 @@ routes = [
     Route("/api/status", get_status),
     Route("/api/terminal/status", terminal_status_endpoint),
     Route("/api/terminal/auth", terminal_auth_endpoint, methods=["POST"]),
+    Route("/api/tool-intent", tool_intent_endpoint, methods=["POST"]),
     Route("/api/dashboard-chat/status", dashboard_chat_status_endpoint),
     Route("/api/config", get_config_endpoint),
     Route("/api/settings", get_settings),

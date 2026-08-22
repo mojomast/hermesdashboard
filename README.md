@@ -138,6 +138,7 @@ On non-Linux systems, the installer currently falls back to manual startup and t
 
 - streaming Hermes chat UI
 - compact single-line tool activity rows with on-demand drill-down panels
+- asynchronous terminal and code intent descriptions through the existing Hermes Codex authentication; file and todo descriptions stay local
 - load-time chat banner that shows when Hermes still has an in-flight run after refresh
 - explicit `Reattach Session` and `Resume Stream` actions for persisted in-progress chat runs
 - sessions browser and session detail viewer

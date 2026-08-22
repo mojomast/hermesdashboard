@@ -75,6 +75,7 @@ Dashboard backend routes in `app.py`:
 
 - `GET /`: dashboard page
 - `POST /chat`: SSE proxy to Hermes `/v1/chat/completions`
+- `POST /api/tool-intent`: short terminal or code intent description via Hermes' existing Codex authentication
 - `GET /api/status`
 - `GET /api/config`
 - `GET /api/settings`
@@ -121,6 +122,8 @@ Event types currently forwarded by the dashboard proxy:
 - `[DONE]`
 
 The API server now also emits periodic heartbeat-style `meta` chunks during idle long-running work so the dashboard proxy does not time out while subagents are active.
+
+Terminal and `execute_code` cards request a short intent description from `/api/tool-intent`. The backend uses the fixed `openai-codex` / `gpt-5.6-luna` route through Hermes' existing authentication. Never expose those credentials to the browser or substitute another authentication flow. File and todo descriptions are deterministic and local, and description generation must never block tool rendering.
 
 The frontend must buffer SSE reads by blank-line event boundaries and handle both LF and CRLF line endings. Do not assume each `reader.read()` returns complete lines or complete JSON payloads.
 

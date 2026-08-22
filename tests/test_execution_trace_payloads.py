@@ -133,6 +133,32 @@ def _run_dashboard_trace_js(expression: str):
     return json.loads(result.stdout)
 
 
+def _run_dashboard_trace_js_async(expression: str):
+    script = (
+        _DASHBOARD_JS_HELPERS
+        + "\n(async () => {\n"
+        + expression
+        + "\n})().then(result => process.stdout.write(JSON.stringify(result)))"
+        + ".catch(error => { console.error(error); process.exit(1); });\n"
+    )
+    env = os.environ.copy()
+    with tempfile.NamedTemporaryFile("w", suffix=".cjs", delete=False) as script_file:
+        script_file.write(script)
+        script_path = script_file.name
+    try:
+        result = subprocess.run(
+            ["node", script_path],
+            cwd=Path(__file__).resolve().parent.parent,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    finally:
+        Path(script_path).unlink(missing_ok=True)
+    return json.loads(result.stdout)
+
+
 def _create_state_db(root: Path) -> Path:
     db_path = root / "state.db"
     conn = sqlite3.connect(db_path)
@@ -635,6 +661,171 @@ class ExecutionTracePayloadTests(unittest.TestCase):
 
 
 class DashboardAssistantTimelineTests(unittest.TestCase):
+    def test_execution_header_replaces_duplicate_command_with_late_description(self):
+        result = _run_dashboard_trace_js_async(
+            r"""
+const command = 'pytest tests/test_dashboard_chat.py --maxfail=1';
+const state = createAssistantTraceState({ sessionId: 'tool-intent' });
+reduceAssistantTraceEvent(state, {
+  type: 'tool_call', call_id: 'call-terminal', name: 'terminal',
+  arguments: JSON.stringify({ command }),
+});
+const tool = state.trace.toolNodes[0].payload.tool;
+let releaseFetch;
+const fetchImpl = () => new Promise(resolve => { releaseFetch = resolve; });
+const request = requestToolIntentDescription(tool, {
+  runId: 'run-tool-intent',
+  fetchImpl,
+  onReady: description => setToolIntentDescription(state, tool.call_id, description),
+});
+const initialHtml = renderToolBlock(tool, 0, { renderScope: 'intent-test' });
+reduceAssistantTraceEvent(state, {
+  type: 'tool_output', call_id: 'call-terminal', name: 'terminal', output: '{"exit_code":0}',
+});
+releaseFetch({ ok: true, status: 200, text: () => Promise.resolve('Runs the focused dashboard chat tests.') });
+await request;
+const completedTool = state.trace.toolNodes[0].payload.tool;
+const finalHtml = renderToolBlock(completedTool, 0, { renderScope: 'intent-test' });
+const summary = html => html.match(/tool-call-summary-text[^>]*>([^<]*)<\/span>/)?.[1] || '';
+return {
+  initialSummary: summary(initialHtml),
+  finalSummary: summary(finalHtml),
+  commandStillVisible: finalHtml.includes(`<pre>${command}</pre>`),
+  outputPreserved: completedTool.output,
+};
+            """
+        )
+
+        self.assertEqual(result["initialSummary"], "Analyzing terminal command...")
+        self.assertEqual(
+            result["finalSummary"], "Runs the focused dashboard chat tests."
+        )
+        self.assertTrue(result["commandStillVisible"])
+        self.assertEqual(result["outputPreserved"], '{"exit_code":0}')
+
+    def test_file_and_todo_descriptions_are_local_and_not_pretruncated(self):
+        result = _run_dashboard_trace_js(
+            """
+const longPath = '/workspace/' + 'nested-directory/'.repeat(8) + 'dashboard.js';
+let fetchCalls = 0;
+const fetchImpl = () => { fetchCalls += 1; return Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve('') }); };
+const tools = [
+  { name: 'read_file', call_id: 'read', arguments: JSON.stringify({ path: longPath }) },
+  { name: 'write_file', call_id: 'write', arguments: JSON.stringify({ path: '/workspace/output.txt' }) },
+  { name: 'todo', call_id: 'todo', arguments: JSON.stringify({ merge: true, todos: [
+    { id: '1', content: 'Implement descriptions', status: 'in_progress' },
+    { id: '2', content: 'Run tests', status: 'pending' },
+  ] }) },
+];
+tools.forEach(tool => requestToolIntentDescription(tool, { runId: 'local', fetchImpl }));
+return {
+  read: getLocalToolDescription('read_file', { path: longPath }),
+  write: getLocalToolDescription('write_file', { path: '/workspace/output.txt' }),
+  todo: getLocalToolDescription('todo', { merge: true, todos: [
+    { status: 'in_progress' }, { status: 'pending' },
+  ] }),
+  todoReadAction: getToolActionLabel('todo', {}, null),
+  longPath,
+  fetchCalls,
+};
+            """
+        )
+
+        self.assertEqual(result["read"], f'Reading {result["longPath"]}')
+        self.assertEqual(result["write"], "Writing /workspace/output.txt")
+        self.assertEqual(
+            result["todo"], "Updating 2 tasks: 1 in progress, 1 pending"
+        )
+        self.assertEqual(result["todoReadAction"], "read")
+        self.assertEqual(result["fetchCalls"], 0)
+
+    def test_execution_description_failure_uses_stable_local_fallback(self):
+        result = _run_dashboard_trace_js_async(
+            """
+const state = createAssistantTraceState({ sessionId: 'intent-fallback' });
+reduceAssistantTraceEvent(state, { type: 'tool_call', call_id: 'terminal-fallback', name: 'terminal', arguments: '{"command":"pwd"}' });
+const tool = state.trace.toolNodes[0].payload.tool;
+const request = requestToolIntentDescription(tool, {
+  runId: 'fallback-run',
+  fetchImpl: () => Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve('') }),
+  onSettled: () => setToolIntentDescriptionPending(state, tool.call_id, false),
+});
+const pending = getLocalToolDescription(tool.name, {}, '', tool.intent_description_pending);
+await request;
+const settledTool = state.trace.toolNodes[0].payload.tool;
+return {
+  pending,
+  settled: getLocalToolDescription(settledTool.name, {}, '', settledTool.intent_description_pending),
+  mapSize: toolIntentRequests.size,
+};
+            """
+        )
+
+        self.assertEqual(result["pending"], "Analyzing terminal command...")
+        self.assertEqual(result["settled"], "Running terminal command")
+        self.assertEqual(result["mapSize"], 0)
+
+    def test_only_execution_tools_request_remote_descriptions_once(self):
+        result = _run_dashboard_trace_js(
+            """
+let fetchCalls = 0;
+const fetchImpl = () => {
+  fetchCalls += 1;
+  return Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve('') });
+};
+const terminal = { name: 'terminal', call_id: 'terminal-1', arguments: '{"command":"pwd"}' };
+const first = requestToolIntentDescription(terminal, { runId: 'run-1', fetchImpl });
+const duplicate = requestToolIntentDescription(terminal, { runId: 'run-1', fetchImpl });
+const code = requestToolIntentDescription({ name: 'execute_code', call_id: 'code-1', arguments: '{"code":"print(1)"}' }, { runId: 'run-1', fetchImpl });
+const read = requestToolIntentDescription({ name: 'read_file', call_id: 'read-1', arguments: '{"path":"app.py"}' }, { runId: 'run-1', fetchImpl });
+return { fetchCalls, deduplicated: first === duplicate, codeRequested: Boolean(code), readSkipped: read === null };
+            """
+        )
+
+        self.assertEqual(result["fetchCalls"], 2)
+        self.assertTrue(result["deduplicated"])
+        self.assertTrue(result["codeRequested"])
+        self.assertTrue(result["readSkipped"])
+
+    def test_resumed_description_request_notifies_only_current_stream(self):
+        result = _run_dashboard_trace_js_async(
+            """
+let releaseFetch;
+const fetchImpl = () => new Promise(resolve => { releaseFetch = resolve; });
+const firstTool = { name: 'terminal', call_id: 'shared-call', arguments: '{"command":"pwd"}' };
+const resumedTool = { ...firstTool };
+let firstCurrent = true;
+let resumedReady = '';
+let firstReady = '';
+const first = requestToolIntentDescription(firstTool, {
+  runId: 'shared-run', fetchImpl,
+  isCurrent: () => firstCurrent,
+  onReady: value => { firstReady = value; },
+});
+firstCurrent = false;
+const resumed = requestToolIntentDescription(resumedTool, {
+  runId: 'shared-run', fetchImpl,
+  isCurrent: () => true,
+  onReady: value => { resumedReady = value; },
+});
+releaseFetch({ ok: true, status: 200, text: () => Promise.resolve('Checks the working directory.') });
+await resumed;
+return {
+  samePromise: first === resumed,
+  firstReady,
+  resumedReady,
+  firstPending: firstTool.intent_description_pending,
+  resumedPending: resumedTool.intent_description_pending,
+};
+            """
+        )
+
+        self.assertTrue(result["samePromise"])
+        self.assertEqual(result["firstReady"], "")
+        self.assertEqual(result["resumedReady"], "Checks the working directory.")
+        self.assertFalse(result["firstPending"])
+        self.assertFalse(result["resumedPending"])
+
     def test_subagent_live_trace_preserves_main_chat_tool_semantics(self):
         result = _run_dashboard_trace_js(
             """
