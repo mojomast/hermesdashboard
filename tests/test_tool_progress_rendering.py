@@ -298,6 +298,40 @@ def test_subagent_event_source_propagates_stable_sse_occurrence_id():
     assert "parsed.event_id = event.lastEventId" in handler
 
 
+def test_completed_subagent_reconciles_parent_summary_without_blocking_parent_turn():
+    source = DASHBOARD_JS.read_text(encoding="utf-8")
+    start = source.index("function isBackgroundCompletionPrompt")
+    end = source.index("async function refreshProfileBotFlights", start)
+    helpers = source[start:end]
+    script = f"""
+const childDrawerRegistry = new Map();
+const parentCompletionReconcileTimers = new Map();
+const reconciledParentCompletionMessages = new Set();
+const PARENT_COMPLETION_RECONCILE_INTERVAL_MS = 2000;
+const PARENT_COMPLETION_RECONCILE_TIMEOUT_MS = 600000;
+{helpers}
+const data = {{messages: [
+  {{id: 1, role: 'user', content: 'Start background research'}},
+  {{id: 2, role: 'assistant', content: 'The bot is running.'}},
+  {{id: 3, role: 'user', content: '[ASYNC DELEGATION COMPLETE - deleg-1]\\nOriginal goal: Audit session wake flow'}},
+  {{id: 4, role: 'assistant', content: 'The audit completed and found the lease race.'}},
+]}};
+console.log(JSON.stringify({{
+  prompt: isBackgroundCompletionPrompt(data.messages[2]),
+  response: findBackgroundCompletionResponse(data, 'Audit session wake flow')?.id,
+  wrongGoal: findBackgroundCompletionResponse(data, 'Unrelated task'),
+}}));
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == {"prompt": True, "response": 4, "wrongGoal": None}
+
+    badge = source.split("function updateDrawerBadge", 1)[1].split("function openDrawerEventSource", 1)[0]
+    assert "scheduleParentCompletionReconcile(childSessionId)" in badge
+    assert "getActiveRun('main')" in helpers
+    assert "findBackgroundCompletionResponse(data, entry.label)" in helpers
+    assert "buildConversationFromSessionData(data)" in helpers
+
+
 def test_mobile_slot_cycle_and_explicit_close_lifecycle_run_in_javascript():
     source = DASHBOARD_JS.read_text(encoding="utf-8")
     state_start = source.index("const childWindowState")

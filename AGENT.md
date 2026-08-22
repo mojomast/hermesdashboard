@@ -300,6 +300,7 @@ Current limitations:
 
 - persisted history still relies on runtime `tool_call_id` quality; missing canonical ids can still produce orphan tool diagnostics
 - child-session placement is inline and linked, but not yet tied to a first-class persisted subagent/tool-run record
+- completed background subagents wake the parent in a separate serialized turn; the dashboard reconciles that persisted response into the open main chat, and must never keep the original parent tool call open merely to wait for a child
 - request-dump artifacts are attached as diagnostics, not as full event-log replay data
 - active-run recovery is browser-local and depends on localStorage; it does not yet query backend run state independently after refresh
 

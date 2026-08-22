@@ -2621,7 +2621,7 @@ function buildHistoricalExecutionTrace(data) {
 }
 
 function buildConversationFromSessionData(data) {
-    return buildHistoricalExecutionTrace(data).messages.map(message => {
+    return buildHistoricalExecutionTrace(data).messages.filter(message => !isBackgroundCompletionPrompt(message)).map(message => {
         if (message.role === 'assistant') {
             return {
                 ...message,
@@ -3423,6 +3423,10 @@ let childMobileWindowSequence = 0;
 const MOBILE_WINDOW_MAX_SLOTS = 6;
 const MOBILE_WINDOW_SLOT_STEP_PX = 42;
 const ACTIVE_CHILD_DRAWER_STATUSES = new Set(['LIVE', 'RECONNECTING', 'OFFLINE', 'PAUSED', 'STOPPING']);
+const parentCompletionReconcileTimers = new Map();
+const reconciledParentCompletionMessages = new Set();
+const PARENT_COMPLETION_RECONCILE_INTERVAL_MS = 2000;
+const PARENT_COMPLETION_RECONCILE_TIMEOUT_MS = 10 * 60 * 1000;
 
 function getInFlightSubagents() {
     return Array.from(childDrawerRegistry.values())
@@ -3585,6 +3589,103 @@ function rememberChildDrawer(childSessionId, data = {}) {
     if (!childSessionId) return;
     const existing = childDrawerRegistry.get(childSessionId) || {};
     childDrawerRegistry.set(childSessionId, { ...existing, childSessionId, label: data.label ?? existing.label ?? '', delegateCallId: data.delegateCallId ?? existing.delegateCallId ?? '', taskIndex: data.taskIndex ?? existing.taskIndex ?? null, parentSessionId: data.parentSessionId ?? existing.parentSessionId ?? '', profile: data.profile ?? existing.profile ?? '', profileBot: data.profileBot ?? existing.profileBot ?? false, bot: data.bot ?? existing.bot ?? null });
+}
+
+function isBackgroundCompletionPrompt(message) {
+    if (message?.role !== 'user' || typeof message.content !== 'string') return false;
+    const content = message.content.trimStart();
+    return content.startsWith('[ASYNC DELEGATION COMPLETE')
+        || content.startsWith('[ASYNC DELEGATION BATCH COMPLETE')
+        || content.startsWith('[IMPORTANT:');
+}
+
+function completionGoalNeedle(label) {
+    const needle = String(label || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80)
+        .toLowerCase();
+    return ['delegate_task', 'subagent', 'background subagent'].includes(needle) ? '' : needle;
+}
+
+function findBackgroundCompletionResponse(data, label = '') {
+    const rows = Array.isArray(data?.messages) ? data.messages : [];
+    const needle = completionGoalNeedle(label);
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+        const message = rows[index];
+        if (!isBackgroundCompletionPrompt(message)) continue;
+        const content = String(message.content || '').replace(/\s+/g, ' ').toLowerCase();
+        if (needle && !content.includes(needle)) continue;
+        let completionResponse = null;
+        for (let responseIndex = index + 1; responseIndex < rows.length; responseIndex += 1) {
+            const response = rows[responseIndex];
+            if (response?.role === 'user') break;
+            if (response?.role === 'assistant' && String(response.content || '').trim()) completionResponse = response;
+        }
+        return completionResponse;
+    }
+    return null;
+}
+
+function stopParentCompletionReconcile(childSessionId) {
+    const state = parentCompletionReconcileTimers.get(childSessionId);
+    if (state?.timer) clearTimeout(state.timer);
+    parentCompletionReconcileTimers.delete(childSessionId);
+}
+
+function scheduleParentCompletionReconcile(childSessionId) {
+    const entry = childDrawerRegistry.get(childSessionId) || {};
+    const parentSessionId = String(entry.parentSessionId || '').trim();
+    if (!childSessionId || !parentSessionId || entry.profileBot) return;
+    stopParentCompletionReconcile(childSessionId);
+    const state = { startedAt: Date.now(), timer: null, inFlight: false };
+    parentCompletionReconcileTimers.set(childSessionId, state);
+
+    const schedule = () => {
+        if (!parentCompletionReconcileTimers.has(childSessionId)) return;
+        if (Date.now() - state.startedAt >= PARENT_COMPLETION_RECONCILE_TIMEOUT_MS) {
+            stopParentCompletionReconcile(childSessionId);
+            return;
+        }
+        state.timer = setTimeout(poll, PARENT_COMPLETION_RECONCILE_INTERVAL_MS);
+    };
+    const poll = async () => {
+        if (state.inFlight || !parentCompletionReconcileTimers.has(childSessionId)) return;
+        if (activeChatRoomId !== 'main' || activeChatSessionId !== parentSessionId || getActiveRun('main') || streamResumeRooms.has('main') || chatResetInFlight) {
+            schedule();
+            return;
+        }
+        state.inFlight = true;
+        try {
+            const data = await fetchJsonOrThrow(`/api/sessions/${encodeURIComponent(parentSessionId)}`);
+            const completionResponse = findBackgroundCompletionResponse(data, entry.label);
+            if (!completionResponse) {
+                schedule();
+                return;
+            }
+            const completionKey = `${parentSessionId}:${completionResponse.id ?? completionResponse.timestamp ?? completionResponse.content}`;
+            if (reconciledParentCompletionMessages.has(completionKey)) {
+                stopParentCompletionReconcile(childSessionId);
+                return;
+            }
+            reconciledParentCompletionMessages.add(completionKey);
+            conversation = buildConversationFromSessionData(data);
+            saveConversation();
+            renderConversation();
+            const lastAssistant = [...conversation].reverse().find(message => message.role === 'assistant');
+            updateContextDisplay(lastAssistant ? normalizeAssistantMessage(lastAssistant) : { usage: null, last_prompt_tokens: 0 });
+            refreshTokenUsageSoon();
+            void refreshSessionContextInfo(parentSessionId);
+            showToast(`${entry.label || 'Background subagent'} completed; Hermes posted its summary.`);
+            stopParentCompletionReconcile(childSessionId);
+        } catch (error) {
+            log('warn', `Could not reconcile parent session ${parentSessionId}: ${error.message || error}`);
+            schedule();
+        } finally {
+            state.inFlight = false;
+        }
+    };
+    void poll();
 }
 
 async function refreshProfileBotFlights() {
@@ -4198,6 +4299,7 @@ function updateDrawerBadge(childSessionId, status) {
                 panel: 'chat',
             });
         }
+        if (status === 'DONE' || status === 'ERROR') scheduleParentCompletionReconcile(childSessionId);
         let runChanged = false;
         Object.values(activeRuns).forEach(runState => {
             const child = (Array.isArray(runState?.childSessions) ? runState.childSessions : []).find(entry => entry.childSessionId === childSessionId);
