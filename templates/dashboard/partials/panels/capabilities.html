@@ -1,0 +1,35 @@
+        <div class="panel" id="capabilities-panel">
+            <section class="capabilities-hero">
+                <div>
+                    <span class="panel-kicker">RUNTIME SURFACE</span>
+                    <h2>Capabilities Hub</h2>
+                    <p>Inspect installed skills, optional skill catalog entries, native toolsets, MCP servers, and plugins without executing discovery code.</p>
+                </div>
+                <button class="btn" type="button" onclick="loadCapabilities(true)">Refresh inventory</button>
+            </section>
+            <div class="capability-summary" id="capability-summary" aria-live="polite"></div>
+            <div class="capability-toolbar">
+                <input type="search" id="capability-search" placeholder="Search names, tools, permissions..." oninput="renderCapabilities()">
+                <select id="capability-kind" onchange="renderCapabilities()">
+                    <option value="">All capability types</option>
+                    <option value="skill">Skills</option>
+                    <option value="toolset">Toolsets</option>
+                    <option value="mcp_server">MCP servers</option>
+                    <option value="plugin">Plugins</option>
+                </select>
+                <select id="capability-state" onchange="renderCapabilities()">
+                    <option value="">Any state</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                    <option value="available">Available</option>
+                    <option value="optional">Optional catalog</option>
+                </select>
+                <span class="stats" id="capability-stats"></span>
+            </div>
+            <div class="capability-layout">
+                <div class="capability-grid" id="capability-grid"></div>
+                <aside class="capability-detail" id="capability-detail" aria-live="polite">
+                    <div class="empty-state">Select a capability to inspect its tools, permissions, source, and readiness.</div>
+                </aside>
+            </div>
+        </div>

@@ -14,6 +14,8 @@
 
 {% include "dashboard/partials/panels/bots.html" %}
 
+{% include "dashboard/partials/panels/kanban.html" %}
+
 {% include "dashboard/partials/panels/message_board.html" %}
 
 {% include "dashboard/partials/panels/dashboard_chat.html" %}
@@ -31,6 +33,10 @@
 {% include "dashboard/partials/panels/memory.html" %}
 
 {% include "dashboard/partials/panels/skills.html" %}
+
+{% include "dashboard/partials/panels/capabilities.html" %}
+
+{% include "dashboard/partials/panels/files.html" %}
 
 {% include "dashboard/partials/panels/games.html" %}
 
@@ -55,7 +61,7 @@
 {% include "dashboard/partials/panels/schedule.html" %}
     </div>
     <aside class="terminal-column" id="terminal-column" aria-label="Docked terminals" hidden>
-        <div class="terminal-column-resizer" id="terminal-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize docked terminal column" aria-valuemin="320" aria-valuemax="720" aria-valuenow="480" tabindex="0"></div>
+        <div class="terminal-column-resizer" id="terminal-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize docked terminal column" aria-valuemin="320" aria-valuemax="1600" aria-valuenow="480" tabindex="0"></div>
         <div class="terminal-column-stack" id="terminal-column-stack"></div>
     </aside>
     </div>

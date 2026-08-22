@@ -227,5 +227,52 @@ def test_bot_routes_are_registered():
     assert ("/api/bots/{name}/avatar", ("PUT",)) in routes
     assert ("/api/bots/{name}/avatar", ("DELETE",)) in routes
     assert ("/api/bots/{name}", ("DELETE",)) in routes
+    assert any(path == "/api/bots/in-flight" and "GET" in methods for path, methods in routes)
+    assert any(path == "/api/bots/{name}/sessions/{session_id}" and "GET" in methods for path, methods in routes)
     assert ("/api/bot-rooms/shared/messages/stream", ("POST",)) in routes
     assert ("/api/bot-rooms/{room_id}", ("PUT",)) in routes
+
+
+def test_in_flight_bot_sessions_exclude_completed_and_stale_rows(monkeypatch):
+    bots_payload = [
+        {"name": "default", "hidden": False, "is_default": True},
+        {"name": "worker", "hidden": False, "is_default": False, "display_name": "Worker"},
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "data": [
+                    {"id": "active", "ended_at": None, "last_active": 9_900, "started_at": 9_800, "title": "Active work"},
+                    {"id": "stale", "ended_at": None, "last_active": 1_000, "started_at": 900},
+                    {"id": "done", "ended_at": 9_950, "last_active": 9_950, "started_at": 9_800},
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(dashboard_app, "_list_bots", lambda: bots_payload)
+    monkeypatch.setattr(dashboard_app, "_api_key_for_profile", lambda profile: "x" * 20)
+    monkeypatch.setattr(dashboard_app.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(dashboard_app.time, "time", lambda: 10_000)
+
+    response = asyncio.run(dashboard_app.list_in_flight_bot_sessions_endpoint(FakeRequest()))
+    data = payload(response)
+
+    assert [session["session_id"] for session in data["sessions"]] == ["active"]
+    assert data["sessions"][0]["profile"] == "worker"
+    assert data["errors"] == []

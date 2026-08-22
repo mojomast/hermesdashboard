@@ -95,12 +95,18 @@ class FakeTerminal {
         this.cols = 80;
         this.rows = 24;
         this.writes = [];
+        this.selection = '';
+        this.pastes = [];
         this.disposed = false;
         FakeTerminal.instances.push(this);
     }
     loadAddon(addon) { this.addon = addon; }
     open(element) { this.element = element; }
     onData(callback) { this.dataCallback = callback; }
+    attachCustomKeyEventHandler(callback) { this.keyEventHandler = callback; }
+    hasSelection() { return Boolean(this.selection); }
+    getSelection() { return this.selection; }
+    paste(text) { this.pastes.push(text); }
     write(data) { this.writes.push(data); }
     focus() { this.focused = true; }
     dispose() { this.disposed = true; }
@@ -141,6 +147,13 @@ const localStorage = {
     getItem: key => storage.has(key) ? storage.get(key) : null,
     setItem: (key, value) => storage.set(key, String(value)),
     removeItem: key => storage.delete(key),
+};
+const clipboardWrites = [];
+const navigator = {
+    clipboard: {
+        writeText: async text => { clipboardWrites.push(text); },
+        readText: async () => 'pasted text',
+    },
 };
 
 const elements = new Map();
@@ -185,6 +198,7 @@ const context = {
     window: windowObject,
     document,
     localStorage,
+    navigator,
     WebSocket: FakeWebSocket,
     ResizeObserver: FakeResizeObserver,
     URL,
@@ -249,6 +263,15 @@ async function main() {
     secondSocket.emit('message', { data: JSON.stringify({ type: 'output', data: 'second output' }) });
     assert.deepEqual(first.terminal.writes, ['first output']);
     assert.deepEqual(second.terminal.writes, ['second output']);
+    first.terminal.selection = 'copied text';
+    assert.equal(first.terminal.keyEventHandler({ type: 'keydown', key: 'c', ctrlKey: true }), false);
+    await flush();
+    assert.deepEqual(clipboardWrites, ['copied text']);
+    first.terminal.selection = '';
+    assert.equal(first.terminal.keyEventHandler({ type: 'keydown', key: 'c', ctrlKey: true }), true);
+    assert.equal(first.terminal.keyEventHandler({ type: 'keydown', key: 'v', ctrlKey: true }), false);
+    await flush();
+    assert.deepEqual(first.terminal.pastes, ['pasted text']);
     assert.equal(first.terminalId, 'one');
     assert.equal(second.terminalId, 'two');
     const savedSessions = JSON.parse(storage.get('hermes_terminal_sessions_v1')).sessions;
@@ -295,11 +318,13 @@ async function main() {
     windowObject.innerWidth = 700;
     manager.handleViewportResize();
     assert.equal(manager.columnWidth, 610);
-    assert.equal(elements.get('terminal-column').style.width, '320px');
+    assert.equal(elements.get('terminal-column').style.width, '380px');
     assert.equal(JSON.parse(storage.get('hermes_terminal_windows_v2')).columnWidth, 610);
     windowObject.innerWidth = 1280;
     manager.handleViewportResize();
     assert.equal(elements.get('terminal-column').style.width, '610px');
+    manager.applyColumnWidth(1000, true);
+    assert.equal(elements.get('terminal-column').style.width, '960px');
     manager.activateDock(second.key);
     assert.equal(second.windowEl.scrollOptions.block, 'nearest');
     assert.equal(second.windowEl.classList.contains('is-minimized'), false);

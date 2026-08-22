@@ -1,0 +1,28 @@
+        <div class="panel" id="files-panel">
+            <section class="files-hero">
+                <div>
+                    <span class="panel-kicker">WORKSPACE INDEX</span>
+                    <h2>File Manager</h2>
+                    <p>Browse registered workspaces and safely preview code, documents, images, PDFs, media, archives, and binary files.</p>
+                </div>
+                <div class="files-hero-actions">
+                    <label class="files-hidden-toggle"><input type="checkbox" id="files-show-hidden" onchange="loadFileDirectory()"> Show hidden</label>
+                    <button class="btn" type="button" onclick="loadFileDirectory()">Refresh</button>
+                </div>
+            </section>
+            <div class="file-toolbar">
+                <select id="file-project" aria-label="Workspace" onchange="selectFileProject(this.value)"></select>
+                <button class="btn" id="file-up-button" type="button" onclick="openParentFileDirectory()">Up</button>
+                <nav class="file-breadcrumbs" id="file-breadcrumbs" aria-label="Current file path"></nav>
+                <input type="search" id="file-search" placeholder="Filter this folder..." oninput="renderFileEntries()">
+            </div>
+            <div class="file-manager-layout">
+                <section class="file-browser" aria-label="Files">
+                    <div class="file-list-heading"><span>Name</span><span>Size</span><span>Modified</span></div>
+                    <div class="file-list" id="file-list" role="listbox" aria-label="Directory contents"></div>
+                </section>
+                <section class="universal-file-viewer" id="file-viewer" aria-live="polite">
+                    <div class="empty-state">Choose a file to preview it. Unsupported formats show safe metadata and a bounded binary inspection instead of failing.</div>
+                </section>
+            </div>
+        </div>

@@ -50,6 +50,9 @@ def test_approval_controls_are_inline_not_top_context_panel():
     assert "data-approval-decision=\"deny\"" in source
     assert "button.addEventListener('click'" in source
     assert "dataset.approvalSignature === signature" in source
+    assert '<div class="approval-inline-command">' in source
+    assert "command || 'No command provided'" in source
+    assert '<details class="approval-inline-details">' not in source
     assert 'onclick="respondToApproval(' not in source
     assert "Auto-approve controls live in the gear/options menu" in source
     assert 'id="approval-auto-toggle"' in source

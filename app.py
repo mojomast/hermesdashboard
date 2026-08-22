@@ -49,6 +49,14 @@ except Exception:
 from starlette.templating import Jinja2Templates
 from starlette.responses import JSONResponse, PlainTextResponse
 try:
+    from starlette.responses import FileResponse
+except Exception:  # Lightweight test stubs may omit FileResponse.
+    class FileResponse(PlainTextResponse):
+        def __init__(self, path, media_type=None, filename=None, headers=None, **kwargs):
+            self.path = Path(path)
+            self.filename = filename
+            super().__init__("", media_type=media_type, headers=headers, **kwargs)
+try:
     from starlette.websockets import WebSocket, WebSocketDisconnect
 except Exception:
     WebSocket = object
@@ -91,6 +99,10 @@ from dashboard_backend.routes.bots import (
     put_avatar_endpoint as _put_avatar_endpoint_impl,
     update_bot_endpoint as _update_bot_endpoint_impl,
 )
+from dashboard_backend.routes.kanban import (
+    kanban_control_endpoint as _kanban_control_endpoint_impl,
+    kanban_status_endpoint as _kanban_status_endpoint_impl,
+)
 from dashboard_backend.services.dashboard_chat import (
     _dashboard_chat_runtime_config as _dashboard_chat_runtime_config_impl,
     _dashboard_chat_status_payload as _dashboard_chat_status_payload_impl,
@@ -126,6 +138,10 @@ from dashboard_backend.services.bots import (
     save_avatar as _save_avatar_impl,
     update_bot as _update_bot_impl,
 )
+from dashboard_backend.services.kanban import (
+    get_kanban_status as _get_kanban_status_impl,
+    set_kanban_enabled as _set_kanban_enabled_impl,
+)
 from dashboard_backend.services.games_catalog import (
     categorize_game_skill as _categorize_game_skill_impl,
     get_games_catalog as _get_games_catalog_impl,
@@ -158,6 +174,8 @@ from dashboard_backend.services.token_usage import (
     get_token_usage_summary as _get_token_usage_summary_impl,
 )
 from dashboard_backend.services.terminal import terminal_manager
+from dashboard_backend.services.capabilities import inventory_capabilities
+from dashboard_backend.services.files import FileService, PathSecurityError
 
 
 def _hermes_agent_path() -> Path:
@@ -897,6 +915,87 @@ async def list_bots_endpoint(request):
         return await asyncio.to_thread(_list_bots)
 
     return await _list_bots_endpoint_impl(request, list_bots=list_bots)
+
+
+async def list_in_flight_bot_sessions_endpoint(request):
+    bots = await asyncio.to_thread(_list_bots)
+    active_after = time.time() - 3600
+
+    async def load_bot_sessions(client, bot):
+        profile = str(bot.get("name") or "").strip()
+        if not profile or profile == "default" or bot.get("hidden"):
+            return [], None
+        try:
+            response = await client.get(
+                f"{HERMES_API.rstrip('/')}/p/{quote(profile, safe='')}/api/sessions",
+                headers={"Authorization": f"Bearer {_api_key_for_profile(profile)}"},
+                params={"limit": 10, "offset": 0, "order": "recent"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            sessions = payload.get("data", payload.get("sessions", []))
+            active = []
+            for session in sessions if isinstance(sessions, list) else []:
+                if not isinstance(session, dict) or session.get("ended_at") is not None:
+                    continue
+                last_active = float(session.get("last_active") or session.get("started_at") or 0)
+                if last_active < active_after:
+                    continue
+                session_id = str(session.get("id") or "")
+                if not session_id:
+                    continue
+                active.append(
+                    {
+                        "profile": profile,
+                        "bot": bot,
+                        "session_id": session_id,
+                        "title": str(session.get("title") or session.get("preview") or "Running bot session"),
+                        "started_at": session.get("started_at"),
+                        "last_active": session.get("last_active"),
+                        "source": session.get("source"),
+                        "model": session.get("model"),
+                    }
+                )
+            return active, None
+        except Exception as exc:
+            return [], {"profile": profile, "error": str(exc)}
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+        results = await asyncio.gather(*(load_bot_sessions(client, bot) for bot in bots))
+    sessions = [session for bot_sessions, _ in results for session in bot_sessions]
+    errors = [error for _, error in results if error]
+    sessions.sort(key=lambda item: float(item.get("started_at") or 0), reverse=True)
+    return JSONResponse({"sessions": sessions, "errors": errors})
+
+
+async def get_bot_session_endpoint(request):
+    profile = str(request.path_params.get("name") or "").strip()
+    session_id = str(request.path_params.get("session_id") or "").strip()
+    if not BOT_PROFILE_RE.fullmatch(profile):
+        return JSONResponse({"error": "Invalid bot profile"}, status_code=400)
+    if not session_id or len(session_id) > 200 or not re.fullmatch(r"[A-Za-z0-9_.:-]+", session_id):
+        return JSONResponse({"error": "Invalid session id"}, status_code=400)
+    base = f"{HERMES_API.rstrip('/')}/p/{quote(profile, safe='')}/api/sessions/{quote(session_id, safe='')}"
+    headers = {"Authorization": f"Bearer {_api_key_for_profile(profile)}"}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0)) as client:
+            detail_response, messages_response = await asyncio.gather(
+                client.get(base, headers=headers),
+                client.get(f"{base}/messages", headers=headers, params={"limit": 500, "order": "latest"}),
+            )
+        detail_response.raise_for_status()
+        messages_response.raise_for_status()
+        detail_payload = detail_response.json()
+        messages_payload = messages_response.json()
+        session = detail_payload.get("session", detail_payload)
+        messages = messages_payload.get("data", messages_payload.get("messages", []))
+        if not isinstance(session, dict) or not isinstance(messages, list):
+            raise ValueError("Invalid profile session response")
+        return JSONResponse({**session, "profile": profile, "messages": messages})
+    except httpx.HTTPStatusError as exc:
+        return JSONResponse({"error": "Bot session not found"}, status_code=exc.response.status_code)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
 
 
 async def get_bot_endpoint(request):
@@ -2603,6 +2702,31 @@ async def dashboard_approvals_respond_endpoint(request):
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
 
 
+def _get_kanban_status():
+    return _get_kanban_status_impl(get_config=get_config, agent_path=HERMES_AGENT_PATH)
+
+
+def _set_kanban_enabled(enabled: bool):
+    return _set_kanban_enabled_impl(enabled, get_config=get_config, agent_path=HERMES_AGENT_PATH)
+
+
+def _authorize_kanban_control(passphrase: str) -> bool:
+    expected = _configured_approval_passphrase()
+    return not expected or hmac.compare_digest(passphrase, expected)
+
+
+async def kanban_status_endpoint(request):
+    return await _kanban_status_endpoint_impl(request, get_status=_get_kanban_status)
+
+
+async def kanban_control_endpoint(request):
+    return await _kanban_control_endpoint_impl(
+        request,
+        set_enabled=lambda enabled: asyncio.to_thread(_set_kanban_enabled, enabled),
+        authorize=_authorize_kanban_control,
+    )
+
+
 async def health(request):
     return JSONResponse({"status": "ok"})
 
@@ -3355,6 +3479,161 @@ def _resolve_allowed_path(raw_path: str) -> Optional[Path]:
         except ValueError:
             continue
     return None
+
+
+def _dashboard_file_service() -> FileService:
+    roots: dict[str, Path] = {}
+    candidates = [
+        ("Dashboard", Path(__file__).resolve().parent),
+        ("Hermes Agent", HERMES_AGENT_PATH),
+        ("Hermes Data", HERMES_HOME),
+        ("Projects", Path.home() / "repos"),
+        ("Home", Path.home()),
+    ]
+    env_root = os.getenv("HERMES_WRITE_SAFE_ROOT", "").strip()
+    if env_root:
+        candidates.insert(0, ("Workspace", Path(env_root).expanduser()))
+    for label, path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved.is_dir() and resolved not in roots.values():
+            roots[label] = resolved
+    return FileService(roots)
+
+
+def _file_request_ref(request) -> tuple[FileService, str, str]:
+    service = _dashboard_file_service()
+    project_id = request.query_params.get("project", "").strip()
+    raw_path = request.query_params.get("path", "")
+    if project_id:
+        resolved = service.resolve(project_id, raw_path)
+        return service, *service.reference(resolved, project_id)
+    return service, *service.reference(raw_path)
+
+
+def _file_error_response(exc: Exception) -> JSONResponse:
+    if isinstance(exc, (PathSecurityError, KeyError)):
+        return JSONResponse({"error": str(exc)}, status_code=403)
+    if isinstance(exc, FileNotFoundError):
+        return JSONResponse({"error": "File or directory not found"}, status_code=404)
+    if isinstance(exc, (NotADirectoryError, IsADirectoryError, ValueError)):
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+async def get_file_projects(_request):
+    return JSONResponse({"projects": _dashboard_file_service().projects()})
+
+
+async def list_project_files(request):
+    try:
+        service = _dashboard_file_service()
+        project_id = request.query_params.get("project", "").strip()
+        if not project_id:
+            raise ValueError("project is required")
+        data = await asyncio.to_thread(
+            service.list_directory,
+            project_id,
+            request.query_params.get("path", ""),
+            offset=int(request.query_params.get("offset", "0") or 0),
+            limit=int(request.query_params.get("limit", "250") or 250),
+            include_hidden=request.query_params.get("hidden", "false").lower() == "true",
+        )
+        return JSONResponse(data)
+    except Exception as exc:
+        return _file_error_response(exc)
+
+
+async def get_file_metadata(request):
+    try:
+        service, project_id, relative_path = _file_request_ref(request)
+        return JSONResponse(await asyncio.to_thread(service.metadata, project_id, relative_path))
+    except Exception as exc:
+        return _file_error_response(exc)
+
+
+async def get_file_preview(request):
+    try:
+        service, project_id, relative_path = _file_request_ref(request)
+        data = await asyncio.to_thread(
+            service.preview,
+            project_id,
+            relative_path,
+            offset=int(request.query_params.get("offset", "0") or 0),
+            max_bytes=int(request.query_params.get("limit", "262144") or 262144),
+        )
+        return JSONResponse(data)
+    except Exception as exc:
+        return _file_error_response(exc)
+
+
+async def get_file_raw(request):
+    try:
+        service, project_id, relative_path = _file_request_ref(request)
+        target = await asyncio.to_thread(service.target, project_id, relative_path)
+        return FileResponse(
+            target.path,
+            media_type=target.mime,
+            headers={
+                "Cache-Control": "private, no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+            },
+        )
+    except Exception as exc:
+        return _file_error_response(exc)
+
+
+async def download_file(request):
+    try:
+        service, project_id, relative_path = _file_request_ref(request)
+        target = await asyncio.to_thread(service.target, project_id, relative_path)
+        return FileResponse(
+            target.path,
+            media_type="application/octet-stream",
+            filename=target.name,
+            headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"},
+        )
+    except Exception as exc:
+        return _file_error_response(exc)
+
+
+async def get_capabilities(_request):
+    config = get_config()
+    normalized_config = dict(config)
+    if isinstance(config.get("toolsets"), list) and not isinstance(config.get("platform_toolsets"), dict):
+        normalized_config["platform_toolsets"] = {"configured": config["toolsets"]}
+    optional_root = HERMES_AGENT_PATH / "optional-skills"
+    result = await asyncio.to_thread(
+        inventory_capabilities,
+        skill_roots=[path for path in (HERMES_HOME / "skills", optional_root) if path.is_dir()],
+        toolsets_path=HERMES_AGENT_PATH / "toolsets.py",
+        plugin_roots=[HERMES_AGENT_PATH / "plugins"],
+        config=normalized_config,
+        platform=sys.platform,
+    )
+    optional_prefix = str(optional_root.resolve())
+    for row in result["rows"]:
+        source_path = str(row.get("source", {}).get("path", ""))
+        if row["kind"] == "skill" and source_path.startswith(optional_prefix):
+            row["source"]["kind"] = "optional_catalog"
+            row["states"].update({"installed": False, "enabled": False, "configured": False})
+    result["summary"]["by_kind"] = {
+        kind: sum(row["kind"] == kind for row in result["rows"])
+        for kind in ("skill", "toolset", "mcp_server", "plugin")
+    }
+    result["summary"]["states"] = {
+        state: {
+            "true": sum(row["states"][state] is True for row in result["rows"]),
+            "false": sum(row["states"][state] is False for row in result["rows"]),
+            "unknown": sum(row["states"][state] is None for row in result["rows"]),
+        }
+        for state in ("installed", "enabled", "configured", "available")
+    }
+    result["summary"]["total"] = len(result["rows"])
+    return JSONResponse(result)
 
 
 def _safe_json_loads(value: str):
@@ -12515,6 +12794,8 @@ routes = [
     Route("/campaigns/", homepage),
     Route("/chat", chat_stream, methods=["POST"]),
     Route("/api/bots", list_bots_endpoint),
+    Route("/api/bots/in-flight", list_in_flight_bot_sessions_endpoint),
+    Route("/api/bots/{name}/sessions/{session_id}", get_bot_session_endpoint),
     Route("/api/bots", create_bot_endpoint, methods=["POST"]),
     Route("/api/bots/{name}/avatar", get_bot_avatar_endpoint),
     Route("/api/bots/{name}/avatar", put_bot_avatar_endpoint, methods=["PUT"]),
@@ -12534,6 +12815,8 @@ routes = [
     Route("/api/dashboard/update", dashboard_auto_update_endpoint, methods=["POST"]),
     Route("/api/approvals/pending", dashboard_approvals_pending_endpoint),
     Route("/api/approvals/respond", dashboard_approvals_respond_endpoint, methods=["POST"]),
+    Route("/api/kanban", kanban_status_endpoint),
+    Route("/api/kanban/control", kanban_control_endpoint, methods=["POST"]),
     Route("/health", health),
     Route("/api/status", get_status),
     Route("/api/terminal/status", terminal_status_endpoint),
@@ -12582,6 +12865,13 @@ routes = [
     ),
     Route("/api/message-board/{post_id}", get_message_board_post_endpoint),
     Route("/api/files/content", get_file_content),
+    Route("/api/files/projects", get_file_projects),
+    Route("/api/files/list", list_project_files),
+    Route("/api/files/meta", get_file_metadata),
+    Route("/api/files/preview", get_file_preview),
+    Route("/api/files/raw", get_file_raw),
+    Route("/api/files/download", download_file),
+    Route("/api/capabilities", get_capabilities),
     Route("/api/memory", get_memory),
     Route("/api/memory", update_memory, methods=["POST"]),
     Route("/api/skills", get_skills),

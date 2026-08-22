@@ -96,6 +96,12 @@ def test_terminal_geometry_window_and_theme_contracts():
     assert "window.addEventListener('resize', this.handleViewportResize)" in js
     assert "this.bodyEl.inert = minimized" in js
     assert "['keydown', 'keyup', 'keypress']" in js
+    assert "attachCustomKeyEventHandler" in js
+    assert "this.terminal?.hasSelection?.()" in js
+    assert "navigator.clipboard.writeText(selection)" in js
+    assert "navigator.clipboard.readText()" in js
+    assert "this.terminal?.paste(text)" in js
+    assert "window.innerWidth - MIN_WORKSPACE_WIDTH" in js
     assert "this.controllers.forEach(controller => controller.applyTheme(theme))" in js
     assert "controller.setDocked(true, false)" in js
     assert "this.manager.columnStackEl?.appendChild(this.windowEl)" in js
@@ -114,6 +120,7 @@ def test_terminal_geometry_window_and_theme_contracts():
     assert ".dashboard-workspace" in css
     assert ".terminal-column-stack" in css
     assert ".terminal-window.is-docked" in css
+    assert "max-width: calc(100vw - 320px)" in css
     assert "flex-direction: column" in css
 
 

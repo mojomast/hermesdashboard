@@ -23,6 +23,21 @@ def test_parallel_tool_batch_status_is_aggregated_not_hard_coded_running():
     assert "<span class=\"tool-call-status-dot running\"></span>" not in html
 
 
+def test_tool_commands_and_targets_are_visible_without_expanding():
+    html = dashboard_source()
+    css = DASHBOARD_JS.parent.parent.joinpath("css", "dashboard.css").read_text(encoding="utf-8")
+
+    assert "function getToolVisibleDetail(" in html
+    assert "args.command || args.cmd || targetDetail" in html
+    assert "args.code || targetDetail" in html
+    assert "args.action || args.operation" in html
+    assert "args.session_id || args.process_id" in html
+    assert 'class="tool-call-visible-detail"' in html
+    assert "${visibleDetail.value ?" in html
+    assert ".tool-call-visible-detail" in css
+    assert ".tool-call-visible-detail pre" in css
+
+
 def test_delegate_task_live_header_does_not_cap_child_sessions_at_three():
     html = dashboard_source()
 
@@ -54,6 +69,49 @@ def test_in_flight_subagent_rail_indicator_reuses_live_windows_and_stop_controls
     assert ".subagent-flight-toggle" in css
     assert "subagent-flight-hover" in css
     assert ".subagent-flight-popover" in css
+
+
+def test_child_sessions_nest_below_room_tabs_in_the_left_rail():
+    html = dashboard_source()
+    css = DASHBOARD_JS.parent.parent.joinpath("css", "dashboard.css").read_text(encoding="utf-8")
+
+    rail = html.split("function renderChatRoomRail()", 1)[1].split("function updateChatRoomChrome()", 1)[0]
+    assert "renderRoomChildSessionEntries('main')" in rail
+    assert "renderRoomChildSessionEntries('shared')" in rail
+    assert "renderRoomChildSessionEntries(roomId)" in rail
+    assert "chat-room-group" in rail
+    assert "function renderRoomChildSessionEntries(roomId)" in html
+    assert "Array.isArray(run?.childSessions)" in html
+    assert ".chat-room-children" in css
+    assert ".chat-room-child-open" in css
+    assert ".chat-room-child-dot" in css
+    assert "chat-room-child-stop subagent-stop-btn" in html
+    assert "live-view-btn" in html.split("function renderRoomChildSessionEntries(roomId)", 1)[1]
+
+
+def test_profile_bot_sessions_are_discovered_and_reuse_live_windows():
+    html = dashboard_source()
+    css = DASHBOARD_JS.parent.parent.joinpath("css", "dashboard.css").read_text(encoding="utf-8")
+
+    assert "function refreshProfileBotFlights()" in html
+    assert "fetch('/api/bots/in-flight'" in html
+    assert "startProfileBotFlightPolling();" in html
+    assert "!entry.profileBot" in html
+    assert "profileBotSessions.get(profile)" in html
+    assert "profile-bot-room-child" in html
+    assert "profile-bot-child-avatar" in html
+    assert "botName = profileBot" in html
+    assert "drawer-header-title" in html
+    assert "profileBot: true" in html
+    assert "function childSessionSnapshotPath(childSessionId)" in html
+    assert "/api/bots/${encodeURIComponent(entry.profile)}/sessions/" in html
+    assert "childDrawerRegistry.get(childSessionId)?.profileBot" in html
+    assert ".chat-room-rail:not(.expanded) .chat-room-children" in css
+    assert "display: grid" in css.split(".chat-room-rail:not(.expanded) .chat-room-children", 1)[1].split("}", 1)[0]
+    assert ".profile-bot-room-child" in css
+    assert ".profile-bot-child-avatar" in css
+    assert ".bot-avatar-flight" in css
+    assert ".drawer-header-title" in css
 
 
 def test_delegate_live_actions_are_not_nested_inside_the_tool_toggle_button():
@@ -127,6 +185,33 @@ def test_cached_drawer_replay_renders_without_recording_events_again():
 
     assert "renderDrawerLiveTrace" in replay
     assert "appendDrawerEventRow" not in replay
+
+
+def test_profile_bot_snapshot_polling_skips_identical_dom_replacements():
+    source = DASHBOARD_JS.read_text(encoding="utf-8")
+    css = DASHBOARD_JS.parent.parent.joinpath("css", "dashboard.css").read_text(encoding="utf-8")
+    renderer = source.split("function renderDrawerSessionSnapshot", 1)[1]
+    renderer = renderer.split("function childSessionSnapshotPath", 1)[0]
+
+    assert "drawerSessionSnapshotFingerprint(data)" in renderer
+    assert "childDrawerSnapshotFingerprints.get(childSessionId) === fingerprint" in renderer
+    assert renderer.index("childDrawerSnapshotFingerprints.get") < renderer.index("transcriptEl.innerHTML")
+    assert "captureOpenToolState(transcriptEl)" in renderer
+    assert "restoreOpenToolState(transcriptEl, openToolState)" in renderer
+    assert "shouldStickToBottom(transcriptEl)" in renderer
+    assert ".drawer-transcript .message" in css
+    assert "animation: none" in css.split(".drawer-transcript .message", 1)[1].split("}", 1)[0]
+
+    helper = source[source.index("function stableDrawerEventSignature"):source.index("function getDrawerEventDedupKey")]
+    script = f"""
+{helper}
+const first = drawerSessionSnapshotFingerprint({{messages: [{{role: 'assistant', content: 'same'}}]}});
+const duplicate = drawerSessionSnapshotFingerprint({{messages: [{{role: 'assistant', content: 'same'}}]}});
+const changed = drawerSessionSnapshotFingerprint({{messages: [{{role: 'assistant', content: 'changed'}}]}});
+console.log(JSON.stringify({{same: first === duplicate, changed: first !== changed}}));
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == {"same": True, "changed": True}
 
 
 def test_subagent_live_trace_reuses_main_chat_tool_renderer_and_preserves_content():
@@ -230,6 +315,7 @@ globalThis.document = {{
 globalThis.CSS = {{ escape: value => String(value) }};
 const drawerEventSources = new Map();
 const openDrawerSet = new Set();
+const childDrawerSnapshotFingerprints = new Map();
 {state_helpers}
 const indices = Array.from({{length: 12}}, (_, index) => getSubagentWindowState(`child-${{index}}`).mobileIndex);
 let closed = false;

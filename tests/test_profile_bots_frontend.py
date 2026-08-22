@@ -57,7 +57,7 @@ def test_bot_registry_hash_breadcrumb_and_lazy_load_contract():
     assert "{ id: 'bots', label: 'Bots' }" in source
     assert "'chat',\n    'bots'," in source
     assert "case 'bots': loadBots(); break;" in source
-    assert "'chat','bots','message-board'" in source
+    assert "'chat','bots','kanban','message-board'" in source
     assert "bots:'Bots'" in source
     assert "fetchJsonOrThrow('/api/bots')" in source
     assert "fetchJsonOrThrow('/api/bot-rooms')" in source
@@ -125,7 +125,7 @@ def test_safe_reusable_avatar_and_direct_identity_contract():
     assert "function botTooltip(identity = {})" in source
     assert "Model: ${model}" in source
     assert "${Number(identity.skill_count)} skills" in source
-    assert "title=\"${escapeHtml(botTooltip(bot))}\"" in source
+    assert "title=\"${escapeHtml(botTooltip(identityForRoom(roomId)))}\"" in source
     assert "const fallbackBot = roomBot || (activeChatRoomId === 'main' ? defaultBotIdentity() : null);" in source
 
 

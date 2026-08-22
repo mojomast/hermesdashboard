@@ -584,6 +584,7 @@ class ExecutionTracePayloadTests(unittest.TestCase):
             {
                 "tool": "terminal",
                 "label": "Run git status",
+                "arguments": {"command": "git status"},
                 "toolCallId": "tool_modern_1",
                 "status": "running",
             }
@@ -603,7 +604,7 @@ class ExecutionTracePayloadTests(unittest.TestCase):
                     "type": "tool_call",
                     "name": "terminal",
                     "call_id": "tool_modern_1",
-                    "arguments": "",
+                    "arguments": {"command": "git status"},
                     "progress": "Run git status",
                     "status": "running",
                 }

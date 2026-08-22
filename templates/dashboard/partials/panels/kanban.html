@@ -1,0 +1,39 @@
+        <div class="panel" id="kanban-panel">
+            <section class="kanban-control-hero">
+                <div>
+                    <div class="kanban-control-kicker">DURABLE WORK CONTROL</div>
+                    <h2>Hermes Kanban</h2>
+                    <p>Coordinate persistent outcomes across named profiles without turning temporary subagent activity into board noise.</p>
+                </div>
+                <div class="kanban-control-state" id="kanban-control-state" role="status" aria-live="polite">
+                    <span class="kanban-control-light"></span>
+                    <strong>Checking deployment</strong>
+                </div>
+            </section>
+
+            <div class="kanban-control-toolbar">
+                <a class="btn primary" id="kanban-open-board" href="http://127.0.0.1:8083/kanban" target="_blank" rel="noopener noreferrer">Open Board</a>
+                <button class="btn" id="kanban-enable-btn" type="button" onclick="controlKanban('enable')">Enable Kanban</button>
+                <button class="btn emergency-stop-btn" id="kanban-disable-btn" type="button" onclick="controlKanban('disable')">Disable Kanban</button>
+                <button class="btn" id="kanban-refresh-btn" type="button" onclick="loadKanban()">Refresh</button>
+            </div>
+
+            <div class="kanban-control-grid">
+                <article class="kanban-control-card">
+                    <span class="kanban-control-number">01</span>
+                    <h3>Dispatch Policy</h3>
+                    <dl id="kanban-policy-details"><div><dt>Orchestrator</dt><dd>--</dd></div><div><dt>Default worker</dt><dd>--</dd></div><div><dt>Concurrency</dt><dd>--</dd></div></dl>
+                </article>
+                <article class="kanban-control-card">
+                    <span class="kanban-control-number">02</span>
+                    <h3>Automation Gates</h3>
+                    <dl id="kanban-automation-details"><div><dt>Auto-decompose</dt><dd>--</dd></div><div><dt>Auto-review</dt><dd>--</dd></div><div><dt>Native service</dt><dd>--</dd></div></dl>
+                </article>
+                <article class="kanban-control-card kanban-control-card-wide">
+                    <span class="kanban-control-number">03</span>
+                    <h3>Safe Disable Contract</h3>
+                    <p>Disable stops new decomposition and worker dispatch on the next gateway tick, then stops the native board service. Existing workers finish naturally; chat, bots, cron, and the gateway remain online.</p>
+                </article>
+            </div>
+            <p class="kanban-control-message" id="kanban-control-message" role="status" aria-live="polite"></p>
+        </div>

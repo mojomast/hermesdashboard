@@ -557,6 +557,7 @@ function stopToolTimerUpdates() {
 const DEFAULT_VISIBLE_DASHBOARD_TABS = new Set([
     'chat',
     'bots',
+    'kanban',
     'message-board',
     'parallel-arena',
     'config',
@@ -564,6 +565,8 @@ const DEFAULT_VISIBLE_DASHBOARD_TABS = new Set([
     'sessions',
     'memory',
     'skills',
+    'capabilities',
+    'files',
     'cron',
     'schedule',
     'graph',
@@ -574,6 +577,7 @@ const EXPERIMENTAL_LOCAL_TOOLING_WARNING = "Experimental: built on the maintaine
 const DASHBOARD_TABS = [
     { id: 'chat', label: 'Chat', locked: true },
     { id: 'bots', label: 'Bots' },
+    { id: 'kanban', label: 'Kanban' },
     { id: 'message-board', label: 'Message Board' },
     { id: 'dashboard-chat', label: 'Dashboard Chat', experimental: true, warning: 'Optional IRC bridge: connects to external IRC hosts only after it is explicitly enabled and connected.' },
     { id: 'parallel-arena', label: 'Parallel Arena', locked: true },
@@ -583,6 +587,8 @@ const DASHBOARD_TABS = [
     { id: 'agent-observability', label: 'Agent Ops', experimental: true, warning: 'Experimental: depends on local observability/session tooling.' },
     { id: 'memory', label: 'Memory' },
     { id: 'skills', label: 'Skills' },
+    { id: 'capabilities', label: 'Capabilities' },
+    { id: 'files', label: 'Files' },
     { id: 'games', label: 'Games', experimental: true, warning: 'Experimental: depends on local game/emulator tooling.' },
     { id: 'roguelike', label: 'Roguelike', experimental: true, warning: 'Experimental: local dashboard-only game experiment.' },
     { id: 'diagnostics', label: 'Diagnostics', experimental: true, warning: 'Experimental: depends on local diagnostic tooling.' },
@@ -596,6 +602,122 @@ const DASHBOARD_TABS = [
     { id: 'graph', label: 'Graph' },
 ];
 const DASHBOARD_TAB_SETTINGS_KEY = 'hermes_dashboard_hidden_tabs_v1';
+const DASHBOARD_NOTIFICATION_SETTINGS_KEY = 'hermes_dashboard_browser_notifications_v1';
+const DEFAULT_DASHBOARD_NOTIFICATION_SETTINGS = Object.freeze({
+    enabled: false,
+    approvals: true,
+    runs: true,
+    subagents: true,
+    errors: true,
+    whileVisible: false,
+});
+const dashboardNotificationKeys = new Set();
+
+function getDashboardNotificationSettings() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(DASHBOARD_NOTIFICATION_SETTINGS_KEY) || '{}');
+        return { ...DEFAULT_DASHBOARD_NOTIFICATION_SETTINGS, ...(stored && typeof stored === 'object' ? stored : {}) };
+    } catch (error) {
+        console.warn('Failed to read browser notification settings:', error);
+        return { ...DEFAULT_DASHBOARD_NOTIFICATION_SETTINGS };
+    }
+}
+
+function saveDashboardNotificationSettings(settings) {
+    localStorage.setItem(DASHBOARD_NOTIFICATION_SETTINGS_KEY, JSON.stringify(settings));
+    renderDashboardNotificationSettings();
+}
+
+function browserNotificationPermission() {
+    return typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
+}
+
+function renderDashboardNotificationSettings() {
+    const settings = getDashboardNotificationSettings();
+    const permission = browserNotificationPermission();
+    const status = document.getElementById('dashboard-notification-status');
+    const toggle = document.getElementById('dashboard-notification-toggle');
+    const labels = {
+        approvals: 'dashboard-notification-approvals',
+        runs: 'dashboard-notification-runs',
+        subagents: 'dashboard-notification-subagents',
+        errors: 'dashboard-notification-errors',
+        whileVisible: 'dashboard-notification-visible',
+    };
+    Object.entries(labels).forEach(([key, id]) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.checked = Boolean(settings[key]);
+            input.disabled = permission === 'unsupported';
+        }
+    });
+    if (toggle) {
+        toggle.disabled = permission === 'unsupported' || permission === 'denied';
+        toggle.textContent = settings.enabled && permission === 'granted'
+            ? 'Disable browser notifications'
+            : 'Enable browser notifications';
+    }
+    if (!status) return;
+    if (permission === 'unsupported') status.textContent = 'Browser notifications are not supported here.';
+    else if (permission === 'denied') status.textContent = 'Notifications are blocked. Allow them in this site\'s browser settings.';
+    else if (settings.enabled && permission === 'granted') status.textContent = 'Browser notifications are enabled.';
+    else status.textContent = 'Notifications are off. Enable them to receive approval and attention alerts.';
+}
+
+async function toggleDashboardNotifications() {
+    const settings = getDashboardNotificationSettings();
+    if (browserNotificationPermission() === 'unsupported') {
+        showToast('Browser notifications are not supported', true);
+        return;
+    }
+    if (settings.enabled && Notification.permission === 'granted') {
+        saveDashboardNotificationSettings({ ...settings, enabled: false });
+        showToast('Browser notifications disabled');
+        return;
+    }
+    const permission = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission();
+    const enabled = permission === 'granted';
+    saveDashboardNotificationSettings({ ...settings, enabled });
+    showToast(enabled ? 'Browser notifications enabled' : 'Notification permission was not granted', !enabled);
+}
+
+function updateDashboardNotificationSetting(name, value) {
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_DASHBOARD_NOTIFICATION_SETTINGS, name) || name === 'enabled') return;
+    const settings = getDashboardNotificationSettings();
+    saveDashboardNotificationSettings({ ...settings, [name]: Boolean(value) });
+}
+
+function sendDashboardNotification(kind, title, body, options = {}) {
+    const settings = getDashboardNotificationSettings();
+    if (!settings.enabled || !settings[kind] || browserNotificationPermission() !== 'granted') return false;
+    if (!settings.whileVisible && document.visibilityState === 'visible' && !options.force) return false;
+    const key = options.key || `${kind}:${title}:${body}`;
+    if (dashboardNotificationKeys.has(key)) return false;
+    dashboardNotificationKeys.add(key);
+    if (dashboardNotificationKeys.size > 250) dashboardNotificationKeys.delete(dashboardNotificationKeys.values().next().value);
+    const notification = new Notification(title, {
+        body: String(body || '').slice(0, 240),
+        tag: options.tag || key,
+    });
+    notification.onclick = () => {
+        window.focus();
+        if (options.panel) navigateTo(options.panel);
+        notification.close();
+    };
+    return true;
+}
+
+function sendDashboardNotificationTest() {
+    const sent = sendDashboardNotification('approvals', 'Hermes Dashboard', 'Browser notifications are working.', {
+        key: `test:${Date.now()}`,
+        tag: 'hermes-dashboard-test',
+        panel: 'chat',
+        force: true,
+    });
+    if (!sent) showToast('Enable notifications first, or allow notifications while the dashboard is visible', true);
+}
 
 // Lazy loading: track which tabs have been loaded
 const tabLoaded = DASHBOARD_TABS.reduce((acc, tab) => {
@@ -1174,10 +1296,10 @@ function renderApprovalChatBubble(approvals) {
                     <button class="btn danger" type="button" data-approval-index="${index}" data-approval-decision="deny">Deny</button>
                 </div>
                 ${alwaysPatterns.prefix ? `<div class="approval-inline-prefix">Prefix: <code>${escapeHtml(alwaysPatterns.prefix)}</code></div>` : ''}
-                <details class="approval-inline-details">
-                    <summary>Command preview</summary>
-                    <pre>${escapeHtml(command)}</pre>
-                </details>
+                <div class="approval-inline-command">
+                    <span>Command</span>
+                    <pre>${escapeHtml(command || 'No command provided')}</pre>
+                </div>
             </div>`;
         }).join('')}
         <div class="approval-inline-foot">Auto-approve controls live in the gear/options menu.</div>
@@ -1265,7 +1387,15 @@ async function refreshApprovals(userInitiated = false) {
         const ids = new Set(approvals.map(a => a.id || `${a.session_key}:${a.index || 0}`));
         approvals.forEach((approval) => {
             const id = approval.id || `${approval.session_key}:${approval.index || 0}`;
-            if (!lastApprovalIds.has(id)) showToast(`Approval needed: ${approval.description || approval.pattern_key || 'tool command'}`);
+            if (!lastApprovalIds.has(id)) {
+                const description = approval.description || approval.pattern_key || 'Tool command';
+                showToast(`Approval needed: ${description}`);
+                sendDashboardNotification('approvals', 'Hermes approval required', description, {
+                    key: `approval:${id}`,
+                    tag: `hermes-approval-${id}`,
+                    panel: 'chat',
+                });
+            }
         });
         lastApprovalIds = ids;
         updateAutoApprovalStatus();
@@ -3226,6 +3356,7 @@ const liveChildSessionMap = new Map();
 const drawerEventSources = new Map();
 const childDrawerEventCache = new Map();
 const childDrawerPersistedEventKeys = new Map();
+const childDrawerSnapshotFingerprints = new Map();
 const childDrawerPausedSet = new Set();
 const childDrawerPausedQueue = new Map();
 // Preserve the latest connection/terminal state independently of chat markup.
@@ -3239,6 +3370,9 @@ const childDrawerRegistry = new Map();
 const childWindowState = new Map();
 const childFlightEventSources = new Map();
 const restoredChildFlightSessions = new Set();
+let profileBotSessions = new Map();
+let profileBotFlightPollTimer = null;
+let profileBotFlightPollInFlight = false;
 let childWindowZIndex = 1200;
 let childMobileWindowSequence = 0;
 const MOBILE_WINDOW_MAX_SLOTS = 6;
@@ -3247,7 +3381,7 @@ const ACTIVE_CHILD_DRAWER_STATUSES = new Set(['LIVE', 'RECONNECTING', 'OFFLINE',
 
 function getInFlightSubagents() {
     return Array.from(childDrawerRegistry.values())
-        .filter(entry => ACTIVE_CHILD_DRAWER_STATUSES.has(childDrawerStatusMap.get(entry.childSessionId) || ''))
+        .filter(entry => !entry.profileBot && ACTIVE_CHILD_DRAWER_STATUSES.has(childDrawerStatusMap.get(entry.childSessionId) || ''))
         .sort((a, b) => (normalizeTaskIndex(a.taskIndex) ?? Number.MAX_SAFE_INTEGER) - (normalizeTaskIndex(b.taskIndex) ?? Number.MAX_SAFE_INTEGER));
 }
 
@@ -3273,6 +3407,7 @@ function restoreActiveRunChildSessions() {
             liveChildSessionMap.set(entry.delegateCallId || '', delegateEntries);
         });
     });
+    renderChatRoomRail();
 }
 
 function renderSubagentFlightRailItem() {
@@ -3284,6 +3419,41 @@ function renderSubagentFlightRailItem() {
         <span class="subagent-flight-count" aria-hidden="true">${count}</span>
         <span class="chat-room-tab-copy"><strong>Subagents working</strong><small>${count} delegated task${count === 1 ? '' : 's'} in flight</small></span>
     </button>`;
+}
+
+function renderRoomChildSessionEntries(roomId) {
+    const run = getActiveRun(roomId);
+    const runChildren = Array.isArray(run?.childSessions) ? run.childSessions : [];
+    const profile = String(roomId || '').startsWith('bot:') ? String(roomId).slice(4) : '';
+    const profileChildren = (profileBotSessions.get(profile) || []).map(child => ({ ...child, profileBot: true, profile }));
+    const children = [...runChildren, ...profileChildren].filter((child, index, all) => (
+        child?.childSessionId && all.findIndex(item => item?.childSessionId === child.childSessionId) === index
+    ));
+    if (!children.length) return '';
+    const rows = children.map(child => {
+        if (!child?.childSessionId) return '';
+        const status = child.status || 'LIVE';
+        const label = child.label || 'delegate_task';
+        const id = child.childSessionId;
+        if (child.profileBot) {
+            const identity = child.bot || botRegistry.find(bot => bot.name === profile) || { name: profile, display_name: profile };
+            const botName = identity.display_name || identity.name || profile || 'Bot';
+            return `<div class="chat-room-child profile-bot-room-child">
+                <button class="chat-room-child-open live-view-btn" type="button" data-child-session-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}" title="Watch ${escapeHtml(botName)}: ${escapeHtml(label)}" aria-label="Watch ${escapeHtml(botName)} live session ${escapeHtml(label)}">
+                    <span class="profile-bot-child-avatar">${avatarHtml(identity, { className: 'bot-avatar-flight', decorative: true })}<span class="chat-room-child-dot is-${escapeHtml(String(status).toLowerCase())}"></span></span>
+                    <span class="chat-room-child-copy"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(botName)} &middot; ${escapeHtml(status)}</small></span>
+                </button>
+            </div>`;
+        }
+        return `<div class="chat-room-child">
+            <button class="chat-room-child-open live-view-btn" type="button" data-child-session-id="${escapeHtml(id)}" data-delegate-call-id="${escapeHtml(child.delegateCallId || '')}" data-label="${escapeHtml(label)}" title="Open live session ${escapeHtml(label)}" aria-label="Open live session ${escapeHtml(label)}">
+                <span class="chat-room-child-dot is-${escapeHtml(String(status).toLowerCase())}"></span>
+                <span class="chat-room-child-copy"><strong>${escapeHtml(label)}</strong><small>${escapeHtml((id || '').slice(0, 12))} · ${escapeHtml(status)}</small></span>
+            </button>
+            <button class="chat-room-child-stop subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(id)}" title="Stop ${escapeHtml(label)}" aria-label="Stop ${escapeHtml(label)}">&times;</button>
+        </div>`;
+    }).join('');
+    return `<div class="chat-room-children${profileChildren.length ? ' has-profile-bot' : ''}" role="list" aria-label="Live sessions">${rows}</div>`;
 }
 
 function ensureSubagentFlightPopover() {
@@ -3325,7 +3495,7 @@ function renderSubagentFlightPopover(anchorEl = document.querySelector('.subagen
                 <span class="subagent-flight-row-pulse" aria-hidden="true"></span>
                 <div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(entry.childSessionId.slice(0, 12))} &middot; ${escapeHtml(status.toLowerCase())}</small></div>
                 <button class="btn live-view-btn" type="button" data-child-session-id="${escapeHtml(entry.childSessionId)}" data-delegate-call-id="${escapeHtml(entry.delegateCallId || '')}" data-label="${escapeHtml(title)}">Watch live</button>
-                <button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(entry.childSessionId)}">Emergency stop</button>
+                ${entry.profileBot ? '' : `<button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(entry.childSessionId)}">Emergency stop</button>`}
             </article>`;
         }).join('')}</div>`;
     if (anchorEl) {
@@ -3358,18 +3528,7 @@ function toggleSubagentFlightPopover(anchorEl) {
 }
 
 function syncSubagentFlightUi() {
-    const children = getInFlightSubagents();
-    const button = document.querySelector('.subagent-flight-toggle');
-    if (!button || !children.length) {
-        renderChatRoomRail();
-    } else {
-        const count = children.length;
-        button.querySelector('.subagent-flight-count').textContent = String(count);
-        button.querySelector('strong').textContent = 'Subagents working';
-        button.querySelector('small').textContent = `${count} delegated task${count === 1 ? '' : 's'} in flight`;
-        button.title = `${count} delegated subagent${count === 1 ? '' : 's'} working`;
-        button.setAttribute('aria-label', `Watch ${count} delegated subagent${count === 1 ? '' : 's'} working`);
-    }
+    renderChatRoomRail();
     const popover = document.getElementById('subagent-flight-popover');
     if (popover && !popover.hidden) {
         renderSubagentFlightPopover();
@@ -3380,7 +3539,57 @@ function syncSubagentFlightUi() {
 function rememberChildDrawer(childSessionId, data = {}) {
     if (!childSessionId) return;
     const existing = childDrawerRegistry.get(childSessionId) || {};
-    childDrawerRegistry.set(childSessionId, { ...existing, childSessionId, label: data.label ?? existing.label ?? '', delegateCallId: data.delegateCallId ?? existing.delegateCallId ?? '', taskIndex: data.taskIndex ?? existing.taskIndex ?? null, parentSessionId: data.parentSessionId ?? existing.parentSessionId ?? '' });
+    childDrawerRegistry.set(childSessionId, { ...existing, childSessionId, label: data.label ?? existing.label ?? '', delegateCallId: data.delegateCallId ?? existing.delegateCallId ?? '', taskIndex: data.taskIndex ?? existing.taskIndex ?? null, parentSessionId: data.parentSessionId ?? existing.parentSessionId ?? '', profile: data.profile ?? existing.profile ?? '', profileBot: data.profileBot ?? existing.profileBot ?? false, bot: data.bot ?? existing.bot ?? null });
+}
+
+async function refreshProfileBotFlights() {
+    if (profileBotFlightPollInFlight) return;
+    profileBotFlightPollInFlight = true;
+    try {
+        const response = await fetch('/api/bots/in-flight', { headers: { Accept: 'application/json' } });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        const next = new Map();
+        (Array.isArray(data.sessions) ? data.sessions : []).forEach(session => {
+            const profile = String(session.profile || '').trim();
+            const childSessionId = String(session.session_id || '').trim();
+            if (!profile || !childSessionId) return;
+            const entry = {
+                childSessionId,
+                label: session.title || `${session.bot?.display_name || profile} session`,
+                delegateCallId: '',
+                taskIndex: null,
+                parentSessionId: '',
+                profile,
+                profileBot: true,
+                bot: session.bot || null,
+                status: 'LIVE',
+            };
+            const sessions = next.get(profile) || [];
+            sessions.push(entry);
+            next.set(profile, sessions);
+            rememberChildDrawer(childSessionId, entry);
+            updateDrawerBadge(childSessionId, 'LIVE');
+        });
+        const liveIds = new Set(Array.from(next.values()).flat().map(entry => entry.childSessionId));
+        Array.from(profileBotSessions.values()).flat().forEach(entry => {
+            if (liveIds.has(entry.childSessionId)) return;
+            const status = childDrawerStatusMap.get(entry.childSessionId);
+            if (ACTIVE_CHILD_DRAWER_STATUSES.has(status || '')) updateDrawerBadge(entry.childSessionId, 'DONE');
+        });
+        profileBotSessions = next;
+        syncSubagentFlightUi();
+    } catch (error) {
+        log('warn', `Could not refresh in-flight bot sessions: ${error.message || error}`);
+    } finally {
+        profileBotFlightPollInFlight = false;
+    }
+}
+
+function startProfileBotFlightPolling() {
+    if (profileBotFlightPollTimer) clearInterval(profileBotFlightPollTimer);
+    void refreshProfileBotFlights();
+    profileBotFlightPollTimer = setInterval(() => void refreshProfileBotFlights(), 2000);
 }
 
 function ensureSubagentWindowLayer() {
@@ -3404,10 +3613,15 @@ function renderChildSessionDrawerShell(childSessionId, label = '') {
     const status = childDrawerStatusMap.get(childSessionId) || 'LIVE';
     const isLive = status === 'LIVE';
     const isDisconnected = status === 'RECONNECTING' || status === 'OFFLINE';
+    const entry = childDrawerRegistry.get(childSessionId) || {};
+    const profileBot = Boolean(entry.profileBot);
+    const identity = entry.bot || botRegistry.find(bot => bot.name === entry.profile) || null;
+    const botName = profileBot ? (identity?.display_name || identity?.name || entry.profile || 'Bot') : '';
+    const drawerTitle = profileBot ? botName : (label || 'Subagent');
     const dotColor = status === 'ERROR' ? 'var(--error)' : (isDisconnected ? 'var(--warning, #d6a84b)' : 'var(--success)');
-    return `<section class="child-session-drawer subagent-window" data-child-session-id="${escapeHtml(childSessionId)}" role="dialog" aria-label="Subagent ${escapeHtml(label || childSessionId.slice(0, 8))}">
-        <div class="drawer-header" data-subagent-drag-handle><div class="drawer-header-info"><span class="drawer-header-id">${escapeHtml(childSessionId.slice(0, 16))}</span>${label ? `<span class="drawer-header-label">${escapeHtml(label)}</span>` : ''}</div>
-        <div class="drawer-header-actions"><span class="live-badge ${isLive ? 'active' : ''}" data-badge="${escapeHtml(childSessionId)}"><span class="live-dot"${isLive ? '' : ` style="animation:none;background:${dotColor};"`}></span>${escapeHtml(status)}</span><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft pause</button><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard pause</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft steer</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard steer</button><button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}">Stop</button><button class="drawer-minimize-btn" type="button" data-minimize-child-session="${escapeHtml(childSessionId)}" aria-label="Minimize subagent window">−</button><button class="drawer-close-btn" type="button" data-close-child-session="${escapeHtml(childSessionId)}" aria-label="Close subagent window">×</button></div></div>
+    return `<section class="child-session-drawer subagent-window" data-child-session-id="${escapeHtml(childSessionId)}" role="dialog" aria-label="${escapeHtml(drawerTitle)} live session">
+        <div class="drawer-header" data-subagent-drag-handle><div class="drawer-header-info"><span class="drawer-header-title">${escapeHtml(drawerTitle)}</span><span class="drawer-header-id">${escapeHtml(childSessionId.slice(0, 16))}</span>${profileBot && label ? `<span class="drawer-header-label">${escapeHtml(label)}</span>` : ''}</div>
+        <div class="drawer-header-actions"><span class="live-badge ${isLive ? 'active' : ''}" data-badge="${escapeHtml(childSessionId)}"><span class="live-dot"${isLive ? '' : ` style="animation:none;background:${dotColor};"`}></span>${escapeHtml(status)}</span>${profileBot ? '' : `<button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft pause</button><button class="btn subagent-pause-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard pause</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="soft">Soft steer</button><button class="btn subagent-steer-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}" data-control-mode="hard">Hard steer</button><button class="btn emergency-stop-btn subagent-stop-btn" type="button" data-child-session-id="${escapeHtml(childSessionId)}">Stop</button>`}<button class="drawer-minimize-btn" type="button" data-minimize-child-session="${escapeHtml(childSessionId)}" aria-label="Minimize subagent window">−</button><button class="drawer-close-btn" type="button" data-close-child-session="${escapeHtml(childSessionId)}" aria-label="Close subagent window">×</button></div></div>
         <div class="drawer-transcript" data-drawer-transcript="${escapeHtml(childSessionId)}"></div>
         <div class="subagent-resize-handle" data-subagent-resize-handle role="button" tabindex="0" aria-label="Resize subagent window; use arrow keys"></div>
     </section>`;
@@ -3573,6 +3787,23 @@ function stableDrawerEventSignature(value, seen = new WeakSet()) {
     return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableDrawerEventSignature(value[key], seen)}`).join(',')}}`;
 }
 
+function drawerSessionSnapshotFingerprint(data) {
+    const serialized = stableDrawerEventSignature({
+        messages: data?.messages || [],
+        children: data?.children || [],
+        related_artifacts: data?.related_artifacts || [],
+        background_reviews: data?.background_reviews || [],
+        ended_at: data?.ended_at ?? null,
+        end_reason: data?.end_reason || '',
+    });
+    let hash = 2166136261;
+    for (let index = 0; index < serialized.length; index++) {
+        hash ^= serialized.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return `${serialized.length}:${hash >>> 0}`;
+}
+
 function getDrawerEventDedupKey(parsed) {
     const metadata = getEventMetadata(parsed);
     const explicitId = parsed.event_id ?? parsed.eventId ?? parsed.id ?? metadata.event_id ?? metadata.eventId;
@@ -3699,6 +3930,14 @@ function collectPersistedDrawerEventKeys(data) {
 
 function renderDrawerSessionSnapshot(childSessionId, transcriptEl, data) {
     if (!transcriptEl || !data || !Array.isArray(data.messages)) return false;
+    const fingerprint = drawerSessionSnapshotFingerprint(data);
+    if (childDrawerSnapshotFingerprints.get(childSessionId) === fingerprint && transcriptEl.dataset.drawerHydrated === 'true') {
+        return false;
+    }
+    const hadSnapshot = transcriptEl.dataset.drawerHydrated === 'true';
+    const stickToBottom = !hadSnapshot || shouldStickToBottom(transcriptEl);
+    const previousScrollTop = transcriptEl.scrollTop;
+    const openToolState = captureOpenToolState(transcriptEl);
     const traceContext = buildSessionTraceContext(data, {
         domScope: `subagent-${String(childSessionId || '').replace(/[^A-Za-z0-9_-]/g, '_')}`,
     });
@@ -3707,20 +3946,35 @@ function renderDrawerSessionSnapshot(childSessionId, transcriptEl, data) {
     childDrawerPersistedEventKeys.set(childSessionId, persistedKeys);
     transcriptEl.innerHTML = `<div class="drawer-session-history" data-drawer-session-history>${renderSessionTranscript(traceContext)}</div><div class="drawer-live-tail" data-drawer-live-tail></div>`;
     transcriptEl.dataset.drawerHydrated = 'true';
+    delete transcriptEl.dataset.drawerLoadError;
+    childDrawerSnapshotFingerprints.set(childSessionId, fingerprint);
     renderCachedDrawerEvents(childSessionId, ensureDrawerLiveTail(transcriptEl));
-    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    restoreOpenToolState(transcriptEl, openToolState);
+    transcriptEl.scrollTop = stickToBottom ? transcriptEl.scrollHeight : previousScrollTop;
     return true;
+}
+
+function childSessionSnapshotPath(childSessionId) {
+    const entry = childDrawerRegistry.get(childSessionId) || {};
+    if (entry.profileBot && entry.profile) {
+        return `/api/bots/${encodeURIComponent(entry.profile)}/sessions/${encodeURIComponent(childSessionId)}`;
+    }
+    return `/api/sessions/${encodeURIComponent(childSessionId)}`;
 }
 
 async function rehydrateChildSessionDrawer(childSessionId, transcriptEl) {
     if (!childSessionId || !transcriptEl) return false;
     try {
-        const response = await fetch(`/api/sessions/${encodeURIComponent(childSessionId)}`);
+        const response = await fetch(childSessionSnapshotPath(childSessionId));
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-        return renderDrawerSessionSnapshot(childSessionId, transcriptEl, data);
+        renderDrawerSessionSnapshot(childSessionId, transcriptEl, data);
+        return data;
     } catch (error) {
-        transcriptEl.innerHTML = `<div class="drawer-load-error">Could not restore session history: ${escapeHtml(error.message || String(error))}</div><div class="drawer-live-tail" data-drawer-live-tail></div>`;
+        const errorText = error.message || String(error);
+        if (transcriptEl.dataset.drawerLoadError === errorText) return false;
+        transcriptEl.dataset.drawerLoadError = errorText;
+        transcriptEl.innerHTML = `<div class="drawer-load-error">Could not restore session history: ${escapeHtml(errorText)}</div><div class="drawer-live-tail" data-drawer-live-tail></div>`;
         renderCachedDrawerEvents(childSessionId, ensureDrawerLiveTail(transcriptEl));
         return false;
     }
@@ -3830,11 +4084,13 @@ function closeChildSessionDrawer(childSessionId) {
     document.querySelectorAll(`.subagent-window[data-child-session-id="${CSS.escape(childSessionId)}"]`).forEach(windowEl => windowEl.remove());
     openDrawerSet.delete(childSessionId);
     childWindowState.delete(childSessionId);
+    childDrawerSnapshotFingerprints.delete(childSessionId);
     refreshMobileWindowSlots();
 }
 
 function watchSubagentFlightStatus(childSessionId) {
     if (!childSessionId || childFlightEventSources.has(childSessionId)) return;
+    if (childDrawerRegistry.get(childSessionId)?.profileBot) return;
     const currentStatus = childDrawerStatusMap.get(childSessionId);
     if (currentStatus && !ACTIVE_CHILD_DRAWER_STATUSES.has(currentStatus)) return;
     const source = new EventSource(`/api/sessions/${encodeURIComponent(childSessionId)}/stream`);
@@ -3882,6 +4138,21 @@ function updateDrawerBadge(childSessionId, status) {
         badge.innerHTML = `<span class="live-dot" style="${isLive ? '' : `animation:none;background:${color};`}"></span>${escapeHtml(status)}`;
     });
     if (childSessionId && status && previousStatus !== status) {
+        const entry = childDrawerRegistry.get(childSessionId) || {};
+        const label = entry.label || `Subagent ${childSessionId.slice(0, 8)}`;
+        if (status === 'ERROR') {
+            sendDashboardNotification('errors', 'Hermes subagent failed', label, {
+                key: `subagent:${childSessionId}:error`,
+                tag: `hermes-subagent-${childSessionId}`,
+                panel: 'chat',
+            });
+        } else if (status === 'DONE') {
+            sendDashboardNotification('subagents', 'Hermes subagent finished', label, {
+                key: `subagent:${childSessionId}:done`,
+                tag: `hermes-subagent-${childSessionId}`,
+                panel: 'chat',
+            });
+        }
         let runChanged = false;
         Object.values(activeRuns).forEach(runState => {
             const child = (Array.isArray(runState?.childSessions) ? runState.childSessions : []).find(entry => entry.childSessionId === childSessionId);
@@ -3903,6 +4174,29 @@ function updateDrawerBadge(childSessionId, status) {
 
 function openDrawerEventSource(childSessionId, transcriptEl) {
     if (!childSessionId || drawerEventSources.has(childSessionId)) return;
+    if (childDrawerRegistry.get(childSessionId)?.profileBot) {
+        let closed = false;
+        let timer = null;
+        const controller = {
+            close() {
+                if (closed) return;
+                closed = true;
+                if (timer) clearInterval(timer);
+                drawerEventSources.delete(childSessionId);
+            },
+        };
+        const poll = async () => {
+            if (closed) return;
+            const data = await rehydrateChildSessionDrawer(childSessionId, getDrawerTranscript(childSessionId));
+            if (!data || data.ended_at == null) return;
+            updateDrawerBadge(childSessionId, data.end_reason === 'error' ? 'ERROR' : 'DONE');
+            controller.close();
+        };
+        drawerEventSources.set(childSessionId, controller);
+        timer = setInterval(() => void poll(), 2000);
+        void poll();
+        return;
+    }
     const es = new EventSource(`/api/sessions/${encodeURIComponent(childSessionId)}/stream`);
     drawerEventSources.set(childSessionId, es);
     if (transcriptEl && !renderCachedDrawerEvents(childSessionId, transcriptEl) && !transcriptEl.children.length) transcriptEl.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">No new live activity.</div>';
@@ -4315,6 +4609,23 @@ function getToolTargetDetail(toolName, parsedArgs, rawArgs) {
     return rawArgs || '';
 }
 
+function getToolVisibleDetail(toolName, parsedArgs, rawArgs, targetDetail = '') {
+    const args = parsedArgs && typeof parsedArgs === 'object' ? parsedArgs : {};
+    if (toolName === 'terminal') {
+        return { label: 'command', value: args.command || args.cmd || targetDetail || rawArgs || '' };
+    }
+    if (toolName === 'execute_code') {
+        return { label: 'code', value: args.code || targetDetail || rawArgs || '' };
+    }
+    if (toolName === 'process') {
+        const operation = [args.action || args.operation || '', args.session_id || args.process_id || '']
+            .filter(Boolean)
+            .join(' ');
+        return { label: 'operation', value: args.command || operation || targetDetail || rawArgs || '' };
+    }
+    return { label: 'target', value: targetDetail || '' };
+}
+
 function getToolTimestampLabel(tool, options = {}) {
     return formatTimestamp(options?.node?.timestamp || tool?.timestamp || '') || '';
 }
@@ -4515,6 +4826,7 @@ function renderToolBlock(tool, idx, options = {}) {
     const actionLabel = getToolActionLabel(toolName, parsedArgs.parsed, parsedOutput.parsed);
     const targetSummary = getToolTargetSummary(toolName, parsedArgs.parsed, parsedArgs.raw);
     const targetDetail = getToolTargetDetail(toolName, parsedArgs.parsed, parsedArgs.raw) || targetSummary;
+    const visibleDetail = getToolVisibleDetail(toolName, parsedArgs.parsed, parsedArgs.raw, targetDetail);
     const collapsedSummary = getToolCollapsedSummary(tool, parsedArgs.parsed, parsedOutput.parsed);
     const durationLabel = getToolDurationLabel(tool);
     const timestampLabel = getToolTimestampLabel(tool, options);
@@ -4548,6 +4860,7 @@ function renderToolBlock(tool, idx, options = {}) {
                     <span class="tool-call-chevron">▶</span>
                 </span>
             </button>
+            ${visibleDetail.value ? `<div class="tool-call-visible-detail"><span>${escapeHtml(visibleDetail.label)}</span><pre>${escapeHtml(visibleDetail.value)}</pre></div>` : ''}
             ${drawerBtn}
             ${renderToolCallPanels(rawToolKey, tool)}
         </div>
@@ -5427,14 +5740,18 @@ function renderChatRoomRail() {
     const roomAvatar = (roomId, identity) => `<span class="chat-room-avatar-wrap${getActiveRun(roomId) ? ' running' : ''}">${avatarHtml(identity, { className: 'bot-avatar-rail', decorative: true })}</span>`;
     const mainIdentity = defaultBotIdentity();
     const sharedIdentity = identityForRoom('shared');
+    const roomTab = (roomId, content) => `<button class="chat-room-tab" type="button" data-room-id="${escapeHtml(roomId)}" title="${escapeHtml(botTooltip(identityForRoom(roomId)))}">${roomAvatar(roomId, identityForRoom(roomId))}<span class="chat-room-tab-copy">${content}</span></button>`;
+    const mainContent = `<strong>Main</strong><small>Default ${escapeHtml(mainIdentity.display_name || 'Hermes')} profile</small>`;
+    const sharedContent = `<strong>All Bots Room</strong><small>Shared profile roundtable</small>`;
     const fixedRooms = `
-        <button class="chat-room-tab" type="button" data-room-id="main" title="${escapeHtml(botTooltip(mainIdentity))}" aria-label="Main: ${escapeHtml(mainIdentity.display_name || 'Hermes')}">${roomAvatar('main', mainIdentity)}<span class="chat-room-tab-copy"><strong>Main</strong><small>Default ${escapeHtml(mainIdentity.display_name || 'Hermes')} profile</small></span></button>
-        <button class="chat-room-tab" type="button" data-room-id="shared" title="${escapeHtml(botTooltip(sharedIdentity))}" aria-label="All Bots Room">${roomAvatar('shared', sharedIdentity)}<span class="chat-room-tab-copy"><strong>All Bots Room</strong><small>Shared profile roundtable</small></span></button>
+        <div class="chat-room-group" data-room-group="main">${roomTab('main', mainContent)}${renderRoomChildSessionEntries('main')}</div>
+        <div class="chat-room-group" data-room-group="shared">${roomTab('shared', sharedContent)}${renderRoomChildSessionEntries('shared')}</div>
         ${renderSubagentFlightRailItem()}`;
-    const botRooms = botRegistry.filter(bot => !bot.hidden).map(bot => `
-        <button class="chat-room-tab" type="button" data-room-id="bot:${escapeHtml(bot.name || '')}" title="${escapeHtml(botTooltip(bot))}" aria-label="Chat with ${escapeHtml(bot.display_name || bot.name)}">
-            ${roomAvatar(`bot:${bot.name || ''}`, bot)}<span class="chat-room-tab-copy"><strong>${escapeHtml(bot.display_name || bot.name)}</strong><small>@${escapeHtml(bot.name || '')}</small></span>
-        </button>`).join('');
+    const botRooms = botRegistry.filter(bot => !bot.hidden).map(bot => {
+        const roomId = `bot:${bot.name || ''}`;
+        const content = `<strong>${escapeHtml(bot.display_name || bot.name)}</strong><small>@${escapeHtml(bot.name || '')}</small>`;
+        return `<div class="chat-room-group" data-room-group="${escapeHtml(roomId)}">${roomTab(roomId, content)}${renderRoomChildSessionEntries(roomId)}</div>`;
+    }).join('');
     chatRoomList.innerHTML = fixedRooms + botRooms;
     chatRoomList.querySelectorAll('[data-room-id]').forEach(button => {
         button.classList.toggle('active', button.dataset.roomId === activeChatRoomId);
@@ -5808,6 +6125,7 @@ function switchToPanel(panel) {
         log('inf', 'Lazy-loading panel: ' + panel);
         switch(panel) {
             case 'bots': loadBots(); break;
+            case 'kanban': loadKanban(); break;
             case 'message-board': loadMessageBoardPosts(); break;
             case 'dashboard-chat': loadDashboardChat(); break;
             case 'parallel-arena': loadParallelArena(); break;
@@ -5817,6 +6135,8 @@ function switchToPanel(panel) {
             case 'agent-observability': loadAgentObservability(); break;
             case 'memory': loadMemory(); break;
             case 'skills': loadSkills(); break;
+            case 'capabilities': loadCapabilities(); break;
+            case 'files': loadFileManager(); break;
             case 'games': loadGames(); break;
             case 'roguelike': initRoguelike(); break;
             case 'dnd': loadDndCampaigns(); break;
@@ -5834,6 +6154,8 @@ function switchToPanel(panel) {
         loadAgentObservability();
     } else if (panel === 'bots') {
         loadBots();
+    } else if (panel === 'kanban') {
+        loadKanban();
     } else if (panel === 'message-board') {
         loadMessageBoardPosts();
     } else if (panel === 'dashboard-chat') {
@@ -5856,6 +6178,10 @@ function switchToPanel(panel) {
         loadScrollsResearch();
     } else if (panel === 'graph') {
         loadGraph();
+    } else if (panel === 'capabilities') {
+        loadCapabilities(true);
+    } else if (panel === 'files') {
+        loadFileDirectory();
     }
 
     // Close mobile menu if open
@@ -5880,7 +6206,7 @@ function handleHashChange() {
     const parts = hash.split('/');
     const panel = parts[0];
 
-    const validPanels = ['chat','bots','message-board','dashboard-chat','parallel-arena','config','secrets','sessions','agent-observability','memory','skills','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','nexussy','scrolls','cron','schedule','graph'];
+    const validPanels = ['chat','bots','kanban','message-board','dashboard-chat','parallel-arena','config','secrets','sessions','agent-observability','memory','skills','capabilities','files','games','roguelike','diagnostics','dnd','self-improvement','autonomous-development','nexussy','scrolls','cron','schedule','graph'];
     if (!validPanels.includes(panel) || !isDashboardTabVisible(panel)) {
         switchToPanel('chat');
         return;
@@ -5901,7 +6227,7 @@ function updateBreadcrumbs(panel, detail) {
     const bc = document.getElementById('breadcrumbs');
     if (!bc) return;
 
-    const names = { chat:'Chat', bots:'Bots', 'message-board':'Message Board', 'dashboard-chat':'Dashboard Chat', 'parallel-arena':'Parallel Arena', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', nexussy:'Nexussy', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
+    const names = { chat:'Chat', bots:'Bots', kanban:'Kanban', 'message-board':'Message Board', 'dashboard-chat':'Dashboard Chat', 'parallel-arena':'Parallel Arena', config:'Config', secrets:'Secrets', sessions:'Sessions', 'agent-observability':'Agent Ops', memory:'Memory', skills:'Skills', capabilities:'Capabilities', files:'Files', games:'Games', roguelike:'Roguelike', diagnostics:'Diagnostics', dnd:'Campaigns', 'self-improvement':'Self-Improvement', 'autonomous-development':'Autonomous Development', nexussy:'Nexussy', scrolls:'Vesuvius AutoResearch', cron:'Cron', schedule:'Schedule', graph:'Graph' };
 
     if (detail) {
         bc.className = 'breadcrumbs visible';
@@ -5932,6 +6258,92 @@ async function fetchJsonOrThrow(url, options = {}) {
         throw new Error(message);
     }
     return data;
+}
+
+let kanbanControlPending = false;
+
+function renderKanbanStatus(status) {
+    const state = document.getElementById('kanban-control-state');
+    const open = document.getElementById('kanban-open-board');
+    const enable = document.getElementById('kanban-enable-btn');
+    const disable = document.getElementById('kanban-disable-btn');
+    const refresh = document.getElementById('kanban-refresh-btn');
+    const message = document.getElementById('kanban-control-message');
+    const policy = document.getElementById('kanban-policy-details');
+    const automation = document.getElementById('kanban-automation-details');
+    if (!state) return;
+
+    const installed = Boolean(status?.installed);
+    const enabled = Boolean(status?.enabled);
+    const dispatchEnabled = Boolean(status?.dispatch_enabled);
+    const serviceActive = Boolean(status?.service_active);
+    const label = !installed ? 'Kanban unavailable' : (enabled ? 'Kanban enabled' : (serviceActive ? 'Dispatch paused' : 'Kanban disabled'));
+    state.classList.toggle('is-enabled', enabled);
+    state.classList.toggle('is-disabled', !enabled);
+    const title = state.querySelector('strong');
+    if (title) title.textContent = label;
+
+    if (open) {
+        open.href = status?.board_url || 'http://127.0.0.1:8083/kanban';
+        open.setAttribute('aria-disabled', String(!serviceActive));
+        open.tabIndex = serviceActive ? 0 : -1;
+    }
+    if (enable) enable.disabled = kanbanControlPending || enabled || !installed;
+    if (disable) disable.disabled = kanbanControlPending || (!dispatchEnabled && !serviceActive);
+    if (refresh) refresh.disabled = kanbanControlPending;
+
+    if (policy) policy.innerHTML = `
+        <div><dt>Orchestrator</dt><dd>${escapeHtml(status?.orchestrator_profile || 'not configured')}</dd></div>
+        <div><dt>Default worker</dt><dd>${escapeHtml(status?.default_assignee || 'not configured')}</dd></div>
+        <div><dt>Concurrency</dt><dd>${escapeHtml(String(status?.max_in_progress ?? 'auto'))} global / ${escapeHtml(String(status?.max_in_progress_per_profile ?? 'auto'))} per profile</dd></div>`;
+    if (automation) automation.innerHTML = `
+        <div><dt>Auto-decompose</dt><dd>${status?.auto_decompose ? 'enabled' : 'manual'}</dd></div>
+        <div><dt>Auto-review</dt><dd>${status?.review_dispatch ? 'enabled' : 'human'}</dd></div>
+        <div><dt>Native service</dt><dd>${serviceActive ? 'active' : (status?.service_enabled ? 'stopped' : 'disabled')}</dd></div>`;
+    if (message && !kanbanControlPending) {
+        message.textContent = enabled
+            ? 'New cards can dispatch on the next gateway tick. Open Board launches the native Hermes Kanban interface.'
+            : 'No new Kanban workers will be dispatched. Existing workers, if any, are allowed to finish.';
+    }
+}
+
+async function loadKanban() {
+    const message = document.getElementById('kanban-control-message');
+    try {
+        const status = await fetchJsonOrThrow('/api/kanban');
+        renderKanbanStatus(status);
+    } catch (error) {
+        if (message) message.textContent = `Could not read Kanban status: ${error.message}`;
+        showToast(`Kanban status failed: ${error.message}`, true);
+    }
+}
+
+async function controlKanban(action) {
+    if (kanbanControlPending || !['enable', 'disable'].includes(action)) return;
+    if (action === 'disable' && !confirm('Disable Kanban dispatch and stop the native board? Existing workers will finish naturally.')) return;
+    kanbanControlPending = true;
+    const message = document.getElementById('kanban-control-message');
+    if (message) message.textContent = action === 'enable' ? 'Starting Kanban...' : 'Pausing Kanban safely...';
+    document.querySelectorAll('#kanban-panel button').forEach(button => { button.disabled = true; });
+    try {
+        const status = await fetchJsonOrThrow('/api/kanban/control', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action,
+                intent: 'kanban_deployment_control',
+                passphrase: currentApprovalPassphrase(),
+            }),
+        });
+        showToast(action === 'enable' ? 'Kanban enabled' : 'Kanban disabled');
+        renderKanbanStatus(status);
+    } catch (error) {
+        if (message) message.textContent = `Could not ${action} Kanban: ${error.message}`;
+        showToast(`Could not ${action} Kanban: ${error.message}`, true);
+    } finally {
+        kanbanControlPending = false;
+        await loadKanban();
+    }
 }
 
 let parallelArenaActiveRunId = null;
@@ -7555,6 +7967,14 @@ async function finalizeActiveRun(assistantState, roomId, roomConversation, runSt
             conversation.push(finalMessage);
         }
     }
+    if (runState.notificationStatus !== 'error') {
+        const identity = identityForRoom(roomId);
+        sendDashboardNotification('runs', 'Hermes finished', `${identity.display_name || identity.name || 'Hermes'} completed its response.`, {
+            key: `run:${runState.runId}:complete`,
+            tag: `hermes-run-${runState.runId}`,
+            panel: 'chat',
+        });
+    }
     clearActiveRun(roomId, runState.runId);
     if (roomId === activeChatRoomId) {
         renderConversation();
@@ -7819,6 +8239,15 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                     if (roomId === activeChatRoomId && (parsed.status === 'complete' || parsed.status === 'error')) {
                         hideInterruptButton();
                     }
+                    if (parsed.status === 'error') {
+                        runState.notificationStatus = 'error';
+                        const identity = identityForRoom(roomId);
+                        sendDashboardNotification('errors', 'Hermes run needs attention', `${identity.display_name || identity.name || 'Hermes'} reported an error.`, {
+                            key: `run:${runId}:error`,
+                            tag: `hermes-run-${runId}`,
+                            panel: 'chat',
+                        });
+                    }
                     // TRACK D: end
                     continue;
                 }
@@ -7849,6 +8278,7 @@ async function streamChatRun({ runId, messagesPayload, resume = false, eventOffs
                         watchSubagentFlightStatus(childSessionId);
                         appendLiveDrawerEventIfOpen(parsed);
                         renderDirty = true;
+                        renderChatRoomRail();
                         log('tool', `[child_session_started] ${childSessionId.slice(0, 8)}...`, false, { result: parsed });
                         saveActiveRuns();
                     }
@@ -8094,58 +8524,8 @@ function renderSessionMessage(message) {
 async function previewSessionFile(path, previewable = true) {
     renderSessionFiles(path);
     document.getElementById('file-preview-title').textContent = path;
-    if (!previewable) {
-        document.getElementById('file-preview-body').innerHTML = '<div style="color:var(--text-dim);margin-top:0.5rem;">Preview unavailable for this path, but the file activity metadata was recorded for the session.</div>';
-        return;
-    }
-    document.getElementById('file-preview-body').innerHTML = '<div style="color:var(--text-dim);margin-top:0.5rem;">Loading preview...</div>';
-    const resp = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`);
-    const data = await resp.json();
-    if (!resp.ok) {
-        document.getElementById('file-preview-body').innerHTML = `<div style="color:var(--error);margin-top:0.5rem;">${escapeHtml(data.error || 'Failed to load file')}</div>`;
-        return;
-    }
-
-    const content = data.content || '';
-    const lines = content.split('\n');
-    const lineNums = lines.map((_, i) => i + 1).join('\n');
-
-    // Detect language from file extension
-    const ext = path.split('.').pop().toLowerCase();
-    const langMap = {
-        'js': 'javascript', 'ts': 'typescript', 'py': 'python', 'rb': 'ruby',
-        'rs': 'rust', 'go': 'go', 'java': 'java', 'c': 'c', 'cpp': 'cpp',
-        'h': 'c', 'hpp': 'cpp', 'cs': 'csharp', 'php': 'php', 'swift': 'swift',
-        'kt': 'kotlin', 'scala': 'scala', 'r': 'r', 'sql': 'sql',
-        'html': 'html', 'css': 'css', 'scss': 'scss', 'less': 'less',
-        'json': 'json', 'yaml': 'yaml', 'yml': 'yaml', 'toml': 'toml',
-        'xml': 'xml', 'md': 'markdown', 'sh': 'bash', 'bash': 'bash',
-        'zsh': 'bash', 'fish': 'bash', 'ps1': 'powershell',
-        'dockerfile': 'dockerfile', 'makefile': 'makefile',
-        'lua': 'lua', 'vim': 'vim', 'ex': 'elixir', 'erl': 'erlang',
-        'hs': 'haskell', 'ml': 'ocaml', 'clj': 'clojure', 'lisp': 'lisp',
-        'tex': 'latex', 'diff': 'diff', 'ini': 'ini', 'conf': 'ini',
-        'env': 'bash', 'gitignore': 'bash'
-    };
-    const lang = langMap[ext] || '';
-
     const body = document.getElementById('file-preview-body');
-    body.innerHTML = `
-        <div class="code-with-lines">
-            <div class="line-numbers">${lineNums}</div>
-            <div class="code-content">
-                <pre><code class="${lang ? 'language-' + lang : ''}">${escapeHtml(content)}</code></pre>
-            </div>
-        </div>
-    `;
-
-    // Apply syntax highlighting if highlight.js is loaded
-    if (window.hljs) {
-        const codeEl = body.querySelector('code');
-        if (codeEl) {
-            hljs.highlightElement(codeEl);
-        }
-    }
+    await renderUniversalFileViewer(path, body, { compact: true, legacyPreviewable: previewable });
 }
 
 function closeSessionDetail() {
@@ -8341,6 +8721,272 @@ async function toggleSkill(skillId, enable) {
     } catch (e) {
         showToast(`Skill update failed: ${e.message}`, true);
         log('err', `Skill update failed: ${e.message}`, true);
+    }
+}
+
+let capabilityRows = [];
+let selectedCapabilityId = '';
+
+function capabilityKindLabel(kind) {
+    return ({ skill: 'Skill', toolset: 'Toolset', mcp_server: 'MCP server', plugin: 'Plugin' })[kind] || kind;
+}
+
+function capabilityKindColor(kind) {
+    return ({ skill: '#eab308', toolset: '#06b6d4', mcp_server: '#a855f7', plugin: '#f97316' })[kind] || '#6b7280';
+}
+
+async function loadCapabilities(force = false) {
+    const grid = document.getElementById('capability-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div class="empty-state">Inspecting local capability manifests...</div>';
+    try {
+        if (force) invalidateCache('/api/capabilities');
+        const data = await fetchJsonOrThrow('/api/capabilities');
+        capabilityRows = Array.isArray(data.rows) ? data.rows : [];
+        const counts = data.summary?.by_kind || {};
+        const summary = document.getElementById('capability-summary');
+        if (summary) {
+            summary.innerHTML = ['skill', 'toolset', 'mcp_server', 'plugin'].map(kind => `
+                <div class="capability-summary-card"><strong>${Number(counts[kind] || 0)}</strong><span>${escapeHtml(capabilityKindLabel(kind))}${Number(counts[kind] || 0) === 1 ? '' : 's'}</span></div>
+            `).join('');
+        }
+        renderCapabilities();
+    } catch (error) {
+        grid.innerHTML = `<div class="empty-state">Capability inventory unavailable: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+}
+
+function renderCapabilities() {
+    const grid = document.getElementById('capability-grid');
+    if (!grid) return;
+    const query = (document.getElementById('capability-search')?.value || '').trim().toLowerCase();
+    const kind = document.getElementById('capability-kind')?.value || '';
+    const state = document.getElementById('capability-state')?.value || '';
+    const filtered = capabilityRows.filter(row => {
+        if (kind && row.kind !== kind) return false;
+        if (state === 'enabled' && row.states?.enabled !== true) return false;
+        if (state === 'disabled' && row.states?.enabled !== false) return false;
+        if (state === 'available' && row.states?.available !== true) return false;
+        if (state === 'optional' && row.source?.kind !== 'optional_catalog') return false;
+        if (!query) return true;
+        const haystack = [row.name, row.description, row.kind, ...(row.capability_names || [])].join(' ').toLowerCase();
+        return haystack.includes(query);
+    });
+    const stats = document.getElementById('capability-stats');
+    if (stats) stats.textContent = `${filtered.length} of ${capabilityRows.length}`;
+    if (!filtered.length) {
+        grid.innerHTML = '<div class="empty-state">No capabilities match these filters.</div>';
+        return;
+    }
+    grid.innerHTML = filtered.map((row, index) => {
+        const installed = row.states?.installed;
+        const enabled = row.states?.enabled;
+        const status = installed === false ? 'optional' : enabled === true ? 'enabled' : enabled === false ? 'disabled' : 'detected';
+        const configured = row.states?.configured === true ? '<span class="capability-badge good">configured</span>' : '';
+        return `<button class="capability-card${row.id === selectedCapabilityId ? ' active' : ''}" type="button" data-capability-index="${capabilityRows.indexOf(row)}" style="--capability-color:${capabilityKindColor(row.kind)}">
+            <div class="capability-card-head"><h3>${escapeHtml(row.name)}</h3><span class="capability-badge">${escapeHtml(capabilityKindLabel(row.kind))}</span></div>
+            <p>${escapeHtml(row.description || 'No description supplied by this capability.')}</p>
+            <div class="capability-badges"><span class="capability-badge ${status === 'enabled' ? 'good' : status === 'disabled' ? 'warn' : ''}">${status}</span>${configured}<span class="capability-badge">${(row.capability_names || []).length} exposed</span></div>
+        </button>`;
+    }).join('');
+    grid.querySelectorAll('[data-capability-index]').forEach(button => {
+        button.addEventListener('click', () => selectCapability(Number(button.dataset.capabilityIndex)));
+    });
+}
+
+function selectCapability(index) {
+    const row = capabilityRows[index];
+    const detail = document.getElementById('capability-detail');
+    if (!row || !detail) return;
+    selectedCapabilityId = row.id;
+    renderCapabilities();
+    const capabilities = row.capability_names || [];
+    const security = row.security && Object.keys(row.security).length ? row.security : null;
+    const sourceKind = row.source?.kind === 'optional_catalog' ? 'Optional skill catalog' : (row.source?.kind || 'local');
+    const skillId = row.details?.skill_id || row.name;
+    const canManageSkill = row.kind === 'skill' && row.states?.installed === true && row.source?.kind !== 'optional_catalog';
+    detail.innerHTML = `
+        <span class="panel-kicker">${escapeHtml(capabilityKindLabel(row.kind))}</span>
+        <h3>${escapeHtml(row.name)}</h3>
+        <p>${escapeHtml(row.description || 'No description supplied.')}</p>
+        <div class="capability-badges">
+            ${Object.entries(row.states || {}).map(([name, value]) => `<span class="capability-badge ${value === true ? 'good' : value === false ? 'warn' : ''}">${escapeHtml(name)}: ${value === null ? 'unknown' : value ? 'yes' : 'no'}</span>`).join('')}
+        </div>
+        ${canManageSkill ? `<div class="capability-detail-section"><button class="btn primary" type="button" data-capability-skill-toggle>${row.states.enabled ? 'Disable skill' : 'Enable skill'}</button> <button class="btn" type="button" data-capability-skill-view>Read SKILL.md</button></div>` : ''}
+        <div class="capability-detail-section"><h4>Exposed capabilities</h4><div class="capability-chip-list">${capabilities.length ? capabilities.map(name => `<span class="capability-badge">${escapeHtml(name)}</span>`).join('') : '<span class="file-viewer-meta">None declared</span>'}</div></div>
+        <div class="capability-detail-section"><h4>Security and consent</h4>${security ? `<pre>${escapeHtml(JSON.stringify(security, null, 2))}</pre>` : '<p class="file-viewer-meta">No trust or permission metadata was declared.</p>'}</div>
+        <div class="capability-detail-section"><h4>Source</h4><p class="file-viewer-meta">${escapeHtml(sourceKind)}${row.details?.version ? ` · version ${escapeHtml(row.details.version)}` : ''}${row.details?.transport ? ` · ${escapeHtml(row.details.transport)}` : ''}</p></div>
+    `;
+    detail.querySelector('[data-capability-skill-toggle]')?.addEventListener('click', async () => {
+        await toggleSkill(skillId, !row.states.enabled);
+        await loadCapabilities(true);
+    });
+    detail.querySelector('[data-capability-skill-view]')?.addEventListener('click', () => viewSkillContent(skillId));
+}
+
+let fileProjects = [];
+let fileEntries = [];
+let currentFileProject = '';
+let currentFilePath = '';
+let selectedFilePath = '';
+
+function formatFileSize(value) {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes)) return '--';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function fileRefUrl(endpoint, ref, extra = {}) {
+    const params = new URLSearchParams(extra);
+    if (typeof ref === 'string') params.set('path', ref);
+    else {
+        params.set('project', ref.project_id || ref.project || '');
+        params.set('path', ref.path || '');
+    }
+    return `${endpoint}?${params.toString()}`;
+}
+
+async function loadFileManager() {
+    try {
+        const data = await fetchJsonOrThrow('/api/files/projects');
+        fileProjects = Array.isArray(data.projects) ? data.projects : [];
+        const select = document.getElementById('file-project');
+        if (!select) return;
+        select.innerHTML = fileProjects.map(project => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.label)}</option>`).join('');
+        if (!currentFileProject || !fileProjects.some(project => project.id === currentFileProject)) {
+            currentFileProject = fileProjects[0]?.id || '';
+            currentFilePath = '';
+        }
+        select.value = currentFileProject;
+        await loadFileDirectory();
+    } catch (error) {
+        const list = document.getElementById('file-list');
+        if (list) list.innerHTML = `<div class="empty-state">File manager unavailable: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+}
+
+function selectFileProject(projectId) {
+    currentFileProject = projectId;
+    currentFilePath = '';
+    selectedFilePath = '';
+    void loadFileDirectory();
+}
+
+async function loadFileDirectory(path = currentFilePath) {
+    if (!currentFileProject) return loadFileManager();
+    const list = document.getElementById('file-list');
+    if (list) list.innerHTML = '<div class="empty-state">Loading directory...</div>';
+    try {
+        const hidden = document.getElementById('files-show-hidden')?.checked ? 'true' : 'false';
+        const data = await fetchJsonOrThrow(fileRefUrl('/api/files/list', { project_id: currentFileProject, path }, { hidden, limit: '500' }));
+        currentFilePath = data.path || '';
+        fileEntries = Array.isArray(data.entries) ? data.entries : [];
+        selectedFilePath = '';
+        renderFileBreadcrumbs();
+        renderFileEntries();
+        const up = document.getElementById('file-up-button');
+        if (up) up.disabled = !currentFilePath;
+    } catch (error) {
+        if (list) list.innerHTML = `<div class="empty-state">Could not open directory: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+}
+
+function renderFileBreadcrumbs() {
+    const host = document.getElementById('file-breadcrumbs');
+    if (!host) return;
+    const project = fileProjects.find(item => item.id === currentFileProject);
+    const parts = currentFilePath ? currentFilePath.split('/') : [];
+    const crumbs = [{ label: project?.label || currentFileProject, path: '' }];
+    parts.forEach((part, index) => crumbs.push({ label: part, path: parts.slice(0, index + 1).join('/') }));
+    host.innerHTML = crumbs.map((crumb, index) => `${index ? '<span>/</span>' : ''}<button type="button" data-file-crumb="${index}">${escapeHtml(crumb.label)}</button>`).join('');
+    host.querySelectorAll('[data-file-crumb]').forEach(button => {
+        button.addEventListener('click', () => loadFileDirectory(crumbs[Number(button.dataset.fileCrumb)].path));
+    });
+}
+
+function openParentFileDirectory() {
+    const parts = currentFilePath.split('/').filter(Boolean);
+    parts.pop();
+    void loadFileDirectory(parts.join('/'));
+}
+
+function renderFileEntries() {
+    const list = document.getElementById('file-list');
+    if (!list) return;
+    const query = (document.getElementById('file-search')?.value || '').trim().toLowerCase();
+    const entries = fileEntries.filter(entry => !query || entry.name.toLowerCase().includes(query));
+    if (!entries.length) {
+        list.innerHTML = '<div class="empty-state">This directory is empty or no files match.</div>';
+        return;
+    }
+    list.innerHTML = entries.map((entry, index) => {
+        const icon = entry.type === 'directory' ? '&#9656;' : entry.type === 'symlink' ? '&#8644;' : '&#9633;';
+        const modified = entry.mtime ? new Date(entry.mtime * 1000).toLocaleString() : '--';
+        return `<button class="file-entry${entry.path === selectedFilePath ? ' active' : ''}" type="button" role="option" data-file-entry="${fileEntries.indexOf(entry)}" aria-selected="${entry.path === selectedFilePath}">
+            <span class="file-entry-name"><span class="file-entry-icon">${icon}</span>${escapeHtml(entry.name)}${entry.escaped ? ' (blocked)' : ''}</span>
+            <span class="file-entry-meta">${entry.type === 'directory' ? 'folder' : formatFileSize(entry.size)}</span>
+            <span class="file-entry-meta">${escapeHtml(modified)}</span>
+        </button>`;
+    }).join('');
+    list.querySelectorAll('[data-file-entry]').forEach(button => {
+        button.addEventListener('click', () => openFileEntry(fileEntries[Number(button.dataset.fileEntry)]));
+    });
+}
+
+function openFileEntry(entry) {
+    if (!entry || entry.escaped) return;
+    if (entry.type === 'directory') {
+        void loadFileDirectory(entry.path);
+        return;
+    }
+    selectedFilePath = entry.path;
+    renderFileEntries();
+    void renderUniversalFileViewer({ project_id: currentFileProject, path: entry.path }, document.getElementById('file-viewer'));
+}
+
+async function renderUniversalFileViewer(ref, host, options = {}) {
+    if (!host) return;
+    host.innerHTML = '<div class="empty-state">Inspecting file...</div>';
+    try {
+        const meta = await fetchJsonOrThrow(fileRefUrl('/api/files/meta', ref));
+        const normalizedRef = { project_id: meta.project_id, path: meta.path };
+        const rawUrl = fileRefUrl('/api/files/raw', normalizedRef);
+        const downloadUrl = fileRefUrl('/api/files/download', normalizedRef);
+        host.innerHTML = `<div class="file-viewer-header">
+            <div><span class="panel-kicker">${escapeHtml(meta.kind || 'file')}</span><h3>${escapeHtml(meta.name || meta.path)}</h3><div class="file-viewer-meta">${escapeHtml(meta.mime || 'unknown type')} · ${formatFileSize(meta.size)} · ${escapeHtml(meta.path || '')}</div></div>
+            <div class="file-viewer-actions"><a class="btn" href="${escapeHtml(rawUrl)}" target="_blank" rel="noopener">Open raw</a><a class="btn primary" href="${escapeHtml(downloadUrl)}">Download</a></div>
+        </div><div class="file-viewer-content"></div>`;
+        const content = host.querySelector('.file-viewer-content');
+        if (meta.kind === 'image') {
+            content.innerHTML = `<img src="${escapeHtml(rawUrl)}" alt="${escapeHtml(meta.name)}">`;
+        } else if (meta.kind === 'pdf') {
+            content.innerHTML = `<iframe src="${escapeHtml(rawUrl)}" title="${escapeHtml(meta.name)} PDF preview"></iframe>`;
+        } else if (meta.kind === 'audio') {
+            content.innerHTML = `<audio controls preload="metadata" src="${escapeHtml(rawUrl)}"></audio>`;
+        } else if (meta.kind === 'video') {
+            content.innerHTML = `<video controls preload="metadata" src="${escapeHtml(rawUrl)}"></video>`;
+        } else {
+            const limit = ['text', 'code', 'json', 'markdown'].includes(meta.kind) ? 262144 : 65536;
+            const preview = await fetchJsonOrThrow(fileRefUrl('/api/files/preview', normalizedRef, { limit: String(limit) }));
+            if (meta.kind === 'archive') {
+                const entries = Array.isArray(preview.entries) ? preview.entries : [];
+                content.innerHTML = `${preview.format === 'unsupported' ? '<div class="file-warning">Archive listing is unavailable for this format. The file can still be downloaded.</div>' : ''}<ul class="file-archive-list">${entries.map(entry => `<li><span>${entry.unsafe_path ? '&#9888; ' : ''}${escapeHtml(entry.name)}</span><span>${formatFileSize(entry.size)}</span></li>`).join('')}</ul>${preview.truncated ? `<div class="file-warning">Showing ${entries.length} of ${preview.total} entries.</div>` : ''}`;
+            } else if (preview.content !== undefined) {
+                const pre = document.createElement('pre');
+                pre.textContent = preview.content;
+                content.replaceChildren(pre);
+                if (preview.truncated) content.insertAdjacentHTML('beforeend', `<div class="file-warning">Preview is limited to ${formatFileSize(preview.bytes)}. Download the file for complete contents.</div>`);
+            } else {
+                content.innerHTML = `<div class="file-warning">This format has no safe inline renderer. A bounded binary view is shown below.</div><div class="file-binary-grid"><pre>${escapeHtml(preview.hex || '')}</pre><pre>${escapeHtml(preview.ascii || '')}</pre></div>${preview.truncated ? '<div class="file-viewer-meta">Binary preview truncated.</div>' : ''}`;
+            }
+        }
+        if (options.metaHost) options.metaHost.innerHTML = `<span>Size: <span class="val">${formatFileSize(meta.size)}</span></span><span>Type: <span class="val">${escapeHtml(meta.kind)}</span></span>`;
+    } catch (error) {
+        host.innerHTML = `<div class="empty-state">Could not display this file: ${escapeHtml(error.message || String(error))}</div>`;
+        if (options.metaHost) options.metaHost.textContent = 'Preview unavailable';
     }
 }
 
@@ -11479,6 +12125,11 @@ async function sendMessage() {
 
     } catch (error) {
         log('err', `Error: ${error.message}`, true);
+        sendDashboardNotification('errors', 'Hermes run needs attention', error.message || 'The chat run failed.', {
+            key: `run:${runState.runId}:transport-error`,
+            tag: `hermes-run-${runState.runId}`,
+            panel: 'chat',
+        });
         const errorMessage = { role: 'assistant', bot: runState.profile || 'default', content: `Error: ${error.message}` };
         roomConversation.push(errorMessage);
         if (roomId === 'main') {
@@ -12080,30 +12731,9 @@ function openFloatingPanel(path) {
 }
 
 async function loadFloatingPanelContent(path, panel) {
-  let data;
-  try {
-    const resp = await fetch('/api/files/content?path=' + encodeURIComponent(path));
-    if (!resp.ok) throw new Error('Failed');
-    data = await resp.json();
-  } catch {
-    panel.querySelector('.floating-panel-body').innerHTML =
-      '<div style="color:var(--text-dim);padding:1rem">Failed to load file</div>';
-    return;
-  }
-
   const body = panel.querySelector('.floating-panel-body');
   const meta = panel.querySelector('.floating-panel-meta');
-  const name = data.name || path.split('/').pop();
-  const ext = name.split('.').pop().toLowerCase();
-  const content = data.content || '';
-
-  body.innerHTML = `<pre style="white-space:pre-wrap;font-size:0.8rem">${escapeHtml(content)}</pre>`;
-
-  const sizeStr = data.size != null ? (data.size > 1024 ? (data.size / 1024).toFixed(1) + ' KB' : data.size + ' B') : 'unknown';
-  meta.innerHTML = `
-    <span>Size: <span class="val">${sizeStr}</span></span>
-    <span>Type: <span class="val">${ext}</span></span>
-  `;
+  await renderUniversalFileViewer(path, body, { metaHost: meta, compact: true });
 }
 
 // ── Floating session panel ──
@@ -13362,8 +13992,8 @@ async function loadGraph() {
     const found = findNodeAt(e.offsetX, e.offsetY);
     if (found) {
       dragNode = found;
-      dragNode._dragStartX = found.x;
-      dragNode._dragStartY = found.y;
+      dragNode._dragPointerStartX = e.clientX;
+      dragNode._dragPointerStartY = e.clientY;
       dragNode.fx = dragNode.x;
       dragNode.fy = dragNode.y;
       // Don't reheat simulation on mousedown — wait for actual drag movement
@@ -13373,8 +14003,9 @@ async function loadGraph() {
 
   canvas.addEventListener('mouseup', (e) => {
     if (dragNode) {
-      const movedDist = Math.abs((dragNode.x || 0) - (dragNode._dragStartX || 0)) +
-                        Math.abs((dragNode.y || 0) - (dragNode._dragStartY || 0));
+      const startX = Number.isFinite(dragNode._dragPointerStartX) ? dragNode._dragPointerStartX : e.clientX;
+      const startY = Number.isFinite(dragNode._dragPointerStartY) ? dragNode._dragPointerStartY : e.clientY;
+      const movedDist = Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY);
       wasDragging = movedDist > 5;
       dragNode.fx = null;
       dragNode.fy = null;
@@ -13679,8 +14310,10 @@ window.addEventListener('beforeunload', () => {
 // Initialize (lazy: only load essentials for chat)
 log('inf', 'Dashboard initialized');
 applyDebugVisibility();
+renderDashboardNotificationSettings();
 startTokenUsagePolling();
 startApprovalPolling();
+startProfileBotFlightPolling();
 loadStatus();
 loadModels();
 
@@ -13746,6 +14379,7 @@ void initializeDashboardChatState();
     const FIT_VERSION = '0.8.0';
     const MIN_WIDTH = 300;
     const MIN_HEIGHT = 210;
+    const MIN_WORKSPACE_WIDTH = 320;
     const MARGIN = 8;
     const PERSIST_REFRESH_MS = 30000;
 
@@ -13885,12 +14519,12 @@ void initializeDashboardChatState();
         }
 
         clampColumnWidth(value) {
-            const maximum = Math.max(320, Math.min(720, window.innerWidth - 600));
+            const maximum = Math.max(320, window.innerWidth - MIN_WORKSPACE_WIDTH);
             return Math.min(maximum, this.normalizeColumnWidth(value));
         }
 
         normalizeColumnWidth(value) {
-            return Math.min(720, Math.max(320, Number(value) || 480));
+            return Math.max(320, Number(value) || 480);
         }
 
         applyColumnWidth(value, persist = false) {
@@ -13902,7 +14536,7 @@ void initializeDashboardChatState();
             }
             if (this.columnResizerEl) {
                 this.columnResizerEl.setAttribute('aria-valuenow', String(renderedWidth));
-                this.columnResizerEl.setAttribute('aria-valuemax', String(Math.max(320, Math.min(720, window.innerWidth - 600))));
+                this.columnResizerEl.setAttribute('aria-valuemax', String(Math.max(320, window.innerWidth - MIN_WORKSPACE_WIDTH)));
             }
             if (persist) this.persistLayout();
         }
@@ -13934,7 +14568,7 @@ void initializeDashboardChatState();
             if (event.key === 'ArrowLeft') width += 20;
             else if (event.key === 'ArrowRight') width -= 20;
             else if (event.key === 'Home') width = 320;
-            else if (event.key === 'End') width = 720;
+            else if (event.key === 'End') width = window.innerWidth - MIN_WORKSPACE_WIDTH;
             else return;
             event.preventDefault();
             this.applyColumnWidth(width, true);
@@ -14404,6 +15038,7 @@ void initializeDashboardChatState();
                 this.fitAddon = new window.FitAddon.FitAddon();
                 this.terminal.loadAddon(this.fitAddon);
                 this.terminal.open(this.screenEl);
+                this.terminal.attachCustomKeyEventHandler(event => this.handleClipboardKey(event));
                 this.terminal.onData(data => this.sendControl({ type: 'input', data }));
                 this.connect();
                 requestAnimationFrame(() => { this.fit(); this.terminal?.focus(); });
@@ -14414,6 +15049,25 @@ void initializeDashboardChatState();
 
         applyTheme(theme) {
             if (this.terminal) this.terminal.options.theme = terminalTheme(theme);
+        }
+
+        handleClipboardKey(event) {
+            if (event.type !== 'keydown' || !(event.ctrlKey || event.metaKey)) return true;
+            const key = String(event.key || '').toLowerCase();
+            if (key === 'c' && (event.shiftKey || event.metaKey || this.terminal?.hasSelection?.())) {
+                const selection = this.terminal?.getSelection?.() || '';
+                if (!selection || !navigator.clipboard?.writeText) return true;
+                void navigator.clipboard.writeText(selection).catch(() => showToast('Could not copy terminal selection'));
+                return false;
+            }
+            if (key === 'v') {
+                if (!navigator.clipboard?.readText) return true;
+                void navigator.clipboard.readText()
+                    .then(text => { if (text && !this.disposed) this.terminal?.paste(text); })
+                    .catch(() => showToast('Could not read clipboard'));
+                return false;
+            }
+            return true;
         }
 
         websocketUrl() {
